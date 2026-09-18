@@ -1,0 +1,9 @@
+# Standalone Makefile output
+build/
+
+# Host test binary
+Tests/run_tests
+
+# STM32CubeIDE build output
+Debug/
+Release/
