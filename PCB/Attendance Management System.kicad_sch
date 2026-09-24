@@ -2,9 +2,121 @@
 	(version 20260306)
 	(generator "eeschema")
 	(generator_version "10.0")
-	(uuid 7913fd27-5946-47b8-84cf-c21ab2f68a0e)
+	(uuid "7913fd27-5946-47b8-84cf-c21ab2f68a0e")
 	(paper "A4")
 	(lib_symbols)
+	(sheet
+		(at 120.65 83.185)
+		(size 46.99 44.45)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "1cf39cf2-2e72-41c4-85e6-33411d2df545")
+		(property "Sheetname" "MCU"
+			(at 120.65 82.4734 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "mcu.kicad_sch"
+			(at 120.65 128.2196 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "Attendance Management System"
+				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e"
+					(page "3")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 76.835 81.915)
+		(size 20.955 13.335)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "ac241d06-5adb-4390-abaa-4695f86d3451")
+		(property "Sheetname" "Power"
+			(at 76.835 81.2034 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "power.kicad_sch"
+			(at 76.835 95.8346 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(pin "D-" bidirectional
+			(at 97.79 90.17 0)
+			(uuid "c883b825-3af6-4830-879c-acc903911336")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(pin "D+" bidirectional
+			(at 97.79 86.36 0)
+			(uuid "8f6c6b3d-9e0e-4549-9d7c-e3f57fd94ef5")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(instances
+			(project "Attendance Management System"
+				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e"
+					(page "2")
+				)
+			)
+		)
+	)
 	(sheet_instances
 		(path "/"
 			(page "1")
