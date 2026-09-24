@@ -473,7 +473,7 @@
       "similar_labels": "warning",
       "similar_power": "warning",
       "simulation_model_issue": "ignore",
-      "single_global_label": "ignore",
+      "single_global_label": "error",
       "stacked_pin_name": "warning",
       "unannotated": "error",
       "unconnected_wire_endpoint": "warning",
@@ -673,7 +673,7 @@
         "uuid": "7913fd27-5946-47b8-84cf-c21ab2f68a0e"
       }
     ],
-    "used_designators": "SW1-2,TH1,R1-7,D1-3,C1-9,J1-2,Y1-2,#PWR1-29,U1-2",
+    "used_designators": "Pad_CSO1,Q1,#PWR1-62,Y1-2,J1-4,C1-33,U1-4,D1-6,R1-15,TH1,Pad_CSI1,AE1-2,SW1-3,FB1-2,L1-2",
     "variants": []
   },
   "sheets": [
@@ -688,6 +688,10 @@
     [
       "1cf39cf2-2e72-41c4-85e6-33411d2df545",
       "MCU"
+    ],
+    [
+      "c8797de9-443e-4542-ab6c-38920db86e79",
+      "RFID"
     ]
   ],
   "text_variables": {},
