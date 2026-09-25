@@ -197,7 +197,7 @@ Every other part comes from the stock KiCad libraries.
 - **Check the LSE load capacitors.** C6 and C7 are only 4.3 pF, which implies a crystal with CL ≈ 4–5 pF. Check against Y2's CL.
 - **Check the EMC inductors' rating.** L3/L4 (470 nH, 0402) carry the full transmitter current, so confirm the part's current rating.
 
-### Board layout (placement done 2026-09-25, not routed)
+### Board layout (placed and partly routed 2026-09-25)
 
 **Board:** 60 × 105 mm outline with 2 mm corner radii, 2 layers, 1.6 mm thick. Every part is on F.Cu, and B.Cu is meant to be an unbroken GND plane. The board is in sync with the schematic: DRC schematic parity reports only AE1/AE2, which have no footprint yet.
 
@@ -222,11 +222,52 @@ Every other part comes from the stock KiCad libraries.
 - **RX path:** C14/R13 and C15/R14 are left of the RFI pins. The space at x 25.2–27.5, y 55.6–62.2 is reserved for the two shunt capacitors of ST's capacitive RX divider (see the open schematic issue).
 - **Routing channels:** keep these free of parts. One runs from U5 to U1 (x 27.6–34.6, y 61.3–74) for SPI, IRQ and NSS. The other runs from U6 to U1 (x 29–34.4, y 80.4–91.2) for USB D+/D-.
 
-**DRC after placement:**
-- 0 courtyard overlaps.
-- 198 unconnected items (unrouted).
-- 10 errors from stock-footprint geometry: U2's MSOP-10 pads are 0.15 mm apart against the 0.2 mm default clearance, and J1's GND pads are 0.19 mm from its NPTH holes against the 0.25 mm hole clearance. Fix both with a footprint-level or custom-rule override rather than by moving pads.
-- 72 silkscreen overlaps from reference designators, to tidy before fabrication.
+**Net classes** (set in `.kicad_pro`):
+
+| Class | Track | Clearance | Nets |
+|---|---|---|---|
+| Power | 0.3 mm | 0.2 mm | `+3V3`, `VDDA`, `BAT+`, `+5V`, DC1 and DC3–DC7 |
+| PowerHi | 0.5 mm | 0.2 mm | motor drain `Net-(D4-A)` |
+| GND | 0.3 mm | 0.2 mm | `GND` |
+| RF | 0.3 mm | 0.2 mm | AN1/AN2, the EMC nodes, DR1/DR2 |
+| RFRX | 0.25 mm | 0.2 mm | the RX taps |
+| USB | 0.3 mm | 0.2 mm | D+/D-, as a pair (0.3 mm tracks, 0.2 mm gap) |
+| Xtal | 0.2 mm | 0.2 mm | the crystal nets |
+| Default | 0.2 mm | 0.2 mm | everything else |
+
+- **Width cap:** any net that lands on a 0.5 mm-pitch QFN pin must stay ≤ 0.3 mm, or it can't enter the pad. Neck down at the pin if you widen a track.
+- **High current:** the high-current paths are carried by pours.
+- **Custom DRC rules:** `Attendance Management System.kicad_dru` allows U2's 0.15 mm MSOP-10 pad gaps and J1's GND-pad-to-NPTH hole clearance. Both come from the stock footprints.
+
+**Pours:**
+
+| Zone | Layer | Net | Area |
+|---|---|---|---|
+| `GND_B` | B.Cu | `GND` | whole board, as the return plane |
+| `GND_F` | F.Cu | `GND` | whole board, lowest priority |
+| `BATP_F` | F.Cu | `BAT+` | battery/charger/LDO/motor area, bottom right |
+| `P5V_F` | F.Cu | `+5V` | USB input to U2 VDD |
+
+- **Keep-out:** the `NFC_ANTENNA` rule area keeps all pours out of the coil area.
+- **Pad connections:** GND pours connect solidly to SMD pads, with thermal reliefs only on through-hole pads. Power pours connect solidly.
+- **Exposed pads:** U1's and U5's exposed pads carry GND via arrays.
+
+**Routing status:** Freerouting 1.9.0 autorouted most nets: 638 track segments and 121 vias, with 989 mm of track on F.Cu and 483 mm on B.Cu. Since then there have been 0 clearance or short violations. The rest is being routed by hand. Still unrouted:
+- **USB:** D+ (J1 A6 ↔ B6, and U6 pin 1 ↔ A6) and D- (J1 B7 ↔ A7, A7's stub, and U1 pin 21). The USB-C pads interleave as B7 A6 A7 B6, so one pair needs a via crossing.
+- **ST25R3916 (U5):** RFO2 pin 15 → L4 (AN2); VDD_TX pin 10 → C25 (`BAT+`); VDD pin 8 (DC1); VDD_A pin 7 → C28 (DC5).
+- **STM32 (U1):** VDDA pin 5 and nRST pin 4.
+- **`+5V`:** at J1 A4 and U2 pin 2.
+- **GND pours:** 4 islands left unconnected. Add stitching vias once routing is finished, on a grid of about 3 mm plus a row along the antenna edge, clear of other copper.
+
+**Signal-integrity follow-ups:** the autorouter put some long runs on B.Cu, which cut slots into the ground plane:
+- the PN532 branch: NFC_MISO about 62 mm, PN532_IRQ about 48 mm, PN532_NSS about 29 mm;
+- a `BAT+` run of about 46 mm;
+- SWDIO and SWCLK, about 30 mm each;
+- the SPI nets under U1 and U5.
+
+Move them to F.Cu where you can, keep bottom-layer segments short, and stitch GND across the gaps they leave.
+
+**Other DRC items:** 72 silkscreen overlaps from reference designators, to tidy before fabrication.
 
 ## CubeMX-generated code (`Core/`, `Drivers/`, `Middlewares/`)
 

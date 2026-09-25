@@ -1,0 +1,22 @@
+(version 1)
+(rule "MSOP-10 pad pitch (U2, MCP73833)"
+	(condition "A.Type == 'pad' && B.Type == 'pad' && A.Parent == 'U2' && B.Parent == 'U2'")
+	(constraint clearance (min 0.15mm)))
+(rule "Minimum thermal relief spoke count 1"
+	(constraint min_resolved_spokes 4)
+)
+(rule "Copper to hole clearance 1"
+	(constraint hole_clearance (min 0.15mm))
+)
+(rule "Minimum annular width 1"
+	(constraint annular_width (min 0.2mm))
+)
+(rule "Hole to hole distance 1"
+	(constraint hole_to_hole (min 1mm))
+)
+(rule "Courtyard clearance 1"
+	(constraint courtyard_clearance (min 0.1mm))
+)
+(rule "Minimum connection width 2"
+	(constraint connection_width (min 0.15mm))
+)

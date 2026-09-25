@@ -69,7 +69,13 @@
           "thermal_relief_spoke_width": 0.5
         }
       },
-      "diff_pair_dimensions": [],
+      "diff_pair_dimensions": [
+        {
+          "gap": 0.0,
+          "via_gap": 0.0,
+          "width": 0.0
+        }
+      ],
       "drc_exclusions": [],
       "meta": {
         "version": 2
@@ -140,21 +146,21 @@
       },
       "rules": {
         "max_error": 0.005,
-        "min_clearance": 0.0,
-        "min_connection": 0.0,
+        "min_clearance": 0.1,
+        "min_connection": 0.1,
         "min_copper_edge_clearance": 0.5,
         "min_groove_width": 0.0,
-        "min_hole_clearance": 0.25,
+        "min_hole_clearance": 0.2,
         "min_hole_to_hole": 0.25,
         "min_microvia_diameter": 0.2,
-        "min_microvia_drill": 0.1,
+        "min_microvia_drill": 0.15,
         "min_resolved_spokes": 2,
         "min_silk_clearance": 0.0,
         "min_text_height": 0.8,
         "min_text_thickness": 0.08,
         "min_through_hole_diameter": 0.3,
-        "min_track_width": 0.2,
-        "min_via_annular_width": 0.1,
+        "min_track_width": 0.1,
+        "min_via_annular_width": 0.2,
         "min_via_diameter": 0.5,
         "solder_mask_to_copper_clearance": 0.0,
         "use_height_for_length_calcs": true
@@ -203,7 +209,17 @@
           "td_width_to_size_filter_ratio": 0.9
         }
       ],
-      "track_widths": [],
+      "track_widths": [
+        0.0,
+        0.1,
+        0.15,
+        0.2,
+        0.3,
+        0.5,
+        0.8,
+        1.0,
+        1.2
+      ],
       "tuning_pattern_settings": {
         "diff_pair_defaults": {
           "corner_radius_percentage": 80,
@@ -230,7 +246,16 @@
           "spacing": 0.6
         }
       },
-      "via_dimensions": [],
+      "via_dimensions": [
+        {
+          "diameter": 0.0,
+          "drill": 0.0
+        },
+        {
+          "diameter": 0.8,
+          "drill": 0.3
+        }
+      ],
       "zones_allow_external_fillets": false
     },
     "ipc2581": {
@@ -495,22 +520,44 @@
     "classes": [
       {
         "bus_width": 12,
-        "clearance": 0.2,
+        "clearance": 0.1,
         "diff_pair_gap": 0.25,
         "diff_pair_via_gap": 0.25,
         "diff_pair_width": 0.2,
         "line_style": 0,
-        "microvia_diameter": 0.3,
-        "microvia_drill": 0.1,
+        "microvia_diameter": 0.6,
+        "microvia_drill": 0.2,
         "name": "Default",
         "pcb_color": "rgba(0, 0, 0, 0.000)",
         "priority": 2147483647,
         "schematic_color": "rgba(0, 0, 0, 0.000)",
-        "track_width": 0.2,
+        "track_width": 0.1,
         "tuning_profile": "",
-        "via_diameter": 0.6,
+        "via_diameter": 0.8,
         "via_drill": 0.3,
         "wire_width": 6
+      },
+      {
+        "clearance": 0.15,
+        "name": "Power",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 1,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.2,
+        "tuning_profile": "",
+        "via_diameter": 0.8,
+        "via_drill": 0.3
+      },
+      {
+        "clearance": 0.4,
+        "name": "Power2",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 0,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.2,
+        "tuning_profile": "",
+        "via_diameter": 0.8,
+        "via_drill": 0.3
       }
     ],
     "meta": {
@@ -622,6 +669,294 @@
           "group_by": false,
           "label": "Description",
           "name": "Description",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "B_MAX",
+          "name": "B_MAX",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "B_MIN",
+          "name": "B_MIN",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "B_NOM",
+          "name": "B_NOM",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Check_prices",
+          "name": "Check_prices",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "D2_NOM",
+          "name": "D2_NOM",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "DMAX",
+          "name": "DMAX",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "DMIN",
+          "name": "DMIN",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "DNOM",
+          "name": "DNOM",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "D_MAX",
+          "name": "D_MAX",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "D_MIN",
+          "name": "D_MIN",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "D_NOM",
+          "name": "D_NOM",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Dielectric",
+          "name": "Dielectric",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "E2_NOM",
+          "name": "E2_NOM",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "EMAX",
+          "name": "EMAX",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "EMIN",
+          "name": "EMIN",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "ENOM",
+          "name": "ENOM",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "E_MAX",
+          "name": "E_MAX",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "E_MIN",
+          "name": "E_MIN",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "E_NOM",
+          "name": "E_NOM",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "IPC",
+          "name": "IPC",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "JEDEC",
+          "name": "JEDEC",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "L_MAX",
+          "name": "L_MAX",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "L_MIN",
+          "name": "L_MIN",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "L_NOM",
+          "name": "L_NOM",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "MANUFACTURER",
+          "name": "MANUFACTURER",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "MF",
+          "name": "MF",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "MP",
+          "name": "MP",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "MPN",
+          "name": "MPN",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "PACKAGE_TYPE",
+          "name": "PACKAGE_TYPE",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "PARTREV",
+          "name": "PARTREV",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "PINS",
+          "name": "PINS",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "PIN_COLUMNS",
+          "name": "PIN_COLUMNS",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "PIN_COUNT_D",
+          "name": "PIN_COUNT_D",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "PIN_COUNT_E",
+          "name": "PIN_COUNT_E",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Package",
+          "name": "Package",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Price",
+          "name": "Price",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "SNAPEDA_PACKAGE_ID",
+          "name": "SNAPEDA_PACKAGE_ID",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "STANDARD",
+          "name": "STANDARD",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Sim.Pins",
+          "name": "Sim.Pins",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "SnapEDA_Link",
+          "name": "SnapEDA_Link",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "THERMAL_PAD",
+          "name": "THERMAL_PAD",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "VACANCIES",
+          "name": "VACANCIES",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Voltage",
+          "name": "Voltage",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "BALL_COLUMNS",
+          "name": "BALL_COLUMNS",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "BODY_DIAMETER",
+          "name": "BODY_DIAMETER",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Availability",
+          "name": "Availability",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "BALL_ROWS",
+          "name": "BALL_ROWS",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "A_MAX",
+          "name": "A_MAX",
           "show": false
         }
       ],
