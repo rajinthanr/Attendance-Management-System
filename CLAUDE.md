@@ -116,7 +116,7 @@ Every other part comes from the stock KiCad libraries.
   - VDD_IO (with C11) and R12, the BSS pull-up, are on `+3V3`, so SPI and IRQ run at the MCU's logic level.
   - Keep that split. Moving VDD_IO to `BAT+` drives 4.2 V into PB0, PB1 and PB4.
 - **Decoupling:** the internal regulator pins (VDD_A, VDD_D, VDD_AM, VDD_RF/VDD_DR, AGDC) each have 100 nF plus 1–2.2 µF.
-- **Crystal:** Y1 (ABM8-27.120MHZ, 3225 4-pad) on XTI/XTO, with C9 and C10 (15 pF).
+- **Crystal:** Y1 (27.12 MHz, CL 10 pF, 3225 4-pad; YXC X32252712MMB4SI) on XTI/XTO, with C9 and C10 (15 pF).
 - **Antenna path:** RFO1/RFO2 go through an EMC filter (L3/L4, 470 nH in 0805, with C12/C13, 150 pF), then the matching network (C16–C19) to the nodes DR1/DR2. R15 (1.5 kΩ) sits across DR1/DR2, and R21/R22 (0 Ω) feed the loop antenna AE3 (`NFC_Loop_40x30_3T`, 40 × 30 mm, 3 turns).
 - **RX path:** a capacitive divider on each side, per ST AN5276. DR1 → C37 (10 pF) → RFI1, with C38 (150 pF) to GND. DR2 → C15 (10 pF) → RFI2, with C39 (150 pF) to GND. That's roughly 1/16 of the antenna voltage, which keeps RFI under its 3 Vpp limit. R13, R14 and C14 have been removed.
 - **Capacitive sensor:** J6 (on CSI) and J5 (on CSO) are 1×2 mm SMD solder pads for the electrode used by the chip's capacitive wake-up.
@@ -143,7 +143,7 @@ Every other part comes from the stock KiCad libraries.
 
 - **U1:** STM32L432KCUx.
 - **Decoupling:** C1 and C3 (100 nF) plus C2 (4.7 µF) on `+3V3`. VDDA is fed through ferrite bead FB1, with C4 (10 nF) and C5 (1 µF).
-- **Crystal:** Y2 (32.768 kHz) with C6 and C7 (4.3 pF).
+- **Crystal:** Y2 (32.768 kHz, CL 6 pF, 3.2 × 1.5 mm; Epson FC-135) with C6 and C7 (8.2 pF). No 4 pF crystal comes in this size at LCSC, so the load caps were raised from 4.3 pF on 2026-09-26.
 - **Reset and boot:** NRST has C8 (100 nF) and the SW1 reset button. BOOT0 (PH3) has R7 (10 kΩ) pulling it down and the SW2 button pulling it to `+3V3`.
 - **Debug:** J3 is a 4-pin SWD header: 3V3, SWDIO, SWCLK and GND. It has no NRST pin.
 - **LEDs:** D6 (green) on PA2 and D5 (red) on PA3, each through 470 Ω to GND. They are active high, which matches the firmware.
@@ -170,6 +170,7 @@ Every other part comes from the stock KiCad libraries.
   Fix the same pins in the `External` library too.
 - **No-connects:** every unused MCU pin has a no-connect flag.
 - **Values:** SI style: `100n`, `4.7u`, `15p`, `10k`, `4.7M`, `470R`, `600R@100MHz`, `470nH`. Capacitors carry hidden `Dielectric` and `Voltage` fields (C0G 50V for RF and crystal parts, X7R 16V for 100n/10n, X5R 10V/16V for bulk). Y1 carries an `MPN` field.
+- **LCSC field:** every orderable part carries a hidden `LCSC` field (the LCSC/JLCPCB part number). The Fabrication Toolkit plugin reads it from the footprints, so run *Update PCB from Schematic* after changing one. AE3, J5 and J6 have none (PCB features). The ordering BOMs are in `PCB/bom/` (`jlcpcb_bom.csv`, plus Digi-Key and LCSC workbooks); keep them in step with the `LCSC` fields.
 - **Layout:** every functional block sits in a titled frame, and each sheet has a filled title block (title, date, rev 0.1, description).
 
 ### Board layout and status (scanned 2026-09-26; re-run ERC and DRC before relying on this)
@@ -206,7 +207,7 @@ Every other part comes from the stock KiCad libraries.
 - **The charge current is too high for USB.** R6 = 1 kΩ sets 1 A, more than a USB-C sink with plain 5.1 kΩ Rd may draw (500 mA) and more than the MSOP-10 MCP73833 can dissipate. Use R6 ≥ 2 kΩ.
 - **The PN532 header sits close to the antenna.** J7 is just under the antenna area, so a module plugged in there may detune the ST25R3916 loop. Its VCC is on `BAT+`, which is fine only if the module makes its own 3.3 V I/O rail.
 - **The `.ioc` lacks PA15 (`PN532_NSS`) and PB6 (`PN532_IRQ`).**
-- **Check the LSE load capacitors.** C6 and C7 are only 4.3 pF, so check them against Y2's CL.
+- **U1 is out of stock at LCSC and JLCPCB** (checked 2026-09-26). Buy the STM32L432KCU6 elsewhere (Digi-Key had stock) and consign it, or solder it by hand. The 128 kB STM32L432KBU6 is not a drop-in: the log lives in the upper 128 kB of flash.
 - **The firmware doesn't build.** `Firmware/Middlewares/ST/STM32_USB_Device_Library` is missing: the deletion from the CubeMX regeneration was committed. Restore it as described under "After regenerating from the `.ioc`".
 - **The firmware drivers still target the EM4100 front end.** See the pin map section.
 

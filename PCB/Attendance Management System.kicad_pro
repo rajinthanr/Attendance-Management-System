@@ -162,7 +162,7 @@
         "min_track_width": 0.1,
         "min_via_annular_width": 0.2,
         "min_via_diameter": 0.5,
-        "solder_mask_to_copper_clearance": 0.0,
+        "solder_mask_to_copper_clearance": 0.005,
         "use_height_for_length_calcs": true
       },
       "teardrop_options": [
@@ -571,7 +571,7 @@
     "last_paths": {
       "idf": "",
       "netlist": "",
-      "plot": "",
+      "plot": "Output/",
       "specctra_dsn": "",
       "step": "",
       "vrml": ""
@@ -595,7 +595,379 @@
       "ref_range_delimiter": "",
       "string_delimiter": "\""
     },
-    "bom_presets": [],
+    "bom_presets": [
+      {
+        "exclude_dnp": false,
+        "fields_ordered": [
+          {
+            "group_by": false,
+            "label": "Reference",
+            "name": "Reference",
+            "show": true
+          },
+          {
+            "group_by": false,
+            "label": "Qty",
+            "name": "${QUANTITY}",
+            "show": true
+          },
+          {
+            "group_by": true,
+            "label": "Value",
+            "name": "Value",
+            "show": true
+          },
+          {
+            "group_by": false,
+            "label": "DNP",
+            "name": "${DNP}",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "Exclude from BOM",
+            "name": "${EXCLUDE_FROM_BOM}",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "Exclude from Board",
+            "name": "${EXCLUDE_FROM_BOARD}",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "Exclude from Simulation",
+            "name": "${EXCLUDE_FROM_SIM}",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "Exclude from Position Files",
+            "name": "${EXCLUDE_FROM_POS_FILES}",
+            "show": false
+          },
+          {
+            "group_by": true,
+            "label": "Footprint",
+            "name": "Footprint",
+            "show": true
+          },
+          {
+            "group_by": false,
+            "label": "Datasheet",
+            "name": "Datasheet",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "#",
+            "name": "${ITEM_NUMBER}",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "Description",
+            "name": "Description",
+            "show": true
+          },
+          {
+            "group_by": false,
+            "label": "B_MAX",
+            "name": "B_MAX",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "B_MIN",
+            "name": "B_MIN",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "B_NOM",
+            "name": "B_NOM",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "Check_prices",
+            "name": "Check_prices",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "D2_NOM",
+            "name": "D2_NOM",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "DMAX",
+            "name": "DMAX",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "DMIN",
+            "name": "DMIN",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "DNOM",
+            "name": "DNOM",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "D_MAX",
+            "name": "D_MAX",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "D_MIN",
+            "name": "D_MIN",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "D_NOM",
+            "name": "D_NOM",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "Dielectric",
+            "name": "Dielectric",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "E2_NOM",
+            "name": "E2_NOM",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "EMAX",
+            "name": "EMAX",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "EMIN",
+            "name": "EMIN",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "ENOM",
+            "name": "ENOM",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "E_MAX",
+            "name": "E_MAX",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "E_MIN",
+            "name": "E_MIN",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "E_NOM",
+            "name": "E_NOM",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "IPC",
+            "name": "IPC",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "JEDEC",
+            "name": "JEDEC",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "L_MAX",
+            "name": "L_MAX",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "L_MIN",
+            "name": "L_MIN",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "L_NOM",
+            "name": "L_NOM",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "MANUFACTURER",
+            "name": "MANUFACTURER",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "MF",
+            "name": "MF",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "MP",
+            "name": "MP",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "MPN",
+            "name": "MPN",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "PACKAGE_TYPE",
+            "name": "PACKAGE_TYPE",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "PARTREV",
+            "name": "PARTREV",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "PINS",
+            "name": "PINS",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "PIN_COLUMNS",
+            "name": "PIN_COLUMNS",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "PIN_COUNT_D",
+            "name": "PIN_COUNT_D",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "PIN_COUNT_E",
+            "name": "PIN_COUNT_E",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "Package",
+            "name": "Package",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "Price",
+            "name": "Price",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "SNAPEDA_PACKAGE_ID",
+            "name": "SNAPEDA_PACKAGE_ID",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "STANDARD",
+            "name": "STANDARD",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "Sim.Pins",
+            "name": "Sim.Pins",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "SnapEDA_Link",
+            "name": "SnapEDA_Link",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "THERMAL_PAD",
+            "name": "THERMAL_PAD",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "VACANCIES",
+            "name": "VACANCIES",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "Voltage",
+            "name": "Voltage",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "BALL_COLUMNS",
+            "name": "BALL_COLUMNS",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "BODY_DIAMETER",
+            "name": "BODY_DIAMETER",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "Availability",
+            "name": "Availability",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "BALL_ROWS",
+            "name": "BALL_ROWS",
+            "show": false
+          },
+          {
+            "group_by": false,
+            "label": "A_MAX",
+            "name": "A_MAX",
+            "show": false
+          }
+        ],
+        "filter_string": "",
+        "group_symbols": true,
+        "include_excluded_from_bom": true,
+        "name": "custom1",
+        "sort_asc": true,
+        "sort_field": "Reference"
+      }
+    ],
     "bom_settings": {
       "exclude_dnp": false,
       "fields_ordered": [
@@ -618,34 +990,34 @@
           "show": true
         },
         {
-          "group_by": true,
+          "group_by": false,
           "label": "DNP",
           "name": "${DNP}",
-          "show": true
+          "show": false
         },
         {
-          "group_by": true,
+          "group_by": false,
           "label": "Exclude from BOM",
           "name": "${EXCLUDE_FROM_BOM}",
-          "show": true
+          "show": false
         },
         {
-          "group_by": true,
+          "group_by": false,
           "label": "Exclude from Board",
           "name": "${EXCLUDE_FROM_BOARD}",
-          "show": true
+          "show": false
         },
         {
-          "group_by": true,
+          "group_by": false,
           "label": "Exclude from Simulation",
           "name": "${EXCLUDE_FROM_SIM}",
-          "show": true
+          "show": false
         },
         {
-          "group_by": true,
+          "group_by": false,
           "label": "Exclude from Position Files",
           "name": "${EXCLUDE_FROM_POS_FILES}",
-          "show": true
+          "show": false
         },
         {
           "group_by": true,
@@ -657,7 +1029,7 @@
           "group_by": false,
           "label": "Datasheet",
           "name": "Datasheet",
-          "show": true
+          "show": false
         },
         {
           "group_by": false,
@@ -669,7 +1041,7 @@
           "group_by": false,
           "label": "Description",
           "name": "Description",
-          "show": false
+          "show": true
         },
         {
           "group_by": false,
@@ -1008,7 +1380,7 @@
         "uuid": "7913fd27-5946-47b8-84cf-c21ab2f68a0e"
       }
     ],
-    "used_designators": "NT1,U1-5,D1-6,J1-6,Pad_CSO1,R1-19,R21-22,TH1,L1-4,FB1-2,Y1-3,#PWR1-68,#PWR82,C1-34,C37-39,Pad_CSI1,AE1-3,SW1-3,Q1",
+    "used_designators": "R1-22,Pad_CSO1,J1-7,L1-4,FB1-2,#PWR1-82,Y1-3,TH1,#FLG1-3,C1-39,U1-5,D1-6,Pad_CSI1,AE1-3,SW1-3,NT1,Q1",
     "variants": []
   },
   "sheets": [

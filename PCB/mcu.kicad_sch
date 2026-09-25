@@ -8,7 +8,7 @@
 		(title "Card Attendance System")
 		(date "2026-09-25")
 		(rev "0.1")
-		(comment 1 "STM32L432KC MCU, buttons, LEDs, vibration motor, PN532 backup header")
+		(comment 1 "STM32L432KB MCU, buttons, LEDs, vibration motor, PN532 backup header")
 	)
 	(lib_symbols
 		(symbol "Connector:Conn_01x02_Pin"
@@ -1906,7 +1906,7 @@
 			)
 			(embedded_fonts no)
 		)
-		(symbol "MCU_ST_STM32L4:STM32L432KCUx"
+		(symbol "MCU_ST_STM32L4:STM32L432KBUx"
 			(exclude_from_sim no)
 			(in_bom yes)
 			(on_board yes)
@@ -1923,7 +1923,7 @@
 					(justify left)
 				)
 			)
-			(property "Value" "STM32L432KCUx"
+			(property "Value" "STM32L432KBUx"
 				(at 5.08 26.67 0)
 				(show_name no)
 				(do_not_autoplace no)
@@ -1946,7 +1946,7 @@
 					(justify right)
 				)
 			)
-			(property "Datasheet" "https://www.st.com/resource/en/datasheet/stm32l432kc.pdf"
+			(property "Datasheet" "https://www.st.com/resource/en/datasheet/stm32l432kb.pdf"
 				(at 0 0 0)
 				(show_name no)
 				(do_not_autoplace no)
@@ -1957,7 +1957,7 @@
 					)
 				)
 			)
-			(property "Description" "STMicroelectronics Arm Cortex-M4 MCU, 256KB flash, 64KB RAM, 80 MHz, 1.71-3.6V, 26 GPIO, UFQFPN32"
+			(property "Description" "STMicroelectronics Arm Cortex-M4 MCU, 128KB flash, 64KB RAM, 80 MHz, 1.71-3.6V, 26 GPIO, UFQFPN32"
 				(at 0 0 0)
 				(show_name no)
 				(do_not_autoplace no)
@@ -1990,7 +1990,7 @@
 					)
 				)
 			)
-			(symbol "STM32L432KCUx_0_1"
+			(symbol "STM32L432KBUx_0_1"
 				(rectangle
 					(start -10.16 -22.86)
 					(end 10.16 25.4)
@@ -2003,7 +2003,7 @@
 					)
 				)
 			)
-			(symbol "STM32L432KCUx_1_1"
+			(symbol "STM32L432KBUx_1_1"
 				(pin power_in line
 					(at -2.54 27.94 270)
 					(length 2.54)
@@ -4201,7 +4201,7 @@
 		)
 		(uuid "6709ed75-d833-41e6-8910-3cf435f19a01")
 	)
-	(text "MICROCONTROLLER  STM32L432KC"
+	(text "MICROCONTROLLER  STM32L432KB"
 		(exclude_from_sim no)
 		(at 134.62 70.485 0)
 		(effects
@@ -6097,7 +6097,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "02bf4413-ad22-4097-9c95-fcaae30af4c0")
-		(property "Reference" "Y2"
+		(property "Reference" "Y1"
 			(at 195.58 46.9899 90)
 			(show_name no)
 			(do_not_autoplace no)
@@ -6152,6 +6152,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C95361"
+			(at 191.77 48.26 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "2"
 			(uuid "e0b2b886-d530-49ee-be05-932ef6de30a3")
 		)
@@ -6161,7 +6172,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "Y2")
+					(reference "Y1")
 					(unit 1)
 				)
 			)
@@ -6178,7 +6189,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "02f474b6-ef2d-4e6f-8c18-020e94b2a5a2")
-		(property "Reference" "#PWR045"
+		(property "Reference" "#PWR054"
 			(at 228.6 81.28 0)
 			(hide yes)
 			(show_name no)
@@ -6238,7 +6249,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR045")
+					(reference "#PWR054")
 					(unit 1)
 				)
 			)
@@ -6255,7 +6266,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "0369f487-ce3b-4c64-a056-b0c70888674c")
-		(property "Reference" "#FLG03"
+		(property "Reference" "#FLG02"
 			(at 134.62 173.99 0)
 			(hide yes)
 			(show_name no)
@@ -6316,7 +6327,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#FLG03")
+					(reference "#FLG02")
 					(unit 1)
 				)
 			)
@@ -6334,7 +6345,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "046a7404-1604-459b-8b8b-00de001080a5")
-		(property "Reference" "#PWR030"
+		(property "Reference" "#PWR057"
 			(at 237.49 60.96 0)
 			(hide yes)
 			(show_name no)
@@ -6394,7 +6405,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR030")
+					(reference "#PWR057")
 					(unit 1)
 				)
 			)
@@ -6411,7 +6422,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "10761229-5c22-4ce7-8463-977174bacc3e")
-		(property "Reference" "#PWR073"
+		(property "Reference" "#PWR039"
 			(at 90.17 43.18 0)
 			(hide yes)
 			(show_name no)
@@ -6471,7 +6482,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR073")
+					(reference "#PWR039")
 					(unit 1)
 				)
 			)
@@ -6489,7 +6500,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "133ef565-3a4e-48cb-8c27-193d5d1d5632")
-		(property "Reference" "#PWR011"
+		(property "Reference" "#PWR047"
 			(at 134.62 177.8 0)
 			(hide yes)
 			(show_name no)
@@ -6549,7 +6560,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR011")
+					(reference "#PWR047")
 					(unit 1)
 				)
 			)
@@ -6566,7 +6577,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "14e64acb-ab0f-4020-9b49-afc9ca7c1494")
-		(property "Reference" "R10"
+		(property "Reference" "R15"
 			(at 217.17 130.81 90)
 			(show_name no)
 			(do_not_autoplace no)
@@ -6619,6 +6630,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C17710"
+			(at 218.44 128.27 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "2"
 			(uuid "4a1c1c83-ed40-4ffd-9351-579adb57d4ca")
 		)
@@ -6628,7 +6650,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "R10")
+					(reference "R15")
 					(unit 1)
 				)
 			)
@@ -6645,7 +6667,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "22b45feb-08cc-40c0-8440-029831c5a19a")
-		(property "Reference" "#PWR036"
+		(property "Reference" "#PWR042"
 			(at 99.06 130.81 0)
 			(hide yes)
 			(show_name no)
@@ -6705,7 +6727,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR036")
+					(reference "#PWR042")
 					(unit 1)
 				)
 			)
@@ -6781,6 +6803,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C20917"
+			(at 226.06 95.25 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "3"
 			(uuid "51d618a1-a68f-4426-97f6-e01adf1d7df6")
 		)
@@ -6811,7 +6844,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "27404b77-fcd1-4a79-8656-63606de50732")
-		(property "Reference" "C8"
+		(property "Reference" "C5"
 			(at 61.722 144.78 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -6888,6 +6921,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C49678"
+			(at 55.88 143.51 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "2"
 			(uuid "d3ab11be-3397-4fee-8d6f-4b5809feb6d9")
 		)
@@ -6897,7 +6941,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "C8")
+					(reference "C5")
 					(unit 1)
 				)
 			)
@@ -6971,6 +7015,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C492401"
+			(at 242.57 83.82 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "1"
 			(uuid "a791f15c-fdb1-4255-85ba-68a41785bb3a")
 		)
@@ -6998,7 +7053,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "3b3caed1-6a24-45a9-80da-656d8fa0ce29")
-		(property "Reference" "R8"
+		(property "Reference" "R13"
 			(at 101.6 133.3499 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -7053,6 +7108,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C17414"
+			(at 99.06 134.62 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "1"
 			(uuid "a8c9d3a3-fda7-4c4f-bca3-5369339ecf77")
 		)
@@ -7062,7 +7128,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "R8")
+					(reference "R13")
 					(unit 1)
 				)
 			)
@@ -7079,7 +7145,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "3b47167d-f612-4879-93a3-e336ae6813ce")
-		(property "Reference" "R11"
+		(property "Reference" "R16"
 			(at 219.71 104.14 90)
 			(show_name no)
 			(do_not_autoplace no)
@@ -7132,6 +7198,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C17414"
+			(at 220.98 101.6 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "2"
 			(uuid "fb8eb070-25fe-4eb5-b2c6-911be70c7729")
 		)
@@ -7141,7 +7218,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "R11")
+					(reference "R16")
 					(unit 1)
 				)
 			)
@@ -7159,7 +7236,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "42a651b9-4b47-4b0c-9c99-3e4ae5e5a482")
-		(property "Reference" "#PWR08"
+		(property "Reference" "#PWR030"
 			(at 49.53 193.04 0)
 			(hide yes)
 			(show_name no)
@@ -7219,7 +7296,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR08")
+					(reference "#PWR030")
 					(unit 1)
 				)
 			)
@@ -7291,6 +7368,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C2689642"
+			(at 50.8 143.51 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "1"
 			(uuid "9fdc333a-a498-4611-8c90-a246b021c7fb")
 		)
@@ -7318,7 +7406,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "46b5d98c-4522-48ac-b9db-88b0418f7815")
-		(property "Reference" "#PWR027"
+		(property "Reference" "#PWR031"
 			(at 53.34 160.02 0)
 			(hide yes)
 			(show_name no)
@@ -7378,7 +7466,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR027")
+					(reference "#PWR031")
 					(unit 1)
 				)
 			)
@@ -7396,7 +7484,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "4d8af7d8-b598-48ca-b82d-8e7675f7b49f")
-		(property "Reference" "#PWR031"
+		(property "Reference" "#PWR056"
 			(at 237.49 46.99 0)
 			(hide yes)
 			(show_name no)
@@ -7456,7 +7544,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR031")
+					(reference "#PWR056")
 					(unit 1)
 				)
 			)
@@ -7473,7 +7561,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "509c1858-e7b6-4770-b266-0c68c0d73059")
-		(property "Reference" "R18"
+		(property "Reference" "R9"
 			(at 48.768 36.83 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -7526,6 +7614,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C17674"
+			(at 45.72 38.1 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "2"
 			(uuid "23a38fbe-fd7c-4b97-999f-f3477a6b42b5")
 		)
@@ -7535,7 +7634,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "R18")
+					(reference "R9")
 					(unit 1)
 				)
 			)
@@ -7553,7 +7652,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "53df1cb6-9a77-4664-91f6-926a468464be")
-		(property "Reference" "#PWR026"
+		(property "Reference" "#PWR052"
 			(at 218.44 40.64 0)
 			(hide yes)
 			(show_name no)
@@ -7613,7 +7712,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR026")
+					(reference "#PWR052")
 					(unit 1)
 				)
 			)
@@ -7673,6 +7772,17 @@
 			)
 		)
 		(property "Description" "Light emitting diode"
+			(at 231.14 120.65 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC" "C84256"
 			(at 231.14 120.65 0)
 			(hide yes)
 			(show_name no)
@@ -7774,6 +7884,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C76884"
+			(at 100.33 176.53 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "1"
 			(uuid "822e1b38-b72d-4291-b364-39482ed89b4a")
 		)
@@ -7790,7 +7911,7 @@
 		)
 	)
 	(symbol
-		(lib_id "MCU_ST_STM32L4:STM32L432KCUx")
+		(lib_id "MCU_ST_STM32L4:STM32L432KBUx")
 		(at 158.75 119.38 0)
 		(unit 1)
 		(body_style 1)
@@ -7801,7 +7922,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "5dc7e316-9f87-483c-9cad-83e6e52cb9fa")
-		(property "Reference" "U1"
+		(property "Reference" "U4"
 			(at 160.8933 144.78 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -7812,7 +7933,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "STM32L432KCUx"
+		(property "Value" "STM32L432KBUx"
 			(at 160.8933 147.32 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -7835,7 +7956,7 @@
 				(justify right)
 			)
 		)
-		(property "Datasheet" "https://www.st.com/resource/en/datasheet/stm32l432kc.pdf"
+		(property "Datasheet" "https://www.st.com/resource/en/datasheet/stm32l432kb.pdf"
 			(at 158.75 119.38 0)
 			(hide yes)
 			(show_name no)
@@ -7846,7 +7967,18 @@
 				)
 			)
 		)
-		(property "Description" "STMicroelectronics Arm Cortex-M4 MCU, 256KB flash, 64KB RAM, 80 MHz, 1.71-3.6V, 26 GPIO, UFQFPN32"
+		(property "Description" "STMicroelectronics Arm Cortex-M4 MCU, 128KB flash, 64KB RAM, 80 MHz, 1.71-3.6V, 26 GPIO, UFQFPN32"
+			(at 158.75 119.38 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC" "C2928224"
 			(at 158.75 119.38 0)
 			(hide yes)
 			(show_name no)
@@ -7959,7 +8091,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "U1")
+					(reference "U4")
 					(unit 1)
 				)
 			)
@@ -7977,7 +8109,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "60ea56d1-5f8c-47dd-8fb1-f8f1c2bb5ee1")
-		(property "Reference" "#PWR038"
+		(property "Reference" "#PWR058"
 			(at 246.38 120.65 0)
 			(hide yes)
 			(show_name no)
@@ -8038,7 +8170,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR038")
+					(reference "#PWR058")
 					(unit 1)
 				)
 			)
@@ -8110,6 +8242,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C2689642"
+			(at 99.06 146.05 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "1"
 			(uuid "4ce90292-d230-416d-b423-cf8e1b5a3821")
 		)
@@ -8137,7 +8280,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "6ce24782-2efb-4d23-b236-5a5fbc59a2e7")
-		(property "Reference" "#PWR01"
+		(property "Reference" "#PWR050"
 			(at 158.75 154.94 0)
 			(hide yes)
 			(show_name no)
@@ -8197,7 +8340,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR01")
+					(reference "#PWR050")
 					(unit 1)
 				)
 			)
@@ -8215,7 +8358,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "6d6b1e93-2838-4241-960a-c6549827acdc")
-		(property "Reference" "C2"
+		(property "Reference" "C4"
 			(at 53.34 179.0699 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -8292,6 +8435,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C1779"
+			(at 49.53 180.34 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "1"
 			(uuid "fb95a060-c7e4-479e-8e95-7cae13f8f07b")
 		)
@@ -8301,7 +8455,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "C2")
+					(reference "C4")
 					(unit 1)
 				)
 			)
@@ -8319,7 +8473,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "72a3b05c-9c60-43fc-b0fe-3b8cb637c1d8")
-		(property "Reference" "C4"
+		(property "Reference" "C8"
 			(at 124.46 179.0699 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -8396,6 +8550,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C1710"
+			(at 120.65 180.34 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "1"
 			(uuid "193ad871-795d-4205-9e73-a2cae90e6e08")
 		)
@@ -8405,7 +8570,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "C4")
+					(reference "C8")
 					(unit 1)
 				)
 			)
@@ -8423,7 +8588,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "76ed7ba5-bff4-4e8e-8bdb-9561fb402452")
-		(property "Reference" "#PWR04"
+		(property "Reference" "#PWR033"
 			(at 63.5 193.04 0)
 			(hide yes)
 			(show_name no)
@@ -8483,7 +8648,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR04")
+					(reference "#PWR033")
 					(unit 1)
 				)
 			)
@@ -8500,7 +8665,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "79d932c9-8cdf-4eef-9f20-9d18995e9af5")
-		(property "Reference" "J7"
+		(property "Reference" "J3"
 			(at 100.33 30.48 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -8553,6 +8718,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C42431840"
+			(at 100.33 40.64 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "1"
 			(uuid "0a756e9f-5a96-4141-afdd-b301308fdbc2")
 		)
@@ -8580,7 +8756,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "J7")
+					(reference "J3")
 					(unit 1)
 				)
 			)
@@ -8598,7 +8774,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "7ac8f235-378a-45cf-9633-80a7f12f6cde")
-		(property "Reference" "#PWR07"
+		(property "Reference" "#PWR029"
 			(at 49.53 177.8 0)
 			(hide yes)
 			(show_name no)
@@ -8658,7 +8834,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR07")
+					(reference "#PWR029")
 					(unit 1)
 				)
 			)
@@ -8675,7 +8851,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "7ad8cc3e-13a1-4021-b834-e48ba247c29e")
-		(property "Reference" "#PWR065"
+		(property "Reference" "#PWR027"
 			(at 45.72 34.29 0)
 			(hide yes)
 			(show_name no)
@@ -8735,7 +8911,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR065")
+					(reference "#PWR027")
 					(unit 1)
 				)
 			)
@@ -8753,7 +8929,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "801ef18f-daef-4765-abd5-00de8f0e6e2d")
-		(property "Reference" "C3"
+		(property "Reference" "C7"
 			(at 81.28 179.0699 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -8830,6 +9006,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C49678"
+			(at 77.47 180.34 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "1"
 			(uuid "71a82fc1-0c72-411e-ba6f-63e4700af864")
 		)
@@ -8839,7 +9026,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "C3")
+					(reference "C7")
 					(unit 1)
 				)
 			)
@@ -8857,7 +9044,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "818aabf7-ce99-40e7-a5e8-fe59b8355350")
-		(property "Reference" "#PWR033"
+		(property "Reference" "#PWR040"
 			(at 88.9 177.8 0)
 			(hide yes)
 			(show_name no)
@@ -8917,7 +9104,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR033")
+					(reference "#PWR040")
 					(unit 1)
 				)
 			)
@@ -8935,7 +9122,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "83ca54b8-e0ca-4107-9745-facd0266b368")
-		(property "Reference" "#PWR037"
+		(property "Reference" "#PWR043"
 			(at 99.06 160.02 0)
 			(hide yes)
 			(show_name no)
@@ -8995,7 +9182,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR037")
+					(reference "#PWR043")
 					(unit 1)
 				)
 			)
@@ -9012,7 +9199,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "843a0c83-5e3a-4702-a40f-66b6dc48b803")
-		(property "Reference" "#PWR074"
+		(property "Reference" "#PWR041"
 			(at 85.09 45.72 0)
 			(hide yes)
 			(show_name no)
@@ -9072,7 +9259,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR074")
+					(reference "#PWR041")
 					(unit 1)
 				)
 			)
@@ -9090,7 +9277,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "855dccb9-191e-4117-a8b1-847e0f5c588d")
-		(property "Reference" "#PWR010"
+		(property "Reference" "#PWR046"
 			(at 120.65 193.04 0)
 			(hide yes)
 			(show_name no)
@@ -9150,7 +9337,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR010")
+					(reference "#PWR046")
 					(unit 1)
 				)
 			)
@@ -9168,7 +9355,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "86d61ed0-a212-47d5-9af9-485c141b3c94")
-		(property "Reference" "#PWR040"
+		(property "Reference" "#PWR055"
 			(at 228.6 110.49 0)
 			(hide yes)
 			(show_name no)
@@ -9228,7 +9415,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR040")
+					(reference "#PWR055")
 					(unit 1)
 				)
 			)
@@ -9246,7 +9433,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "93db0a2c-8a4b-4b29-a1b9-36029b53c68d")
-		(property "Reference" "C1"
+		(property "Reference" "C6"
 			(at 67.31 179.0699 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -9323,6 +9510,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C49678"
+			(at 63.5 180.34 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "1"
 			(uuid "2dc14d72-8fe7-4d65-bc93-a60e21cc57f3")
 		)
@@ -9332,7 +9530,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "C1")
+					(reference "C6")
 					(unit 1)
 				)
 			)
@@ -9349,7 +9547,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "983178a0-4a15-434f-8bbb-972f3e3092fb")
-		(property "Reference" "R9"
+		(property "Reference" "R14"
 			(at 217.17 123.19 90)
 			(show_name no)
 			(do_not_autoplace no)
@@ -9402,6 +9600,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C17710"
+			(at 218.44 120.65 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "2"
 			(uuid "c38ba2b2-99d9-4deb-8463-87d7c314192e")
 		)
@@ -9411,7 +9620,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "R9")
+					(reference "R14")
 					(unit 1)
 				)
 			)
@@ -9429,7 +9638,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "9b928f11-fe7d-4b71-894d-546189820c04")
-		(property "Reference" "#PWR032"
+		(property "Reference" "#PWR044"
 			(at 111.76 177.8 0)
 			(hide yes)
 			(show_name no)
@@ -9489,7 +9698,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR032")
+					(reference "#PWR044")
 					(unit 1)
 				)
 			)
@@ -9562,6 +9771,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C2480"
+			(at 220.98 85.09 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "1"
 			(uuid "99ebf7a2-eb51-4ca5-81b1-e7a477f85017")
 		)
@@ -9589,7 +9809,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "acd41dff-c2d3-4586-88ee-3a902e038b60")
-		(property "Reference" "#PWR025"
+		(property "Reference" "#PWR053"
 			(at 218.44 55.88 0)
 			(hide yes)
 			(show_name no)
@@ -9649,7 +9869,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR025")
+					(reference "#PWR053")
 					(unit 1)
 				)
 			)
@@ -9721,6 +9941,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C2689642"
+			(at 80.01 135.89 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "1"
 			(uuid "fd54f9c6-1740-4cf2-9f09-aad7678a42b9")
 		)
@@ -9748,7 +9979,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "afda1cc5-c654-476c-8bb0-edb95eab0d7c")
-		(property "Reference" "J3"
+		(property "Reference" "J5"
 			(at 247.015 40.64 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -9801,6 +10032,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C2691448"
+			(at 247.65 48.26 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "4"
 			(uuid "5b57bf01-b152-46af-ab4e-7db21210824f")
 		)
@@ -9816,7 +10058,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "J3")
+					(reference "J5")
 					(unit 1)
 				)
 			)
@@ -9834,7 +10076,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "b4ea73e3-f65a-45fa-9996-956b5bd0680a")
-		(property "Reference" "#PWR06"
+		(property "Reference" "#PWR036"
 			(at 77.47 193.04 0)
 			(hide yes)
 			(show_name no)
@@ -9894,7 +10136,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR06")
+					(reference "#PWR036")
 					(unit 1)
 				)
 			)
@@ -9911,7 +10153,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "b7177179-d4b1-4e77-a486-ecb8aa7bf6d3")
-		(property "Reference" "#PWR075"
+		(property "Reference" "#PWR034"
 			(at 69.85 62.23 0)
 			(hide yes)
 			(show_name no)
@@ -9971,7 +10213,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR075")
+					(reference "#PWR034")
 					(unit 1)
 				)
 			)
@@ -9989,7 +10231,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "b8400ff5-e416-42ac-b6b6-7bb84a4b3bbe")
-		(property "Reference" "R20"
+		(property "Reference" "R11"
 			(at 72.39 60.9599 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -10044,6 +10286,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C17414"
+			(at 69.85 62.23 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "1"
 			(uuid "9faad7ec-8ec1-4888-856d-ff924b040c6f")
 		)
@@ -10053,7 +10306,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "R20")
+					(reference "R11")
 					(unit 1)
 				)
 			)
@@ -10070,7 +10323,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "bacb0571-c3ec-46b8-9db2-9a5fce5ed5f5")
-		(property "Reference" "C7"
+		(property "Reference" "C10"
 			(at 204.47 34.798 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -10081,7 +10334,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "4.3p"
+		(property "Value" "8.2p"
 			(at 206.756 33.782 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -10147,6 +10400,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C1840"
+			(at 205.74 40.64 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "2"
 			(uuid "b10e49b5-a22d-4627-9e29-a27a9b909d62")
 		)
@@ -10156,7 +10420,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "C7")
+					(reference "C10")
 					(unit 1)
 				)
 			)
@@ -10174,7 +10438,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "bb673dbd-c4e2-427f-95bd-feb25d15bbe5")
-		(property "Reference" "C5"
+		(property "Reference" "C9"
 			(at 138.43 179.0699 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -10251,6 +10515,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C28323"
+			(at 134.62 180.34 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "1"
 			(uuid "8617c2e5-e2b2-437a-94dd-3a6fca7eb956")
 		)
@@ -10260,7 +10535,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "C5")
+					(reference "C9")
 					(unit 1)
 				)
 			)
@@ -10278,7 +10553,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "bdeb0f16-e028-4b1f-8108-122f6b8c555b")
-		(property "Reference" "#PWR039"
+		(property "Reference" "#PWR059"
 			(at 246.38 128.27 0)
 			(hide yes)
 			(show_name no)
@@ -10339,7 +10614,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR039")
+					(reference "#PWR059")
 					(unit 1)
 				)
 			)
@@ -10356,7 +10631,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "bf4639af-573b-4b04-8bd8-690b4860d02f")
-		(property "Reference" "C6"
+		(property "Reference" "C11"
 			(at 204.724 52.07 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -10367,7 +10642,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "4.3p"
+		(property "Value" "8.2p"
 			(at 207.0099 52.07 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -10433,6 +10708,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C1840"
+			(at 205.74 55.88 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "2"
 			(uuid "627917ca-b5bf-462f-a56f-98499fc949df")
 		)
@@ -10442,7 +10728,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "C6")
+					(reference "C11")
 					(unit 1)
 				)
 			)
@@ -10460,7 +10746,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "c0dfa652-d5c9-42d1-8a2a-1b724b1a1a76")
-		(property "Reference" "#PWR03"
+		(property "Reference" "#PWR032"
 			(at 63.5 177.8 0)
 			(hide yes)
 			(show_name no)
@@ -10520,7 +10806,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR03")
+					(reference "#PWR032")
 					(unit 1)
 				)
 			)
@@ -10537,7 +10823,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "c3a6278e-2e62-49d0-bfba-e28d439aaddf")
-		(property "Reference" "#PWR02"
+		(property "Reference" "#PWR049"
 			(at 158.75 85.09 0)
 			(hide yes)
 			(show_name no)
@@ -10597,7 +10883,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR02")
+					(reference "#PWR049")
 					(unit 1)
 				)
 			)
@@ -10615,7 +10901,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "d2216eaf-308c-4347-96a4-4989b3f3eb43")
-		(property "Reference" "R7"
+		(property "Reference" "R12"
 			(at 82.55 146.0499 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -10670,6 +10956,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C17414"
+			(at 80.01 147.32 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "1"
 			(uuid "0b45ab9c-c8c1-4001-aed0-a7e493f51f9d")
 		)
@@ -10679,7 +10976,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "R7")
+					(reference "R12")
 					(unit 1)
 				)
 			)
@@ -10697,7 +10994,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "dc7ba3a9-e026-4fdd-84c3-a6fabc3cef11")
-		(property "Reference" "#PWR028"
+		(property "Reference" "#PWR038"
 			(at 80.01 160.02 0)
 			(hide yes)
 			(show_name no)
@@ -10757,7 +11054,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR028")
+					(reference "#PWR038")
 					(unit 1)
 				)
 			)
@@ -10775,7 +11072,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "de008022-49ef-41dc-a700-5b5a3c3ad0b9")
-		(property "Reference" "#PWR05"
+		(property "Reference" "#PWR035"
 			(at 77.47 177.8 0)
 			(hide yes)
 			(show_name no)
@@ -10835,7 +11132,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR05")
+					(reference "#PWR035")
 					(unit 1)
 				)
 			)
@@ -10852,7 +11149,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "e3561802-d78e-4b4e-9cd7-b2bc6d5a6b0e")
-		(property "Reference" "#PWR013"
+		(property "Reference" "#PWR051"
 			(at 161.29 85.09 0)
 			(hide yes)
 			(show_name no)
@@ -10912,7 +11209,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR013")
+					(reference "#PWR051")
 					(unit 1)
 				)
 			)
@@ -10930,7 +11227,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "e3c5f031-819e-42ad-a7c0-62385fcb0539")
-		(property "Reference" "#PWR012"
+		(property "Reference" "#PWR048"
 			(at 134.62 193.04 0)
 			(hide yes)
 			(show_name no)
@@ -10990,7 +11287,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR012")
+					(reference "#PWR048")
 					(unit 1)
 				)
 			)
@@ -11007,7 +11304,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "ea4a4fdd-751b-4751-957a-fe2e83aa2c15")
-		(property "Reference" "#PWR029"
+		(property "Reference" "#PWR037"
 			(at 80.01 130.81 0)
 			(hide yes)
 			(show_name no)
@@ -11067,7 +11364,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR029")
+					(reference "#PWR037")
 					(unit 1)
 				)
 			)
@@ -11084,7 +11381,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "ee803231-1399-4967-b26c-adb1dcca6919")
-		(property "Reference" "R19"
+		(property "Reference" "R10"
 			(at 48.768 49.53 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -11137,6 +11434,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C17674"
+			(at 45.72 50.8 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "2"
 			(uuid "8b6b8533-0e06-4ac2-9bef-8411db29b4c3")
 		)
@@ -11146,7 +11454,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "R19")
+					(reference "R10")
 					(unit 1)
 				)
 			)
@@ -11216,6 +11524,17 @@
 				)
 			)
 		)
+		(property "LCSC" "C98221"
+			(at 231.14 128.27 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(property "Sim.Pins" "1=K 2=A"
 			(at 231.14 128.27 0)
 			(hide yes)
@@ -11254,7 +11573,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "f7b0a6b0-1747-46b2-90b6-dcf48203239a")
-		(property "Reference" "#PWR09"
+		(property "Reference" "#PWR045"
 			(at 120.65 177.8 0)
 			(hide yes)
 			(show_name no)
@@ -11314,7 +11633,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR09")
+					(reference "#PWR045")
 					(unit 1)
 				)
 			)
@@ -11332,7 +11651,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "faeb290b-cfe6-4db9-a5a6-ff1d234cdbfe")
-		(property "Reference" "#PWR066"
+		(property "Reference" "#PWR028"
 			(at 45.72 66.04 0)
 			(hide yes)
 			(show_name no)
@@ -11392,7 +11711,7 @@
 		(instances
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#PWR066")
+					(reference "#PWR028")
 					(unit 1)
 				)
 			)
