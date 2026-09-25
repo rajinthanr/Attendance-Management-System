@@ -6852,7 +6852,6 @@
 		(on_board yes)
 		(in_pos_files yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "869f9013-55e5-45f3-b307-b5e570f09ace")
 		(property "Reference" "#PWR050"
 			(at 147.32 63.5 0)
@@ -6865,14 +6864,15 @@
 				)
 			)
 		)
-		(property "Value" "+3V3"
-			(at 147.32 54.61 0)
+		(property "Value" "BAT+"
+			(at 148.336 56.896 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify left)
 			)
 		)
 		(property "Footprint" "Package_DFN_QFN:Diodes_UDFN3810-9_TYPE_B"
