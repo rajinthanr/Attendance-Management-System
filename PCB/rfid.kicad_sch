@@ -1193,7 +1193,7 @@
 			)
 			(embedded_fonts no)
 		)
-		(symbol "ST25R3916-AQWT:ST25R3916-AQWT"
+		(symbol "External:ST25R3916-AQWT"
 			(pin_names
 				(offset 1.016)
 			)
@@ -1202,43 +1202,40 @@
 			(on_board yes)
 			(in_pos_files yes)
 			(duplicate_pin_numbers_are_jumpers no)
-			(property "Reference" "U"
-				(at -15.24 36.449 0)
-				(show_name no)
+			(property "Reference" "U5"
+				(at -7.874 38.1 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify left bottom)
 				)
 			)
 			(property "Value" "ST25R3916-AQWT"
-				(at -15.24 -38.1 0)
-				(show_name no)
+				(at -2.794 40.894 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify left bottom)
 				)
 			)
-			(property "Footprint" "ST25R3916-AQWT:QFN50P500X500X100-33N"
-				(at 0 0 0)
-				(show_name no)
+			(property "Footprint" "Snapeda:QFN50P500X500X100-33N"
+				(at 0 111.76 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "Datasheet" ""
 				(at 0 0 0)
-				(show_name no)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
@@ -1248,20 +1245,19 @@
 				)
 			)
 			(property "Description" "RFID, READ/WRITE, 13.56MHZ, VFQFPN-32; Frequency Min:-; Frequency Max:13.56MHz; RFID IC Type:Read, Write; Programmable Memory:-; Output Power:1.6W; RF IC Case Style:VFQFPN; No. of Pins:32Pins; Supply Voltage Min:2.4V; Supply Voltage Max:5.5V; Current Consumption:-; Product Range:-; MSL:MSL 3 - 168 hours; SVHC:No SVHC (27-Jun-2018)"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 109.22 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "SNAPEDA_PACKAGE_ID" ""
 				(at 0 0 0)
-				(show_name no)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
@@ -1272,20 +1268,19 @@
 				)
 			)
 			(property "B_NOM" "0.25"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 106.68 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "EMAX" ""
 				(at 0 0 0)
-				(show_name no)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
@@ -1297,7 +1292,7 @@
 			)
 			(property "VACANCIES" ""
 				(at 0 0 0)
-				(show_name no)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
@@ -1309,7 +1304,7 @@
 			)
 			(property "BALL_COLUMNS" ""
 				(at 0 0 0)
-				(show_name no)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
@@ -1320,32 +1315,30 @@
 				)
 			)
 			(property "A_MAX" "1.0"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 104.14 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "PIN_COUNT_D" "8.0"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 101.6 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "THERMAL_PAD" ""
 				(at 0 0 0)
-				(show_name no)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
@@ -1357,7 +1350,7 @@
 			)
 			(property "DMAX" ""
 				(at 0 0 0)
-				(show_name no)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
@@ -1368,32 +1361,30 @@
 				)
 			)
 			(property "Check_prices" "https://www.snapeda.com/parts/ST25R3916AQWT/STMicroelectronics/view-part/?ref=eda"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 99.06 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "B_MAX" "0.3"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 96.52 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "EMIN" ""
 				(at 0 0 0)
-				(show_name no)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
@@ -1405,7 +1396,7 @@
 			)
 			(property "JEDEC" ""
 				(at 0 0 0)
-				(show_name no)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
@@ -1416,68 +1407,63 @@
 				)
 			)
 			(property "Price" "None"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 93.98 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "ENOM" "0.5"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 91.44 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "D_NOM" "5.0"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 88.9 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "D_MAX" "5.0"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 86.36 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "L_MAX" "0.5"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 83.82 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "PACKAGE_TYPE" ""
 				(at 0 0 0)
-				(show_name no)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
@@ -1488,56 +1474,52 @@
 				)
 			)
 			(property "Package" "None"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 81.28 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "E2_NOM" "3.5"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 78.74 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "STANDARD" "IPC 7351B"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 76.2 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "PARTREV" "4"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 73.66 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "DNOM" ""
 				(at 0 0 0)
-				(show_name no)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
@@ -1548,20 +1530,19 @@
 				)
 			)
 			(property "SnapEDA_Link" "https://www.snapeda.com/parts/ST25R3916AQWT/STMicroelectronics/view-part/?ref=snap"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 71.12 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "DMIN" ""
 				(at 0 0 0)
-				(show_name no)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
@@ -1572,20 +1553,19 @@
 				)
 			)
 			(property "E_NOM" "5.0"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 68.58 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "BALL_ROWS" ""
 				(at 0 0 0)
-				(show_name no)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
@@ -1596,56 +1576,52 @@
 				)
 			)
 			(property "B_MIN" "0.18"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 66.04 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "D2_NOM" "3.5"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 63.5 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "L_NOM" "0.4"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 60.96 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "MANUFACTURER" "STMicroelectronics"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 58.42 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "IPC" ""
 				(at 0 0 0)
-				(show_name no)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
@@ -1657,7 +1633,7 @@
 			)
 			(property "PIN_COLUMNS" ""
 				(at 0 0 0)
-				(show_name no)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
@@ -1668,32 +1644,30 @@
 				)
 			)
 			(property "MF" "STMicroelectronics"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 55.88 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "PIN_COUNT_E" "8.0"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 53.34 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "BODY_DIAMETER" ""
 				(at 0 0 0)
-				(show_name no)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
@@ -1704,44 +1678,41 @@
 				)
 			)
 			(property "E_MIN" "5.0"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 50.8 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "D_MIN" "5.0"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 48.26 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "MP" "ST25R3916AQWT"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 45.72 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "PINS" ""
 				(at 0 0 0)
-				(show_name no)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
@@ -1752,45 +1723,42 @@
 				)
 			)
 			(property "L_MIN" "0.3"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 43.18 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "Availability" "In Stock"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 40.64 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(property "E_MAX" "5.0"
-				(at 0 0 0)
-				(show_name no)
+				(at 0 38.1 0)
+				(show_name yes)
 				(do_not_autoplace no)
 				(hide yes)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify bottom)
 				)
 			)
 			(symbol "ST25R3916-AQWT_0_0"
 				(rectangle
-					(start -15.24 -35.56)
-					(end 15.24 35.56)
+					(start -15.24 35.56)
+					(end 15.24 -35.56)
 					(stroke
 						(width 0.254)
 						(type default)
@@ -5958,6 +5926,679 @@
 		)
 	)
 	(symbol
+		(lib_id "External:ST25R3916-AQWT")
+		(at 109.22 109.22 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "6c4f32b2-4558-410b-baef-fd5758e3f824")
+		(property "Reference" "U5"
+			(at 101.346 71.12 0)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "ST25R3916-AQWT"
+			(at 106.426 68.326 0)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "External:QFN50P500X500X100-33N"
+			(at 109.22 -2.54 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 109.22 109.22 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "RFID, READ/WRITE, 13.56MHZ, VFQFPN-32; Frequency Min:-; Frequency Max:13.56MHz; RFID IC Type:Read, Write; Programmable Memory:-; Output Power:1.6W; RF IC Case Style:VFQFPN; No. of Pins:32Pins; Supply Voltage Min:2.4V; Supply Voltage Max:5.5V; Current Consumption:-; Product Range:-; MSL:MSL 3 - 168 hours; SVHC:No SVHC (27-Jun-2018)"
+			(at 109.22 0 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "SNAPEDA_PACKAGE_ID" ""
+			(at 109.22 109.22 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+			)
+		)
+		(property "B_NOM" "0.25"
+			(at 109.22 2.54 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "EMAX" ""
+			(at 109.22 109.22 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+			)
+		)
+		(property "VACANCIES" ""
+			(at 109.22 109.22 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+			)
+		)
+		(property "BALL_COLUMNS" ""
+			(at 109.22 109.22 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+			)
+		)
+		(property "A_MAX" "1.0"
+			(at 109.22 5.08 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "PIN_COUNT_D" "8.0"
+			(at 109.22 7.62 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "THERMAL_PAD" ""
+			(at 109.22 109.22 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+			)
+		)
+		(property "DMAX" ""
+			(at 109.22 109.22 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+			)
+		)
+		(property "Check_prices" "https://www.snapeda.com/parts/ST25R3916AQWT/STMicroelectronics/view-part/?ref=eda"
+			(at 109.22 10.16 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "B_MAX" "0.3"
+			(at 109.22 12.7 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "EMIN" ""
+			(at 109.22 109.22 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+			)
+		)
+		(property "JEDEC" ""
+			(at 109.22 109.22 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+			)
+		)
+		(property "Price" "None"
+			(at 109.22 15.24 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ENOM" "0.5"
+			(at 109.22 17.78 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "D_NOM" "5.0"
+			(at 109.22 20.32 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "D_MAX" "5.0"
+			(at 109.22 22.86 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "L_MAX" "0.5"
+			(at 109.22 25.4 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "PACKAGE_TYPE" ""
+			(at 109.22 109.22 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+			)
+		)
+		(property "Package" "None"
+			(at 109.22 27.94 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "E2_NOM" "3.5"
+			(at 109.22 30.48 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "STANDARD" "IPC 7351B"
+			(at 109.22 33.02 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "PARTREV" "4"
+			(at 109.22 35.56 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "DNOM" ""
+			(at 109.22 109.22 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+			)
+		)
+		(property "SnapEDA_Link" "https://www.snapeda.com/parts/ST25R3916AQWT/STMicroelectronics/view-part/?ref=snap"
+			(at 109.22 38.1 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "DMIN" ""
+			(at 109.22 109.22 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+			)
+		)
+		(property "E_NOM" "5.0"
+			(at 109.22 40.64 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "BALL_ROWS" ""
+			(at 109.22 109.22 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+			)
+		)
+		(property "B_MIN" "0.18"
+			(at 109.22 43.18 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "D2_NOM" "3.5"
+			(at 109.22 45.72 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "L_NOM" "0.4"
+			(at 109.22 48.26 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "MANUFACTURER" "STMicroelectronics"
+			(at 109.22 50.8 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "IPC" ""
+			(at 109.22 109.22 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+			)
+		)
+		(property "PIN_COLUMNS" ""
+			(at 109.22 109.22 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+			)
+		)
+		(property "MF" "STMicroelectronics"
+			(at 109.22 53.34 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "PIN_COUNT_E" "8.0"
+			(at 109.22 55.88 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "BODY_DIAMETER" ""
+			(at 109.22 109.22 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+			)
+		)
+		(property "E_MIN" "5.0"
+			(at 109.22 58.42 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "D_MIN" "5.0"
+			(at 109.22 60.96 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "MP" "ST25R3916AQWT"
+			(at 109.22 63.5 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "PINS" ""
+			(at 109.22 109.22 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+			)
+		)
+		(property "L_MIN" "0.3"
+			(at 109.22 66.04 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Availability" "In Stock"
+			(at 109.22 68.58 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "E_MAX" "5.0"
+			(at 109.22 71.12 0)
+			(hide yes)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "7"
+			(uuid "c982fe0b-a6f8-49ff-9416-6fb27f69856d")
+		)
+		(pin "6"
+			(uuid "3340a8c4-8d94-4c09-b7ca-6890478b90e2")
+		)
+		(pin "2"
+			(uuid "68daae34-1e5b-49dc-85ee-2705e4f2179c")
+		)
+		(pin "1"
+			(uuid "5aaa0ec5-dd6b-4025-bac4-9c9dd8b5681b")
+		)
+		(pin "10"
+			(uuid "1aa91946-850d-429d-927e-c3275d7508bf")
+		)
+		(pin "9"
+			(uuid "ade2dae8-ecc8-4c21-ac89-d66060e74ad2")
+		)
+		(pin "33"
+			(uuid "19a54cc5-5216-4afc-b5ff-4c5ec08ec0d9")
+		)
+		(pin "11"
+			(uuid "0f5711f1-de70-4fbe-8765-51ded7160390")
+		)
+		(pin "4"
+			(uuid "74bdcbdf-a88f-4098-b781-a7c858f3a250")
+		)
+		(pin "5"
+			(uuid "1c272a38-6765-4955-b0ae-1cc4b68e30ca")
+		)
+		(pin "14"
+			(uuid "f9a432e4-3283-4001-b30d-c046512c7f69")
+		)
+		(pin "3"
+			(uuid "648a72d3-5896-441b-b3e0-e02ed5305e13")
+		)
+		(pin "13"
+			(uuid "74a54c35-bee7-438b-a7b6-eaf9d24be31d")
+		)
+		(pin "16"
+			(uuid "78b7af7b-9dd5-47a0-8957-c1d02427ac11")
+		)
+		(pin "25"
+			(uuid "d1fbbb67-8186-4139-b920-b5b54d2ad588")
+		)
+		(pin "17"
+			(uuid "37429b15-be0b-4171-b059-6df3402f4e99")
+		)
+		(pin "21"
+			(uuid "b64113c4-21d7-4818-b7fc-5d16ebd877a5")
+		)
+		(pin "29"
+			(uuid "6e4e1748-faae-46c3-9cad-2386f442b97d")
+		)
+		(pin "31"
+			(uuid "c41ead38-8df8-4a5f-b212-4017ffc4d5f9")
+		)
+		(pin "30"
+			(uuid "12c2ea79-2718-4a8d-89e7-521e49b421ca")
+		)
+		(pin "18"
+			(uuid "b4762886-2484-458d-a48c-61d4f37b4a73")
+		)
+		(pin "19"
+			(uuid "ce385d25-8af8-473e-985e-47201d621ec8")
+		)
+		(pin "22"
+			(uuid "505c7420-9683-43df-8fb1-ecf875d5f923")
+		)
+		(pin "8"
+			(uuid "36e44d08-8948-4dc4-bc9b-1cc2ee2a29f9")
+		)
+		(pin "15"
+			(uuid "5a2a9a37-ad9e-49b1-903b-4e169f016292")
+		)
+		(pin "24"
+			(uuid "44f728a0-ebff-4a2e-92fb-0c6d1717c9d4")
+		)
+		(pin "20"
+			(uuid "0d5134a7-f821-4440-8e86-15d9a95e6749")
+		)
+		(pin "32"
+			(uuid "8b619ee9-d0ed-45d4-b265-c42b6484bae5")
+		)
+		(pin "27"
+			(uuid "53a3c247-ad44-4cc9-860d-dbb7801ae43d")
+		)
+		(pin "28"
+			(uuid "9d02a16a-ea0b-4f18-8068-41a158e26231")
+		)
+		(pin "26"
+			(uuid "046a5ee7-71aa-46ab-81c5-39f46c4e369b")
+		)
+		(pin "12"
+			(uuid "602c4a2c-3ed7-4bdc-b9aa-4430c4be4a7c")
+		)
+		(pin "23"
+			(uuid "ad55dc84-4770-47a7-b242-86b40a616163")
+		)
+		(instances
+			(project "Attendance Management System"
+				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/c8797de9-443e-4542-ab6c-38920db86e79"
+					(reference "U5")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Device:R")
 		(at 83.82 73.66 0)
 		(unit 1)
@@ -6434,709 +7075,6 @@
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/c8797de9-443e-4542-ab6c-38920db86e79"
 					(reference "C29")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "ST25R3916-AQWT:ST25R3916-AQWT")
-		(at 109.22 109.22 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "8fa98ebb-ddc2-43d1-9d5b-8afdb7119227")
-		(property "Reference" "U4"
-			(at 109.22 68.58 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "ST25R3916-AQWT"
-			(at 109.22 71.12 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "External:QFN50P500X500X100-33N"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "Datasheet" ""
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "RFID, READ/WRITE, 13.56MHZ, VFQFPN-32; Frequency Min:-; Frequency Max:13.56MHz; RFID IC Type:Read, Write; Programmable Memory:-; Output Power:1.6W; RF IC Case Style:VFQFPN; No. of Pins:32Pins; Supply Voltage Min:2.4V; Supply Voltage Max:5.5V; Current Consumption:-; Product Range:-; MSL:MSL 3 - 168 hours; SVHC:No SVHC (27-Jun-2018)"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "SNAPEDA_PACKAGE_ID" ""
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "B_NOM" "0.25"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "EMAX" ""
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "VACANCIES" ""
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "BALL_COLUMNS" ""
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "A_MAX" "1.0"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "PIN_COUNT_D" "8.0"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "THERMAL_PAD" ""
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "DMAX" ""
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "Check_prices" "https://www.snapeda.com/parts/ST25R3916AQWT/STMicroelectronics/view-part/?ref=eda"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "B_MAX" "0.3"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "EMIN" ""
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "JEDEC" ""
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "Price" "None"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "ENOM" "0.5"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "D_NOM" "5.0"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "D_MAX" "5.0"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "L_MAX" "0.5"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "PACKAGE_TYPE" ""
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "Package" "None"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "E2_NOM" "3.5"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "STANDARD" "IPC 7351B"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "PARTREV" "4"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "DNOM" ""
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "SnapEDA_Link" "https://www.snapeda.com/parts/ST25R3916AQWT/STMicroelectronics/view-part/?ref=snap"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "DMIN" ""
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "E_NOM" "5.0"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "BALL_ROWS" ""
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "B_MIN" "0.18"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "D2_NOM" "3.5"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "L_NOM" "0.4"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "MANUFACTURER" "STMicroelectronics"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "IPC" ""
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "PIN_COLUMNS" ""
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "MF" "STMicroelectronics"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "PIN_COUNT_E" "8.0"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "BODY_DIAMETER" ""
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "E_MIN" "5.0"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "D_MIN" "5.0"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "MP" "ST25R3916AQWT"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "PINS" ""
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "L_MIN" "0.3"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "Availability" "In Stock"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(property "E_MAX" "5.0"
-			(at 109.22 109.22 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-			)
-		)
-		(pin "5"
-			(uuid "893f6821-0ea8-4e82-86f0-7368bd4ac370")
-		)
-		(pin "4"
-			(uuid "2b2a1990-d27b-4c8b-bbce-a47f704cc7bf")
-		)
-		(pin "1"
-			(uuid "50909b5e-6c2e-4438-aa0d-ec4a48f14451")
-		)
-		(pin "15"
-			(uuid "c82893ee-601a-4bbf-8cfe-207bc11aa1ca")
-		)
-		(pin "8"
-			(uuid "f2ecc733-6da7-4e86-b368-6cf3fc34fafb")
-		)
-		(pin "2"
-			(uuid "28ddaf34-159e-48b4-b768-62765a2bede2")
-		)
-		(pin "6"
-			(uuid "5c803270-db76-425a-9a36-1300f0b047d2")
-		)
-		(pin "3"
-			(uuid "88dbcb6c-df7d-422d-a38f-cf462ffd7f11")
-		)
-		(pin "19"
-			(uuid "86340596-e96b-464e-a4b0-73e0a69375a9")
-		)
-		(pin "31"
-			(uuid "c8aaf0f3-6b28-4e47-afb0-0c7fbb7c39c0")
-		)
-		(pin "30"
-			(uuid "94f39c20-6fa5-4372-b0d0-2a5c46f85f7b")
-		)
-		(pin "21"
-			(uuid "0fba982a-2181-4e86-b79f-ee1d86f406a1")
-		)
-		(pin "29"
-			(uuid "c4354567-7934-4263-8384-d67b592248e3")
-		)
-		(pin "23"
-			(uuid "12520ab3-9400-4926-be63-4c575b328a4a")
-		)
-		(pin "32"
-			(uuid "57beb76a-847d-44af-a234-7cc845b4b9b1")
-		)
-		(pin "11"
-			(uuid "70dbbc9f-a426-47fa-8b73-a2679c2fb70a")
-		)
-		(pin "13"
-			(uuid "e089e185-c0a0-4970-818b-69a4c14c6448")
-		)
-		(pin "33"
-			(uuid "6c95cde2-6fd4-4feb-a8f0-ce973de7c901")
-		)
-		(pin "16"
-			(uuid "cfc6e5d6-4c84-48bd-9741-ab97f21a60b6")
-		)
-		(pin "9"
-			(uuid "fec277a9-a498-4795-85b6-c22367a1eec8")
-		)
-		(pin "12"
-			(uuid "f52be30f-c063-4542-a81d-7fc4312086b5")
-		)
-		(pin "10"
-			(uuid "9cbd4171-6d94-42a8-9c5e-606e6a358237")
-		)
-		(pin "22"
-			(uuid "1d89fbaa-0736-4ce2-8b75-4937ff289ddb")
-		)
-		(pin "14"
-			(uuid "47c25f9d-310e-4153-aa15-5a2c4894b721")
-		)
-		(pin "28"
-			(uuid "d93c644d-4cbe-4214-8d14-0e61188b3a87")
-		)
-		(pin "24"
-			(uuid "c96d1ee7-77d2-4550-97fa-28de7094ff76")
-		)
-		(pin "25"
-			(uuid "9ca1666a-580e-4984-ba3e-92ede2966467")
-		)
-		(pin "27"
-			(uuid "ac18f627-60b0-48fc-90d7-58a82005aa53")
-		)
-		(pin "26"
-			(uuid "0e35b24c-cb85-4e5d-ae17-b43c38c9f2ee")
-		)
-		(pin "18"
-			(uuid "6502bea3-15e3-4bf8-905b-a587500aebcd")
-		)
-		(pin "17"
-			(uuid "1577db2c-92fc-4b7e-a3fc-0124ee238968")
-		)
-		(pin "20"
-			(uuid "0873c231-ec94-4687-b2fa-0dbb4b094e3b")
-		)
-		(pin "7"
-			(uuid "56bcf401-90ae-4834-a805-df2442d40550")
-		)
-		(instances
-			(project "Attendance Management System"
-				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/c8797de9-443e-4542-ab6c-38920db86e79"
-					(reference "U4")
 					(unit 1)
 				)
 			)

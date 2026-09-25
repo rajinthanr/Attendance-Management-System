@@ -122,6 +122,10 @@ Every other part comes from the stock KiCad libraries.
   - Status LEDs: D1 (red) on STAT1, D2 (green) on STAT2 and D3 (green) on PG, each through 470 Ω. They are powered from `+5V`, so they only light while USB is plugged in.
 - **Battery:** J2 is a 2-pin JST-XA connector on `BAT+`.
 - **3.3 V supply:** U3 is a TPS7A0233 3.3 V LDO running from `BAT+` to `+3V3`. Its EN is tied to `BAT+`, so it is always on.
+- **Bulk capacitors (0805):**
+  - C35 (4.7 µF) on `+5V`. Keep the total on VBUS at or below USB's 10 µF limit.
+  - C36 (10 µF) on `BAT+`, covering the charger output, the LDO input and the motor.
+  - `+3V3` already has C2 (4.7 µF) and C21 (10 µF).
 
 ### `mcu.kicad_sch`
 
@@ -153,15 +157,13 @@ The unconnected pins are exactly the `.ioc` spares: PA1, PA5, PA6, PA8, PA10, PA
 **Battery divider:** R16/R17 put the PB7 PVD trip at about 1.2 V ÷ 0.365 ≈ 3.3 V, which matches `APP_BATT_CUTOFF_MV`. The firmware still assumes 4.7 M / 4.7 M, so change `APP_BATT_DIV_LOW_KOHM` to 2700.
 
 **Schematic, still open:**
-- **`+5V` and `BAT+` have no capacitors,** although both are needed: `+5V` is U2's input, and `BAT+` is U2's output and U3's input. The MCP73833 and TPS7A02 datasheets call for ceramic capacitors there.
 - **The reader's transmitter supply may be too weak.** VDD_TX is on `+3V3`, which comes from U3, a 200 mA LDO. With the field on, the transmitter can draw more than that. Check the current at your antenna and output power, or feed VDD_TX from `BAT+` instead.
 - **Check the EMC inductors' rating.** L3/L4 (470 nH, 0402) carry the full transmitter current, so confirm the part's current rating. Also specify C0G/NP0 for the matching and filter capacitors (C12–C19).
 - **The antenna has no real footprint.** AE1 and AE2 are two single-pin symbols. In the schematic, AE1 has no footprint and AE2 has none either. On the board, AE1 still carries an old DFN-8 footprint, and AE2 is missing. Give the coil a real footprint (a PCB loop, or a 2-pad connector for an external coil).
-- **Stray footprint on a power symbol:** `#PWR048`, a GND symbol on the RFID sheet, has a Footprint property of `ST25R3916-AQWT:QFN50P500X500X100-33N`. ERC reports this as `footprint_link_issues`.
-- **ERC: 12 errors and 4 warnings.**
+- **ERC: 12 errors and 3 warnings.**
   - 7 `pin_not_connected` errors, from the spare MCU pins. Add no-connect flags.
   - 5 `power_pin_not_driven` errors, on `+5V`, `+3V3`, `VDDA` and U4's VDD (DC1) and VDD_DR (DC3). Add `PWR_FLAG` symbols.
-  - Warnings: two `multiple_net_names` (`GND_DR`, a hidden U4 pin, is also on GND; `DC2` is also `+3V3`), plus the two library warnings above.
+  - Warnings: two `multiple_net_names` (`GND_DR`, a hidden U4 pin, is also on GND; `DC2` is also `+3V3`), plus the `lib_symbol_issues` warning for U4 above.
 
 **Layout:**
 - **Synced, not routed.** All 81 footprints are on F.Cu, and the only schematic parity issues are AE1 and AE2. There is no Edge.Cuts outline, and there are no tracks, vias or zones, so DRC reports 180 unconnected items and `invalid_outline`.
