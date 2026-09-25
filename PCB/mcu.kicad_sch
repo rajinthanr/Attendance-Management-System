@@ -3788,7 +3788,6 @@
 			)
 			(embedded_fonts no)
 		)
-
 		(symbol "power:PWR_FLAG"
 			(power global)
 			(pin_numbers
@@ -4042,7 +4041,20 @@
 				)
 			)
 			(embedded_fonts no)
-		)	)
+		)
+	)
+	(rectangle
+		(start 40.64 17.78)
+		(end 60.96 68.58)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(fill
+			(type none)
+		)
+		(uuid "1e3560ae-a80e-49da-9962-4cd102baf05e")
+	)
 	(rectangle
 		(start 43.434 113.284)
 		(end 117.094 160.528)
@@ -4054,6 +4066,30 @@
 			(type none)
 		)
 		(uuid "31d608b1-493e-4243-831f-c83c15e06977")
+	)
+	(rectangle
+		(start 64.77 24.13)
+		(end 120.65 86.36)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(fill
+			(type none)
+		)
+		(uuid "53f49fbc-18e4-4c23-9529-a87110dda454")
+	)
+	(rectangle
+		(start 133.35 67.31)
+		(end 189.23 157.48)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(fill
+			(type none)
+		)
+		(uuid "62e39b45-b8c5-4f1a-948a-7e275ba917c0")
 	)
 	(rectangle
 		(start 200.66 66.04)
@@ -4115,6 +4151,69 @@
 		)
 		(uuid "f698e739-08f0-46f5-9423-d3a75f15585e")
 	)
+	(text "PN532 backup reader (Elechouse V3, DIP = SPI).\nOwn CS on PA15, IRQ on PB6 (active low).\nSPI mode 0, LSB first, max 5 MHz."
+		(exclude_from_sim no)
+		(at 68.58 83.82 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "1a5b0790-ae71-41d6-9f88-48bb95cdfd55")
+	)
+	(text "SWD DEBUG HEADER"
+		(exclude_from_sim no)
+		(at 224.79 33.655 0)
+		(effects
+			(font
+				(size 1.524 1.524)
+				(thickness 0.3048)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "5b79b6a8-f03d-43af-bcc4-a5be3ecc66b2")
+	)
+	(text "VIBRATION MOTOR DRIVER"
+		(exclude_from_sim no)
+		(at 201.93 69.215 0)
+		(effects
+			(font
+				(size 1.524 1.524)
+				(thickness 0.3048)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "5de968e8-a6e1-41b3-82b6-51884084f618")
+	)
+	(text "RESET, BOOT0 AND POWER BUTTONS"
+		(exclude_from_sim no)
+		(at 44.704 116.459 0)
+		(effects
+			(font
+				(size 1.524 1.524)
+				(thickness 0.3048)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "6709ed75-d833-41e6-8910-3cf435f19a01")
+	)
+	(text "MICROCONTROLLER  STM32L432KC"
+		(exclude_from_sim no)
+		(at 134.62 70.485 0)
+		(effects
+			(font
+				(size 1.524 1.524)
+				(thickness 0.3048)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "6ea7a03e-e75b-4153-a7fd-dfca0dd41515")
+	)
 	(text "MCU"
 		(exclude_from_sim no)
 		(at 152.908 17.272 0)
@@ -4126,6 +4225,71 @@
 			)
 		)
 		(uuid "70c6ead1-44a9-4726-84cc-b923aa0191be")
+	)
+	(text "32.768 kHz LSE CRYSTAL"
+		(exclude_from_sim no)
+		(at 176.53 33.655 0)
+		(effects
+			(font
+				(size 1.524 1.524)
+				(thickness 0.3048)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "90ec9345-3535-4647-a1fd-8758ce3b3d5a")
+	)
+	(text "PN532 BACKUP READER HEADER"
+		(exclude_from_sim no)
+		(at 66.04 27.305 0)
+		(effects
+			(font
+				(size 1.524 1.524)
+				(thickness 0.3048)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "bfce862d-9d0a-4b3b-8dfb-058bacf53d14")
+	)
+	(text "USB VBUS SENSE"
+		(exclude_from_sim no)
+		(at 41.91 20.955 0)
+		(effects
+			(font
+				(size 1.524 1.524)
+				(thickness 0.3048)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "d0bf348e-dd2b-482d-89c8-41233753c4ab")
+	)
+	(text "MCU DECOUPLING"
+		(exclude_from_sim no)
+		(at 45.72 168.275 0)
+		(effects
+			(font
+				(size 1.524 1.524)
+				(thickness 0.3048)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "d15c3f46-e3b1-4363-9ade-38d2527b7266")
+	)
+	(text "STATUS LEDS"
+		(exclude_from_sim no)
+		(at 201.93 117.475 0)
+		(effects
+			(font
+				(size 1.524 1.524)
+				(thickness 0.3048)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "fcd122fd-ef14-4566-b3d1-7ef87598a0fa")
 	)
 	(junction
 		(at 228.6 88.9)
@@ -4202,6 +4366,26 @@
 	(no_connect
 		(at 95.25 50.8)
 		(uuid "3761c5ee-2277-437b-8bd0-ce960740c2c6")
+	)
+	(no_connect
+		(at 171.45 101.6)
+		(uuid "3d401e6d-2e80-40fb-9d08-5ca7d0ad713d")
+	)
+	(no_connect
+		(at 171.45 119.38)
+		(uuid "7238b23f-392e-464f-b7ed-58a0dab9dbc6")
+	)
+	(no_connect
+		(at 171.45 111.76)
+		(uuid "d3a8f2df-5701-4768-ba1c-25184e8db2c6")
+	)
+	(no_connect
+		(at 171.45 114.3)
+		(uuid "f4acff40-9679-4b46-8186-6d6755fc82a2")
+	)
+	(no_connect
+		(at 171.45 124.46)
+		(uuid "fef639fe-ec39-4764-9235-e22360c1ecba")
 	)
 	(wire
 		(pts
@@ -5055,6 +5239,16 @@
 	)
 	(wire
 		(pts
+			(xy 69.85 66.04) (xy 69.85 68.58)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c72c8552-c17d-4706-89e8-aa990f862567")
+	)
+	(wire
+		(pts
 			(xy 135.89 111.76) (xy 146.05 111.76)
 		)
 		(stroke
@@ -5382,6 +5576,16 @@
 			(justify left bottom)
 		)
 		(uuid "06d6ad77-0dc6-4a92-8dcc-ce381938e0e9")
+	)
+	(label "PN532_NSS"
+		(at 69.85 68.58 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "0853197b-5a25-4206-b011-81eb823aa05d")
 	)
 	(label "SWCLK"
 		(at 176.53 134.62 0)
@@ -6035,6 +6239,84 @@
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
 					(reference "#PWR045")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:PWR_FLAG")
+		(at 134.62 173.99 90)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "0369f487-ce3b-4c64-a056-b0c70888674c")
+		(property "Reference" "#FLG03"
+			(at 134.62 173.99 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "PWR_FLAG"
+			(at 130.81 173.99 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" ""
+			(at 134.62 173.99 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 134.62 173.99 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Special symbol for telling ERC where power comes from"
+			(at 134.62 173.99 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "b0ea0b20-03c0-4e78-8bf1-bebf333515c6")
+		)
+		(instances
+			(project "Attendance Management System"
+				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
+					(reference "#FLG03")
 					(unit 1)
 				)
 			)
@@ -11115,289 +11397,5 @@
 				)
 			)
 		)
-	)
-
-	(wire
-		(pts
-			(xy 69.85 66.04) (xy 69.85 68.58)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "c72c8552-c17d-4706-89e8-aa990f862567")
-	)
-	(label "PN532_NSS"
-		(at 69.85 68.58 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "0853197b-5a25-4206-b011-81eb823aa05d")
-	)
-	(text "PN532 backup reader (Elechouse V3, DIP = SPI).\nOwn CS on PA15, IRQ on PB6 (active low).\nSPI mode 0, LSB first, max 5 MHz."
-		(exclude_from_sim no)
-		(at 68.58 83.82 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "1a5b0790-ae71-41d6-9f88-48bb95cdfd55")
-	)
-	(no_connect
-		(at 171.45 101.6)
-		(uuid "3d401e6d-2e80-40fb-9d08-5ca7d0ad713d")
-	)
-	(no_connect
-		(at 171.45 111.76)
-		(uuid "d3a8f2df-5701-4768-ba1c-25184e8db2c6")
-	)
-	(no_connect
-		(at 171.45 114.3)
-		(uuid "f4acff40-9679-4b46-8186-6d6755fc82a2")
-	)
-	(no_connect
-		(at 171.45 119.38)
-		(uuid "7238b23f-392e-464f-b7ed-58a0dab9dbc6")
-	)
-	(no_connect
-		(at 171.45 124.46)
-		(uuid "fef639fe-ec39-4764-9235-e22360c1ecba")
-	)
-	(symbol
-		(lib_id "power:PWR_FLAG")
-		(at 134.62 173.99 90)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "0369f487-ce3b-4c64-a056-b0c70888674c")
-		(property "Reference" "#FLG03"
-			(at 134.62 173.99 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "PWR_FLAG"
-			(at 130.81 173.99 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" ""
-			(at 134.62 173.99 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 134.62 173.99 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "Special symbol for telling ERC where power comes from"
-			(at 134.62 173.99 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "b0ea0b20-03c0-4e78-8bf1-bebf333515c6")
-		)
-		(instances
-			(project "Attendance Management System"
-				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/1cf39cf2-2e72-41c4-85e6-33411d2df545"
-					(reference "#FLG03")
-					(unit 1)
-				)
-			)
-		)
-	)
-
-	(text "RESET, BOOT0 AND POWER BUTTONS"
-		(exclude_from_sim no)
-		(at 44.704 116.459 0)
-		(effects
-			(font
-				(size 1.524 1.524)
-				(thickness 0.3048)
-				(bold yes)
-			)
-			(justify left bottom)
-		)
-		(uuid "6709ed75-d833-41e6-8910-3cf435f19a01")
-	)
-	(text "VIBRATION MOTOR DRIVER"
-		(exclude_from_sim no)
-		(at 201.93 69.215 0)
-		(effects
-			(font
-				(size 1.524 1.524)
-				(thickness 0.3048)
-				(bold yes)
-			)
-			(justify left bottom)
-		)
-		(uuid "5de968e8-a6e1-41b3-82b6-51884084f618")
-	)
-	(text "STATUS LEDS"
-		(exclude_from_sim no)
-		(at 201.93 117.475 0)
-		(effects
-			(font
-				(size 1.524 1.524)
-				(thickness 0.3048)
-				(bold yes)
-			)
-			(justify left bottom)
-		)
-		(uuid "fcd122fd-ef14-4566-b3d1-7ef87598a0fa")
-	)
-	(text "32.768 kHz LSE CRYSTAL"
-		(exclude_from_sim no)
-		(at 176.53 33.655 0)
-		(effects
-			(font
-				(size 1.524 1.524)
-				(thickness 0.3048)
-				(bold yes)
-			)
-			(justify left bottom)
-		)
-		(uuid "90ec9345-3535-4647-a1fd-8758ce3b3d5a")
-	)
-	(text "SWD DEBUG HEADER"
-		(exclude_from_sim no)
-		(at 224.79 33.655 0)
-		(effects
-			(font
-				(size 1.524 1.524)
-				(thickness 0.3048)
-				(bold yes)
-			)
-			(justify left bottom)
-		)
-		(uuid "5b79b6a8-f03d-43af-bcc4-a5be3ecc66b2")
-	)
-	(text "MCU DECOUPLING"
-		(exclude_from_sim no)
-		(at 45.72 168.275 0)
-		(effects
-			(font
-				(size 1.524 1.524)
-				(thickness 0.3048)
-				(bold yes)
-			)
-			(justify left bottom)
-		)
-		(uuid "d15c3f46-e3b1-4363-9ade-38d2527b7266")
-	)
-	(rectangle
-		(start 40.64 17.78)
-		(end 60.96 68.58)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(fill
-			(type none)
-		)
-		(uuid "1e3560ae-a80e-49da-9962-4cd102baf05e")
-	)
-	(text "USB VBUS SENSE"
-		(exclude_from_sim no)
-		(at 41.91 20.955 0)
-		(effects
-			(font
-				(size 1.524 1.524)
-				(thickness 0.3048)
-				(bold yes)
-			)
-			(justify left bottom)
-		)
-		(uuid "d0bf348e-dd2b-482d-89c8-41233753c4ab")
-	)
-	(rectangle
-		(start 64.77 24.13)
-		(end 120.65 86.36)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(fill
-			(type none)
-		)
-		(uuid "53f49fbc-18e4-4c23-9529-a87110dda454")
-	)
-	(text "PN532 BACKUP READER HEADER"
-		(exclude_from_sim no)
-		(at 66.04 27.305 0)
-		(effects
-			(font
-				(size 1.524 1.524)
-				(thickness 0.3048)
-				(bold yes)
-			)
-			(justify left bottom)
-		)
-		(uuid "bfce862d-9d0a-4b3b-8dfb-058bacf53d14")
-	)
-	(rectangle
-		(start 133.35 67.31)
-		(end 189.23 157.48)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(fill
-			(type none)
-		)
-		(uuid "62e39b45-b8c5-4f1a-948a-7e275ba917c0")
-	)
-	(text "MICROCONTROLLER  STM32L432KC"
-		(exclude_from_sim no)
-		(at 134.62 70.485 0)
-		(effects
-			(font
-				(size 1.524 1.524)
-				(thickness 0.3048)
-				(bold yes)
-			)
-			(justify left bottom)
-		)
-		(uuid "6ea7a03e-e75b-4153-a7fd-dfca0dd41515")
 	)
 )

@@ -3182,7 +3182,6 @@
 			)
 			(embedded_fonts no)
 		)
-
 		(symbol "power:PWR_FLAG"
 			(power global)
 			(pin_numbers
@@ -3297,7 +3296,20 @@
 				)
 			)
 			(embedded_fonts no)
-		)	)
+		)
+	)
+	(rectangle
+		(start 72.39 132.08)
+		(end 101.6 160.02)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(fill
+			(type none)
+		)
+		(uuid "358aea9c-a6ba-4582-a529-5c5477adcea3")
+	)
 	(rectangle
 		(start 175.26 81.28)
 		(end 256.54 129.54)
@@ -3358,6 +3370,70 @@
 		)
 		(uuid "e9aa1b52-8a4f-4808-8a08-aa2cc7baf916")
 	)
+	(rectangle
+		(start 114.3 135.89)
+		(end 149.86 172.72)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(fill
+			(type none)
+		)
+		(uuid "f64f445d-f616-44cd-ac36-bd389c6a0215")
+	)
+	(text "USB-C INPUT (SINK)"
+		(exclude_from_sim no)
+		(at 31.75 71.755 0)
+		(effects
+			(font
+				(size 1.524 1.524)
+				(thickness 0.3048)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "0bb6ce5d-5995-4551-a052-0556a8044808")
+	)
+	(text "LI-ION CHARGER  MCP73833"
+		(exclude_from_sim no)
+		(at 95.25 71.755 0)
+		(effects
+			(font
+				(size 1.524 1.524)
+				(thickness 0.3048)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "32180fd3-caab-4bdf-b085-8b2c1f27a6e7")
+	)
+	(text "BATTERY CONNECTOR"
+		(exclude_from_sim no)
+		(at 176.53 56.515 0)
+		(effects
+			(font
+				(size 1.524 1.524)
+				(thickness 0.3048)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "5ac150e4-50f1-407b-91ac-3376b555eaad")
+	)
+	(text "USB ESD PROTECTION"
+		(exclude_from_sim no)
+		(at 115.57 139.065 0)
+		(effects
+			(font
+				(size 1.524 1.524)
+				(thickness 0.3048)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "6736d7d5-70e8-4532-9c7a-7644d9dd2bcf")
+	)
 	(text "Power"
 		(exclude_from_sim no)
 		(at 153.416 19.05 0)
@@ -3369,6 +3445,56 @@
 			)
 		)
 		(uuid "9a596ecd-19d5-4324-aebd-58e6aa289597")
+	)
+	(text "BATTERY SENSE DIVIDER"
+		(exclude_from_sim no)
+		(at 219.71 36.195 0)
+		(effects
+			(font
+				(size 1.524 1.524)
+				(thickness 0.3048)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "d7bc7629-5f12-4fe1-8a55-6366071948a3")
+	)
+	(text "3.3 V LDO  TPS7A02"
+		(exclude_from_sim no)
+		(at 176.53 84.455 0)
+		(effects
+			(font
+				(size 1.524 1.524)
+				(thickness 0.3048)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "f4126d70-c05a-4b89-a732-a354ba01d26a")
+	)
+	(text "BULK CAPACITORS"
+		(exclude_from_sim no)
+		(at 73.66 135.255 0)
+		(effects
+			(font
+				(size 1.524 1.524)
+				(thickness 0.3048)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "fbdc80d1-763e-498d-b2a4-dedd73902212")
+	)
+	(text "Place U6 next to J1 and route D+/D- straight through its pads."
+		(exclude_from_sim no)
+		(at 115.57 171.45 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "fffb94e0-ebb1-4208-a728-0c8e839422c5")
 	)
 	(junction
 		(at 48.26 121.92)
@@ -3426,6 +3552,16 @@
 	)
 	(wire
 		(pts
+			(xy 127 152.4) (xy 119.38 152.4)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "03f7fdee-d16f-4b9b-b756-449b7be461e2")
+	)
+	(wire
+		(pts
 			(xy 40.64 121.92) (xy 48.26 121.92)
 		)
 		(stroke
@@ -3463,6 +3599,16 @@
 			(type default)
 		)
 		(uuid "12b4e976-0fca-43e9-831b-fb1cd93f9d02")
+	)
+	(wire
+		(pts
+			(xy 137.16 152.4) (xy 144.78 152.4)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "149b33ed-b2e7-439f-beed-a533ef4cc3d4")
 	)
 	(wire
 		(pts
@@ -3553,6 +3699,16 @@
 			(type default)
 		)
 		(uuid "4479e9ad-5b0f-4e29-b393-31e9db8bb313")
+	)
+	(wire
+		(pts
+			(xy 137.16 154.94) (xy 144.78 154.94)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "47efb474-9c0c-425e-a1ca-01c0e2a32ddc")
 	)
 	(wire
 		(pts
@@ -4006,6 +4162,16 @@
 	)
 	(wire
 		(pts
+			(xy 127 154.94) (xy 119.38 154.94)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e6ef3a1f-195a-4af8-95bc-2413b95af9dd")
+	)
+	(wire
+		(pts
 			(xy 181.61 123.19) (xy 181.61 113.03)
 		)
 		(stroke
@@ -4095,6 +4261,16 @@
 		(uuid "fb4d5d9e-27d5-497b-9ef6-c55bdec9e0ff")
 	)
 	(label "D-"
+		(at 144.78 154.94 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "039f8bd8-2780-4418-a263-10781f35f212")
+	)
+	(label "D-"
 		(at 82.55 96.52 0)
 		(effects
 			(font
@@ -4113,6 +4289,16 @@
 			(justify left bottom)
 		)
 		(uuid "24d41f26-4229-4b4e-ad7a-1e2ee91b9058")
+	)
+	(label "D-"
+		(at 119.38 154.94 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "2b23f41c-744b-4328-af63-511af4002c1b")
 	)
 	(label "BAT_SENSE"
 		(at 238.76 55.88 0)
@@ -4135,6 +4321,16 @@
 		(uuid "69029e88-ce1c-4784-9a1d-f16a93eb1df1")
 	)
 	(label "D+"
+		(at 119.38 152.4 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "73dfc81e-9250-40c4-a00f-7d2809e3b335")
+	)
+	(label "D+"
 		(at 82.55 101.6 0)
 		(effects
 			(font
@@ -4153,6 +4349,16 @@
 			(justify left bottom)
 		)
 		(uuid "c3574c63-e49e-4ead-9f5a-ce8f9d9e2501")
+	)
+	(label "D+"
+		(at 144.78 152.4 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "fc47269d-ca78-4c6d-b29b-facb8c79bfb6")
 	)
 	(hierarchical_label "BAT_SENSE"
 		(shape bidirectional)
@@ -4661,6 +4867,99 @@
 		)
 	)
 	(symbol
+		(lib_id "Power_Protection:USBLC6-2SC6")
+		(at 132.08 152.4 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "28559863-9ffd-41dd-b40e-b812b9296897")
+		(property "Reference" "U6"
+			(at 132.715 146.685 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "USBLC6-2SC6"
+			(at 132.715 148.59 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Package_TO_SOT_SMD:SOT-23-6"
+			(at 133.35 158.75 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://www.st.com/resource/en/datasheet/usblc6-2.pdf"
+			(at 133.35 160.655 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "USB ESD protection, 2 data lines + VBUS, SOT-23-6"
+			(at 132.08 152.4 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "d226c616-3091-4025-a11a-fce8b85dda12")
+		)
+		(pin "2"
+			(uuid "4810707a-0ad6-4a45-91d5-976636d74fe2")
+		)
+		(pin "3"
+			(uuid "57ff8271-cb4b-46a9-be9b-d7c79c1bfefc")
+		)
+		(pin "4"
+			(uuid "b1eaa6c7-dd85-4151-bbe1-051e0cfd5b24")
+		)
+		(pin "5"
+			(uuid "938fe2b0-4161-41ed-a5d8-e566ec6f4961")
+		)
+		(pin "6"
+			(uuid "e3b747d7-0268-499d-b169-491f36c41d21")
+		)
+		(instances
+			(project "Attendance Management System"
+				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/ac241d06-5adb-4390-abaa-4695f86d3451"
+					(reference "U6")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:GND")
 		(at 237.49 71.12 0)
 		(unit 1)
@@ -4811,6 +5110,83 @@
 			(project "Attendance Management System"
 				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/ac241d06-5adb-4390-abaa-4695f86d3451"
 					(reference "#PWR018")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:+5V")
+		(at 132.08 147.32 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "49d642f9-323c-47c9-ad25-152161787279")
+		(property "Reference" "#PWR080"
+			(at 132.08 147.32 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "+5V"
+			(at 132.08 142.24 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 132.08 147.32 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 132.08 147.32 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"+5V\""
+			(at 132.08 147.32 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "ab4e4a7c-bf8a-4e37-9065-1f22e425bac9")
+		)
+		(instances
+			(project "Attendance Management System"
+				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/ac241d06-5adb-4390-abaa-4695f86d3451"
+					(reference "#PWR080")
 					(unit 1)
 				)
 			)
@@ -6067,6 +6443,83 @@
 		)
 	)
 	(symbol
+		(lib_id "power:GND")
+		(at 132.08 160.02 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "97b6f844-2a75-4dab-a5ba-4ae9295ed1db")
+		(property "Reference" "#PWR081"
+			(at 132.08 166.37 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "GND"
+			(at 132.08 165.1 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 132.08 160.02 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 132.08 160.02 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+			(at 132.08 160.02 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "7fd3e0da-d22c-4fbe-a789-64f1a277fe9e")
+		)
+		(instances
+			(project "Attendance Management System"
+				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/ac241d06-5adb-4390-abaa-4695f86d3451"
+					(reference "#PWR081")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Device:LED")
 		(at 111.76 91.44 90)
 		(unit 1)
@@ -7269,6 +7722,84 @@
 		)
 	)
 	(symbol
+		(lib_id "power:PWR_FLAG")
+		(at 80.01 143.51 90)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "d2ddba3f-f00c-4f27-9f7d-4b8395383086")
+		(property "Reference" "#FLG02"
+			(at 80.01 143.51 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "PWR_FLAG"
+			(at 76.2 143.51 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" ""
+			(at 80.01 143.51 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 80.01 143.51 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Special symbol for telling ERC where power comes from"
+			(at 80.01 143.51 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "c8c98776-e967-4ad4-8bc9-80fec672344d")
+		)
+		(instances
+			(project "Attendance Management System"
+				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/ac241d06-5adb-4390-abaa-4695f86d3451"
+					(reference "#FLG02")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:GND")
 		(at 48.26 123.19 0)
 		(unit 1)
@@ -7748,538 +8279,5 @@
 				)
 			)
 		)
-	)
-
-	(symbol
-		(lib_id "Power_Protection:USBLC6-2SC6")
-		(at 132.08 152.4 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "28559863-9ffd-41dd-b40e-b812b9296897")
-		(property "Reference" "U6"
-			(at 132.715 146.685 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "USBLC6-2SC6"
-			(at 132.715 148.59 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Package_TO_SOT_SMD:SOT-23-6"
-			(at 133.35 158.75 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" "https://www.st.com/resource/en/datasheet/usblc6-2.pdf"
-			(at 133.35 160.655 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "USB ESD protection, 2 data lines + VBUS, SOT-23-6"
-			(at 132.08 152.4 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "d226c616-3091-4025-a11a-fce8b85dda12")
-		)
-		(pin "2"
-			(uuid "4810707a-0ad6-4a45-91d5-976636d74fe2")
-		)
-		(pin "3"
-			(uuid "57ff8271-cb4b-46a9-be9b-d7c79c1bfefc")
-		)
-		(pin "4"
-			(uuid "b1eaa6c7-dd85-4151-bbe1-051e0cfd5b24")
-		)
-		(pin "5"
-			(uuid "938fe2b0-4161-41ed-a5d8-e566ec6f4961")
-		)
-		(pin "6"
-			(uuid "e3b747d7-0268-499d-b169-491f36c41d21")
-		)
-		(instances
-			(project "Attendance Management System"
-				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/ac241d06-5adb-4390-abaa-4695f86d3451"
-					(reference "U6")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:+5V")
-		(at 132.08 147.32 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "49d642f9-323c-47c9-ad25-152161787279")
-		(property "Reference" "#PWR080"
-			(at 132.08 147.32 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "+5V"
-			(at 132.08 142.24 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 132.08 147.32 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 132.08 147.32 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"+5V\""
-			(at 132.08 147.32 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "ab4e4a7c-bf8a-4e37-9065-1f22e425bac9")
-		)
-		(instances
-			(project "Attendance Management System"
-				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/ac241d06-5adb-4390-abaa-4695f86d3451"
-					(reference "#PWR080")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 132.08 160.02 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "97b6f844-2a75-4dab-a5ba-4ae9295ed1db")
-		(property "Reference" "#PWR081"
-			(at 132.08 166.37 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "GND"
-			(at 132.08 165.1 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 132.08 160.02 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 132.08 160.02 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 132.08 160.02 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "7fd3e0da-d22c-4fbe-a789-64f1a277fe9e")
-		)
-		(instances
-			(project "Attendance Management System"
-				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/ac241d06-5adb-4390-abaa-4695f86d3451"
-					(reference "#PWR081")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(wire
-		(pts
-			(xy 127 152.4) (xy 119.38 152.4)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "03f7fdee-d16f-4b9b-b756-449b7be461e2")
-	)
-	(label "D+"
-		(at 119.38 152.4 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "73dfc81e-9250-40c4-a00f-7d2809e3b335")
-	)
-	(wire
-		(pts
-			(xy 127 154.94) (xy 119.38 154.94)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "e6ef3a1f-195a-4af8-95bc-2413b95af9dd")
-	)
-	(label "D-"
-		(at 119.38 154.94 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "2b23f41c-744b-4328-af63-511af4002c1b")
-	)
-	(wire
-		(pts
-			(xy 137.16 152.4) (xy 144.78 152.4)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "149b33ed-b2e7-439f-beed-a533ef4cc3d4")
-	)
-	(label "D+"
-		(at 144.78 152.4 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "fc47269d-ca78-4c6d-b29b-facb8c79bfb6")
-	)
-	(wire
-		(pts
-			(xy 137.16 154.94) (xy 144.78 154.94)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "47efb474-9c0c-425e-a1ca-01c0e2a32ddc")
-	)
-	(label "D-"
-		(at 144.78 154.94 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "039f8bd8-2780-4418-a263-10781f35f212")
-	)
-	(symbol
-		(lib_id "power:PWR_FLAG")
-		(at 80.01 143.51 90)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "d2ddba3f-f00c-4f27-9f7d-4b8395383086")
-		(property "Reference" "#FLG02"
-			(at 80.01 143.51 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "PWR_FLAG"
-			(at 76.2 143.51 90)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" ""
-			(at 80.01 143.51 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" ""
-			(at 80.01 143.51 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "Special symbol for telling ERC where power comes from"
-			(at 80.01 143.51 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "c8c98776-e967-4ad4-8bc9-80fec672344d")
-		)
-		(instances
-			(project "Attendance Management System"
-				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/ac241d06-5adb-4390-abaa-4695f86d3451"
-					(reference "#FLG02")
-					(unit 1)
-				)
-			)
-		)
-	)
-
-	(text "3.3 V LDO  TPS7A02"
-		(exclude_from_sim no)
-		(at 176.53 84.455 0)
-		(effects
-			(font
-				(size 1.524 1.524)
-				(thickness 0.3048)
-				(bold yes)
-			)
-			(justify left bottom)
-		)
-		(uuid "f4126d70-c05a-4b89-a732-a354ba01d26a")
-	)
-	(text "LI-ION CHARGER  MCP73833"
-		(exclude_from_sim no)
-		(at 95.25 71.755 0)
-		(effects
-			(font
-				(size 1.524 1.524)
-				(thickness 0.3048)
-				(bold yes)
-			)
-			(justify left bottom)
-		)
-		(uuid "32180fd3-caab-4bdf-b085-8b2c1f27a6e7")
-	)
-	(text "BATTERY CONNECTOR"
-		(exclude_from_sim no)
-		(at 176.53 56.515 0)
-		(effects
-			(font
-				(size 1.524 1.524)
-				(thickness 0.3048)
-				(bold yes)
-			)
-			(justify left bottom)
-		)
-		(uuid "5ac150e4-50f1-407b-91ac-3376b555eaad")
-	)
-	(text "USB-C INPUT (SINK)"
-		(exclude_from_sim no)
-		(at 31.75 71.755 0)
-		(effects
-			(font
-				(size 1.524 1.524)
-				(thickness 0.3048)
-				(bold yes)
-			)
-			(justify left bottom)
-		)
-		(uuid "0bb6ce5d-5995-4551-a052-0556a8044808")
-	)
-	(text "BATTERY SENSE DIVIDER"
-		(exclude_from_sim no)
-		(at 219.71 36.195 0)
-		(effects
-			(font
-				(size 1.524 1.524)
-				(thickness 0.3048)
-				(bold yes)
-			)
-			(justify left bottom)
-		)
-		(uuid "d7bc7629-5f12-4fe1-8a55-6366071948a3")
-	)
-	(rectangle
-		(start 72.39 132.08)
-		(end 101.6 160.02)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(fill
-			(type none)
-		)
-		(uuid "358aea9c-a6ba-4582-a529-5c5477adcea3")
-	)
-	(text "BULK CAPACITORS"
-		(exclude_from_sim no)
-		(at 73.66 135.255 0)
-		(effects
-			(font
-				(size 1.524 1.524)
-				(thickness 0.3048)
-				(bold yes)
-			)
-			(justify left bottom)
-		)
-		(uuid "fbdc80d1-763e-498d-b2a4-dedd73902212")
-	)
-	(rectangle
-		(start 114.3 135.89)
-		(end 149.86 172.72)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(fill
-			(type none)
-		)
-		(uuid "f64f445d-f616-44cd-ac36-bd389c6a0215")
-	)
-	(text "USB ESD PROTECTION"
-		(exclude_from_sim no)
-		(at 115.57 139.065 0)
-		(effects
-			(font
-				(size 1.524 1.524)
-				(thickness 0.3048)
-				(bold yes)
-			)
-			(justify left bottom)
-		)
-		(uuid "6736d7d5-70e8-4532-9c7a-7644d9dd2bcf")
-	)
-	(text "Place U6 next to J1 and route D+/D- straight through its pads."
-		(exclude_from_sim no)
-		(at 115.57 171.45 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "fffb94e0-ebb1-4208-a728-0c8e839422c5")
 	)
 )

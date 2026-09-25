@@ -240,7 +240,7 @@
       "internal_id": "",
       "mfg": "",
       "mpn": "",
-      "sch_revision": ""
+      "sch_revision": "0.1"
     },
     "layer_pairs": [],
     "layer_presets": [],
@@ -673,7 +673,7 @@
         "uuid": "7913fd27-5946-47b8-84cf-c21ab2f68a0e"
       }
     ],
-    "used_designators": "R1-19,TH1,L1-4,FB1-2,Y1-3,#PWR1-68,C1-34,Pad_CSI1,AE1-2,SW1-3,Q1,D1-6,U1-5,Pad_CSO1,J1-6",
+    "used_designators": "U1-5,D1-6,J1-6,Pad_CSO1,R1-19,TH1,L1-4,FB1-2,Y1-3,#PWR1-68,C1-34,Pad_CSI1,AE1-2,SW1-3,Q1",
     "variants": []
   },
   "sheets": [

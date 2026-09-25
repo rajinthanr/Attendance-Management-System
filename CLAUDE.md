@@ -190,7 +190,6 @@ Every other part comes from the stock KiCad libraries.
 **Must fix:**
 - **The charge current is too high for USB.** R6 = 1 kΩ sets 1 A. A USB-C sink with plain 5.1 kΩ Rd that never reads CC may only draw the USB 2.0 default of 500 mA, and the MSOP-10 MCP73833 has no exposed pad, so it will hit thermal fold-back at 1 A. Use R6 ≥ 2 kΩ (≤ 500 mA).
 - **The antenna has no footprint.** AE1 and AE2 are two single-pin symbols. Draw the loop as one 2-terminal footprint.
-- **The board is behind the schematic.** It is from 09:19, before C35, C36, J7, R20, U6, the U4 → U5 re-annotation and the VDD_IO split. Run *Update PCB from Schematic*.
 
 **Should fix:**
 - **J7 VCC is on `BAT+`.** That's fine only if the PN532 module makes its own 3.3 V I/O rail. If its I/O follows VCC, MISO and IRQ reach 4.2 V.
@@ -198,9 +197,36 @@ Every other part comes from the stock KiCad libraries.
 - **Check the LSE load capacitors.** C6 and C7 are only 4.3 pF, which implies a crystal with CL ≈ 4–5 pF. Check against Y2's CL.
 - **Check the EMC inductors' rating.** L3/L4 (470 nH, 0402) carry the full transmitter current, so confirm the part's current rating.
 
-**Layout** (unchanged since 09:19):
-- **Not routed:** all footprints are on F.Cu and overlapping. There is no Edge.Cuts outline, and there are no tracks, vias or zones.
-- **Some DRC errors come from the stock footprints themselves:** U2's MSOP-10 pads are 0.15 mm apart, against the 0.2 mm default clearance. J1's GND pads are 0.19 mm from its own NPTH holes, against the 0.25 mm hole clearance. Fix both with a footprint-level or custom-rule override rather than by moving pads.
+### Board layout (placement done 2026-09-25, not routed)
+
+**Board:** 60 × 105 mm outline with 2 mm corner radii, 2 layers, 1.6 mm thick. Every part is on F.Cu, and B.Cu is meant to be an unbroken GND plane. The board is in sync with the schematic: DRC schematic parity reports only AE1/AE2, which have no footprint yet.
+
+**Floorplan**, top to bottom:
+
+| Area | Contents |
+|---|---|
+| y 0–38.5 mm | **NFC antenna.** Rule area `NFC_ANTENNA` (no zone fill on either layer), outlined on User.Drawings. The loop coil goes here. The feed points (DR2 left, DR1 right) are marked at x 24.5 / 30.5, y 40.8. |
+| y 39–66 mm | **RF front end.** U5 (ST25R3916) at 180°: RFO1/RFO2 face the antenna, and SPI/IRQ face the MCU. |
+| y 66–90 mm | **MCU.** U1 (STM32) at 0°: SPI and PN532 pins face U5, USB and SWD are on its right, and PC14/PC15 are on its left. |
+| y 88–105 mm | **Power.** J1 (USB-C) sits on the bottom edge with U6 (ESD) right behind it, then the charger U2, battery connector J2 on the right edge, TH1 and the charge LEDs. |
+
+**Other groups:**
+- **Left edge:** SW3 (power), SW1 (reset), SW2 (BOOT0), and the status LEDs D5/D6 just under the antenna.
+- **Right side:** J3 (SWD), and the vibration motor driver (J4, D4, Q1), placed beside the battery input so the motor current loop stays short.
+- **Bottom-left edge:** J7 (the PN532 header), far from the NFC antenna so a fitted module doesn't detune it.
+
+**Placement rules** (keep them when moving parts):
+- **RF chain:** it is mirror-symmetric about x = 27.5 mm: L3/L4 (EMC) → C12/C13 to GND → C16/C17 in series → C18/C19 to GND → R15 across the antenna. Shunt capacitors put their GND pad on the outside, and C22 (VDD_DR) sits between the two chains. No other parts go inside it.
+- **Decoupling:** every decoupling capacitor sits next to the pin it serves, with its supply pad facing that pin. The 100 nF parts are closest, and the bulk capacitors sit behind them.
+- **Crystals:** Y1 is beside XTI/XTO with C9/C10, and Y2 is beside PC14/PC15 with C6/C7.
+- **RX path:** C14/R13 and C15/R14 are left of the RFI pins. The space at x 25.2–27.5, y 55.6–62.2 is reserved for the two shunt capacitors of ST's capacitive RX divider (see the open schematic issue).
+- **Routing channels:** keep these free of parts. One runs from U5 to U1 (x 27.6–34.6, y 61.3–74) for SPI, IRQ and NSS. The other runs from U6 to U1 (x 29–34.4, y 80.4–91.2) for USB D+/D-.
+
+**DRC after placement:**
+- 0 courtyard overlaps.
+- 198 unconnected items (unrouted).
+- 10 errors from stock-footprint geometry: U2's MSOP-10 pads are 0.15 mm apart against the 0.2 mm default clearance, and J1's GND pads are 0.19 mm from its NPTH holes against the 0.25 mm hole clearance. Fix both with a footprint-level or custom-rule override rather than by moving pads.
+- 72 silkscreen overlaps from reference designators, to tidy before fabrication.
 
 ## CubeMX-generated code (`Core/`, `Drivers/`, `Middlewares/`)
 
