@@ -1,0 +1,5 @@
+(fp_lib_table
+	(version 7)
+	(lib (name "Snapeda") (type "KiCad") (uri "/home/rajinthan/Documents/kicad/external_libs/Snapeda.pretty") (options "") (descr ""))
+	(lib (name "Snapeda") (type "KiCad") (uri "/home/rajinthan/Documents/kicad/external_libs/Snapeda.pretty") (options "") (descr ""))
+)

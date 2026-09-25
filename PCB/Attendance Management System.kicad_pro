@@ -60,12 +60,12 @@
           "hatch_smoothing_level": 0,
           "hatch_smoothing_value": 0.1,
           "hatch_thickness": 1.0,
-          "min_clearance": 0.5,
+          "min_clearance": 0.2,
           "min_island_area": 10.0,
-          "min_thickness": 0.25,
+          "min_thickness": 0.2,
           "pad_connection": 1,
           "remove_islands": 0,
-          "thermal_relief_gap": 0.5,
+          "thermal_relief_gap": 0.2,
           "thermal_relief_spoke_width": 0.5
         }
       },
@@ -94,10 +94,10 @@
         "duplicate_footprints": "warning",
         "extra_footprint": "warning",
         "footprint": "error",
-        "footprint_filters_mismatch": "ignore",
+        "footprint_filters_mismatch": "error",
         "footprint_symbol_field_mismatch": "warning",
         "footprint_symbol_mismatch": "warning",
-        "footprint_type_mismatch": "ignore",
+        "footprint_type_mismatch": "error",
         "hole_clearance": "error",
         "hole_to_hole": "warning",
         "holes_co_located": "warning",
@@ -121,11 +121,11 @@
         "pth_inside_courtyard": "error",
         "shorting_items": "error",
         "silk_edge_clearance": "warning",
-        "silk_over_copper": "warning",
-        "silk_overlap": "warning",
+        "silk_over_copper": "ignore",
+        "silk_overlap": "ignore",
         "skew_out_of_range": "error",
         "solder_mask_bridge": "error",
-        "starved_thermal": "error",
+        "starved_thermal": "ignore",
         "text_height": "warning",
         "text_on_edge_cuts": "error",
         "text_thickness": "warning",
@@ -1008,7 +1008,7 @@
         "uuid": "7913fd27-5946-47b8-84cf-c21ab2f68a0e"
       }
     ],
-    "used_designators": "U1-5,D1-6,J1-6,Pad_CSO1,R1-19,TH1,L1-4,FB1-2,Y1-3,#PWR1-68,C1-34,Pad_CSI1,AE1-2,SW1-3,Q1",
+    "used_designators": "NT1,U1-5,D1-6,J1-6,Pad_CSO1,R1-19,R21-22,TH1,L1-4,FB1-2,Y1-3,#PWR1-68,#PWR82,C1-34,C37-39,Pad_CSI1,AE1-3,SW1-3,Q1",
     "variants": []
   },
   "sheets": [

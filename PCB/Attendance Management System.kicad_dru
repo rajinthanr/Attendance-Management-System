@@ -20,3 +20,7 @@
 (rule "Minimum connection width 2"
 	(constraint connection_width (min 0.15mm))
 )
+(rule "AE3 antenna crossover"
+    (severity ignore)
+    (constraint hole_clearance (min 0mm))
+    (condition "A.memberOfFootprint('AE3') && B.memberOfFootprint('AE3')"))
