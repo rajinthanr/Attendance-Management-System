@@ -7420,7 +7420,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "NetTie:NetTie-2_SMD_Pad0.5mm"
+		(property "Footprint" "Snapeda:NFC_Loop_40x30_3T"
 			(at 241.3 129.54 0)
 			(hide yes)
 			(show_name no)
