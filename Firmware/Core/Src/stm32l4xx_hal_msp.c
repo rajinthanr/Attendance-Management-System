@@ -95,6 +95,68 @@ void HAL_MspInit(void)
 }
 
 /**
+  * @brief ADC MSP Initialization
+  * This function configures the hardware resources used in this example
+  * @param hadc: ADC handle pointer
+  * @retval None
+  */
+void HAL_ADC_MspInit(ADC_HandleTypeDef* hadc)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  if(hadc->Instance==ADC1)
+  {
+    /* USER CODE BEGIN ADC1_MspInit 0 */
+
+    /* USER CODE END ADC1_MspInit 0 */
+    /* Peripheral clock enable */
+    __HAL_RCC_ADC_CLK_ENABLE();
+
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    /**ADC1 GPIO Configuration
+    PA7     ------> ADC1_IN12
+    */
+    GPIO_InitStruct.Pin = BATT_SENSE_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_ANALOG_ADC_CONTROL;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(BATT_SENSE_GPIO_Port, &GPIO_InitStruct);
+
+    /* USER CODE BEGIN ADC1_MspInit 1 */
+
+    /* USER CODE END ADC1_MspInit 1 */
+
+  }
+
+}
+
+/**
+  * @brief ADC MSP De-Initialization
+  * This function freeze the hardware resources used in this example
+  * @param hadc: ADC handle pointer
+  * @retval None
+  */
+void HAL_ADC_MspDeInit(ADC_HandleTypeDef* hadc)
+{
+  if(hadc->Instance==ADC1)
+  {
+    /* USER CODE BEGIN ADC1_MspDeInit 0 */
+
+    /* USER CODE END ADC1_MspDeInit 0 */
+    /* Peripheral clock disable */
+    __HAL_RCC_ADC_CLK_DISABLE();
+
+    /**ADC1 GPIO Configuration
+    PA7     ------> ADC1_IN12
+    */
+    HAL_GPIO_DeInit(BATT_SENSE_GPIO_Port, BATT_SENSE_Pin);
+
+    /* USER CODE BEGIN ADC1_MspDeInit 1 */
+
+    /* USER CODE END ADC1_MspDeInit 1 */
+  }
+
+}
+
+/**
   * @brief LPTIM MSP Initialization
   * This function configures the hardware resources used in this example
   * @param hlptim: LPTIM handle pointer
@@ -248,6 +310,76 @@ void HAL_RTC_MspDeInit(RTC_HandleTypeDef* hrtc)
 }
 
 /**
+  * @brief SPI MSP Initialization
+  * This function configures the hardware resources used in this example
+  * @param hspi: SPI handle pointer
+  * @retval None
+  */
+void HAL_SPI_MspInit(SPI_HandleTypeDef* hspi)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  if(hspi->Instance==SPI1)
+  {
+    /* USER CODE BEGIN SPI1_MspInit 0 */
+
+    /* USER CODE END SPI1_MspInit 0 */
+    /* Peripheral clock enable */
+    __HAL_RCC_SPI1_CLK_ENABLE();
+
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    /**SPI1 GPIO Configuration
+    PB0     ------> SPI1_NSS
+    PB3 (JTDO-TRACESWO)     ------> SPI1_SCK
+    PB4 (NJTRST)     ------> SPI1_MISO
+    PB5     ------> SPI1_MOSI
+    */
+    GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_3|GPIO_PIN_4|GPIO_PIN_5;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF5_SPI1;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+    /* USER CODE BEGIN SPI1_MspInit 1 */
+
+    /* USER CODE END SPI1_MspInit 1 */
+
+  }
+
+}
+
+/**
+  * @brief SPI MSP De-Initialization
+  * This function freeze the hardware resources used in this example
+  * @param hspi: SPI handle pointer
+  * @retval None
+  */
+void HAL_SPI_MspDeInit(SPI_HandleTypeDef* hspi)
+{
+  if(hspi->Instance==SPI1)
+  {
+    /* USER CODE BEGIN SPI1_MspDeInit 0 */
+
+    /* USER CODE END SPI1_MspDeInit 0 */
+    /* Peripheral clock disable */
+    __HAL_RCC_SPI1_CLK_DISABLE();
+
+    /**SPI1 GPIO Configuration
+    PB0     ------> SPI1_NSS
+    PB3 (JTDO-TRACESWO)     ------> SPI1_SCK
+    PB4 (NJTRST)     ------> SPI1_MISO
+    PB5     ------> SPI1_MOSI
+    */
+    HAL_GPIO_DeInit(GPIOB, GPIO_PIN_0|GPIO_PIN_3|GPIO_PIN_4|GPIO_PIN_5);
+
+    /* USER CODE BEGIN SPI1_MspDeInit 1 */
+
+    /* USER CODE END SPI1_MspDeInit 1 */
+  }
+
+}
+
+/**
   * @brief TIM_PWM MSP Initialization
   * This function configures the hardware resources used in this example
   * @param htim_pwm: TIM_PWM handle pointer
@@ -382,16 +514,62 @@ void HAL_TIM_IC_MspDeInit(TIM_HandleTypeDef* htim_ic)
 
 }
 
-/* HAL_PCD_MspInit / HAL_PCD_MspDeInit are deliberately not generated here.
- * Bsp/Src/bsp_usb.c owns them: it brings up HSI48 + CRS for crystal-less USB,
- * enables VDDUSB, sets the NVIC priority and parks PA11/PA12 as analog on
- * unplug. CubeMX's version selects PLLSAI1 instead and does none of that.
- *
- * If you regenerate from the .ioc, CubeMX will re-emit both functions above
- * this block and the link will fail with a duplicate definition. Delete them
- * again — the same rule that keeps the peripheral IRQ handlers in bsp_isr.c
- * rather than in stm32l4xx_it.c.
- */
+/**
+  * @brief PCD MSP Initialization
+  * This function configures the hardware resources used in this example
+  * @param hpcd: PCD handle pointer
+  * @retval None
+  */
+void HAL_PCD_MspInit(PCD_HandleTypeDef* hpcd)
+{
+  if(hpcd->Instance==USB)
+  {
+    /* USER CODE BEGIN USB_MspInit 0 */
+
+    /* USER CODE END USB_MspInit 0 */
+    /* Peripheral clock enable */
+    __HAL_RCC_USB_CLK_ENABLE();
+
+    /* Enable VDDUSB */
+    if(__HAL_RCC_PWR_IS_CLK_DISABLED())
+    {
+      __HAL_RCC_PWR_CLK_ENABLE();
+      HAL_PWREx_EnableVddUSB();
+      __HAL_RCC_PWR_CLK_DISABLE();
+    }
+    else
+    {
+      HAL_PWREx_EnableVddUSB();
+    }
+    /* USER CODE BEGIN USB_MspInit 1 */
+
+    /* USER CODE END USB_MspInit 1 */
+
+  }
+
+}
+
+/**
+  * @brief PCD MSP De-Initialization
+  * This function freeze the hardware resources used in this example
+  * @param hpcd: PCD handle pointer
+  * @retval None
+  */
+void HAL_PCD_MspDeInit(PCD_HandleTypeDef* hpcd)
+{
+  if(hpcd->Instance==USB)
+  {
+    /* USER CODE BEGIN USB_MspDeInit 0 */
+
+    /* USER CODE END USB_MspDeInit 0 */
+    /* Peripheral clock disable */
+    __HAL_RCC_USB_CLK_DISABLE();
+    /* USER CODE BEGIN USB_MspDeInit 1 */
+
+    /* USER CODE END USB_MspDeInit 1 */
+  }
+
+}
 
 /* USER CODE BEGIN 1 */
 
