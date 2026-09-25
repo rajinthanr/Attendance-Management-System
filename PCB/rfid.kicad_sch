@@ -4,6 +4,12 @@
 	(generator_version "10.0")
 	(uuid "c2a0a539-2dc0-4dbb-93bc-f8c374b19552")
 	(paper "A4")
+	(title_block
+		(title "Card Attendance System")
+		(date "2026-09-25")
+		(rev "0.1")
+		(comment 1 "ST25R3916 13.56 MHz NFC reader, EMC filter and antenna matching")
+	)
 	(lib_symbols
 		(symbol "Connector:Conn_01x01_Pin"
 			(pin_names
@@ -1911,7 +1917,7 @@
 						)
 					)
 				)
-				(pin output line
+				(pin power_out line
 					(at 20.32 20.32 180)
 					(length 5.08)
 					(name "VDD_RF"
@@ -2037,7 +2043,7 @@
 						)
 					)
 				)
-				(pin power_in line
+				(pin passive line
 					(at 20.32 -30.48 180)
 					(length 5.08)
 					(hide yes)
@@ -2504,6 +2510,145 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "power:+BATT"
+			(power global)
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 0)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "#PWR"
+				(at 0 -3.81 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "+BATT"
+				(at 0 3.556 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "Power symbol creates a global label with name \"+BATT\""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_keywords" "global power battery"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "+BATT_0_1"
+				(polyline
+					(pts
+						(xy -0.762 1.27) (xy 0 2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 0 2.54) (xy 0.762 1.27)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 0 0) (xy 0 2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "+BATT_1_1"
+				(pin power_in line
+					(at 0 0 90)
+					(length 0)
+					(name ""
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 		(symbol "power:GND"
 			(power global)
 			(pin_numbers
@@ -2619,18 +2764,127 @@
 			)
 			(embedded_fonts no)
 		)
-	)
+
+		(symbol "power:PWR_FLAG"
+			(power global)
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 0)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "#FLG"
+				(at 0 1.905 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "PWR_FLAG"
+				(at 0 3.81 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "Special symbol for telling ERC where power comes from"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_keywords" "flag power"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "PWR_FLAG_0_0"
+				(pin power_out line
+					(at 0 0 90)
+					(length 0)
+					(name ""
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(symbol "PWR_FLAG_0_1"
+				(polyline
+					(pts
+						(xy 0 0) (xy 0 1.27) (xy -1.016 1.905) (xy 0 2.54) (xy 1.016 1.905) (xy 0 1.27)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)	)
 	(junction
 		(at 246.38 31.75)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "0f6957bc-164c-40c9-bf16-1081cf29ee5e")
-	)
-	(junction
-		(at 133.35 81.28)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "24511560-b33b-4d0c-aaaa-c3c070f6d923")
 	)
 	(junction
 		(at 83.82 88.9)
@@ -2729,18 +2983,6 @@
 		(uuid "af5be135-31e6-4f01-bbee-38ab41755bb6")
 	)
 	(junction
-		(at 147.32 63.5)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "b4e8ed7f-165b-4883-a6a5-05cd647881b9")
-	)
-	(junction
-		(at 133.35 78.74)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "b7e8ef65-fcdf-4c98-84b3-da0a9deafb9a")
-	)
-	(junction
 		(at 137.16 142.24)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -2805,12 +3047,6 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "e7a51bca-f69e-47dc-9c9c-88799952e3a3")
-	)
-	(junction
-		(at 133.35 63.5)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "f268eb1d-3f8b-4620-9c7c-deeed26b6bf7")
 	)
 	(junction
 		(at 63.5 133.35)
@@ -2902,16 +3138,6 @@
 	)
 	(wire
 		(pts
-			(xy 147.32 66.04) (xy 147.32 63.5)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "0df251b0-e5d4-4ad0-b6fe-e0cabf1ed412")
-	)
-	(wire
-		(pts
 			(xy 215.9 91.44) (xy 220.98 91.44)
 		)
 		(stroke
@@ -2952,16 +3178,6 @@
 	)
 	(wire
 		(pts
-			(xy 83.82 63.5) (xy 147.32 63.5)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "11a4deef-25c6-49f4-b958-cd06971c7e2d")
-	)
-	(wire
-		(pts
 			(xy 215.9 31.75) (xy 226.06 31.75)
 		)
 		(stroke
@@ -2999,16 +3215,6 @@
 			(type default)
 		)
 		(uuid "212e6cc0-4dfc-4c70-976b-f113c1b107e6")
-	)
-	(wire
-		(pts
-			(xy 133.35 78.74) (xy 133.35 63.5)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "23001e5f-c8ac-4a6c-9ebb-dff6154b5920")
 	)
 	(wire
 		(pts
@@ -3282,16 +3488,6 @@
 	)
 	(wire
 		(pts
-			(xy 133.35 78.74) (xy 170.18 78.74)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "603f2b8c-c8aa-409b-abad-c43a6494d87e")
-	)
-	(wire
-		(pts
 			(xy 88.9 106.68) (xy 86.36 106.68)
 		)
 		(stroke
@@ -3502,16 +3698,6 @@
 	)
 	(wire
 		(pts
-			(xy 147.32 59.69) (xy 147.32 63.5)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "a10851a7-1739-48c5-8377-7f59a746ca1d")
-	)
-	(wire
-		(pts
 			(xy 220.98 55.88) (xy 226.06 55.88)
 		)
 		(stroke
@@ -3642,16 +3828,6 @@
 	)
 	(wire
 		(pts
-			(xy 133.35 78.74) (xy 133.35 81.28)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "ba5d837f-f807-4bbb-bd32-c3a1b99782ae")
-	)
-	(wire
-		(pts
 			(xy 246.38 31.75) (xy 256.54 31.75)
 		)
 		(stroke
@@ -3742,16 +3918,6 @@
 	)
 	(wire
 		(pts
-			(xy 129.54 78.74) (xy 133.35 78.74)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "c4cc85b4-2384-4627-9c3a-5bd9751bf480")
-	)
-	(wire
-		(pts
 			(xy 227.33 110.49) (xy 227.33 116.84)
 		)
 		(stroke
@@ -3812,16 +3978,6 @@
 	)
 	(wire
 		(pts
-			(xy 129.54 81.28) (xy 133.35 81.28)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "dc8e7d2a-ba61-4249-95db-0b3e02e2931b")
-	)
-	(wire
-		(pts
 			(xy 129.54 76.2) (xy 152.4 76.2)
 		)
 		(stroke
@@ -3849,16 +4005,6 @@
 			(type default)
 		)
 		(uuid "dfeadd97-9c10-4e0e-a0e3-52d0decfced7")
-	)
-	(wire
-		(pts
-			(xy 133.35 81.28) (xy 152.4 81.28)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "e1a7616b-b3c9-4dcc-9feb-102a5d8dd830")
 	)
 	(wire
 		(pts
@@ -3980,16 +4126,6 @@
 		)
 		(uuid "1673e738-f5e6-457a-83ab-53d4242f94ae")
 	)
-	(label "DC2"
-		(at 208.28 48.26 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "201846b8-9ca0-4304-9d1b-38b20a4e3a7a")
-	)
 	(label "DR1"
 		(at 227.33 110.49 180)
 		(effects
@@ -4089,16 +4225,6 @@
 			(justify left bottom)
 		)
 		(uuid "c1e417fa-a70e-47b1-8d36-73993e634af8")
-	)
-	(label "DC2"
-		(at 152.4 81.28 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "c2716e77-d862-4375-9199-fb6eca966008")
 	)
 	(label "DC7"
 		(at 238.76 66.04 0)
@@ -4268,7 +4394,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "10uF"
+		(property "Value" "10u"
 			(at 219.71 36.8299 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -4302,6 +4428,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 215.9 35.56 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "10V"
+			(at 215.9 35.56 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "X5R"
 			(at 215.9 35.56 0)
 			(hide yes)
 			(show_name no)
@@ -4428,7 +4576,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "15pF"
+		(property "Value" "15p"
 			(at 67.31 106.6799 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -4462,6 +4610,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 63.5 105.41 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "50V"
+			(at 63.5 105.41 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "C0G"
 			(at 63.5 105.41 0)
 			(hide yes)
 			(show_name no)
@@ -4508,7 +4678,7 @@
 				)
 			)
 		)
-		(property "Value" "CS01"
+		(property "Value" "CSO"
 			(at 78.486 123.19 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -4664,7 +4834,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "2.2uF"
+		(property "Value" "2.2u"
 			(at 229.87 71.1199 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -4698,6 +4868,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 226.06 69.85 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "10V"
+			(at 226.06 69.85 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "X5R"
 			(at 226.06 69.85 0)
 			(hide yes)
 			(show_name no)
@@ -4746,7 +4938,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "100nF"
+		(property "Value" "100n"
 			(at 229.87 53.3399 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -4780,6 +4972,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 226.06 52.07 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "16V"
+			(at 226.06 52.07 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "X7R"
 			(at 226.06 52.07 0)
 			(hide yes)
 			(show_name no)
@@ -4907,7 +5121,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "150 pF"
+		(property "Value" "150p"
 			(at 200.66 124.4599 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -4941,6 +5155,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 196.85 123.19 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "50V"
+			(at 196.85 123.19 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "C0G"
 			(at 196.85 123.19 0)
 			(hide yes)
 			(show_name no)
@@ -5067,7 +5303,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "2.2uF"
+		(property "Value" "2.2u"
 			(at 260.35 54.6099 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -5101,6 +5337,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 256.54 53.34 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "10V"
+			(at 256.54 53.34 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "X5R"
 			(at 256.54 53.34 0)
 			(hide yes)
 			(show_name no)
@@ -5306,7 +5564,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "100 nF"
+		(property "Value" "100n"
 			(at 250.19 36.8299 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -5340,6 +5598,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 246.38 35.56 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "16V"
+			(at 246.38 35.56 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "X7R"
 			(at 246.38 35.56 0)
 			(hide yes)
 			(show_name no)
@@ -5388,7 +5668,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "1 uF"
+		(property "Value" "1u"
 			(at 260.35 71.1199 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -5422,6 +5702,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 256.54 69.85 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "10V"
+			(at 256.54 69.85 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "X5R"
 			(at 256.54 69.85 0)
 			(hide yes)
 			(show_name no)
@@ -5548,7 +5850,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "100 nF"
+		(property "Value" "100n"
 			(at 219.71 71.1199 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -5582,6 +5884,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 215.9 69.85 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "16V"
+			(at 215.9 69.85 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "X7R"
 			(at 215.9 69.85 0)
 			(hide yes)
 			(show_name no)
@@ -5786,7 +6110,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "100nF"
+		(property "Value" "100n"
 			(at 173.99 85.0899 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -5820,6 +6144,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 170.18 83.82 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "16V"
+			(at 170.18 83.82 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "X7R"
 			(at 170.18 83.82 0)
 			(hide yes)
 			(show_name no)
@@ -5867,7 +6213,7 @@
 				)
 			)
 		)
-		(property "Value" "100 pF"
+		(property "Value" "100p"
 			(at 151.13 133.35 90)
 			(show_name no)
 			(do_not_autoplace no)
@@ -5900,6 +6246,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 151.13 138.43 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "50V"
+			(at 151.13 138.43 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "C0G"
 			(at 151.13 138.43 0)
 			(hide yes)
 			(show_name no)
@@ -6703,7 +7071,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "1.5 KOhm"
+		(property "Value" "1.5k"
 			(at 229.87 132.0799 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -6784,7 +7152,7 @@
 				)
 			)
 		)
-		(property "Value" "1 KOhm"
+		(property "Value" "1k"
 			(at 163.83 134.62 90)
 			(show_name no)
 			(do_not_autoplace no)
@@ -6843,7 +7211,7 @@
 		)
 	)
 	(symbol
-		(lib_id "power:+3V3")
+		(lib_id "power:+BATT")
 		(at 147.32 59.69 0)
 		(unit 1)
 		(body_style 1)
@@ -6897,7 +7265,7 @@
 				)
 			)
 		)
-		(property "Description" "Power symbol creates a global label with name \"+3V3\""
+		(property "Description" "Power symbol creates a global label with name \"BAT+\""
 			(at 147.32 59.69 0)
 			(hide yes)
 			(show_name no)
@@ -7021,7 +7389,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "100 nF"
+		(property "Value" "100n"
 			(at 250.19 54.6099 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -7055,6 +7423,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 246.38 53.34 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "16V"
+			(at 246.38 53.34 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "X7R"
 			(at 246.38 53.34 0)
 			(hide yes)
 			(show_name no)
@@ -7103,7 +7493,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "270 pF"
+		(property "Value" "270p"
 			(at 218.44 124.4599 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -7137,6 +7527,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 214.63 123.19 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "50V"
+			(at 214.63 123.19 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "C0G"
 			(at 214.63 123.19 0)
 			(hide yes)
 			(show_name no)
@@ -7263,7 +7675,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "150 pF"
+		(property "Value" "150p"
 			(at 200.66 152.3999 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -7297,6 +7709,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 196.85 151.13 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "50V"
+			(at 196.85 151.13 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "C0G"
 			(at 196.85 151.13 0)
 			(hide yes)
 			(show_name no)
@@ -7345,7 +7779,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "15pF"
+		(property "Value" "15p"
 			(at 67.31 130.8099 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -7379,6 +7813,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 63.5 129.54 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "50V"
+			(at 63.5 129.54 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "C0G"
 			(at 63.5 129.54 0)
 			(hide yes)
 			(show_name no)
@@ -7583,7 +8039,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "2.2uF"
+		(property "Value" "2.2u"
 			(at 229.87 88.8999 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -7617,6 +8073,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 226.06 87.63 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "10V"
+			(at 226.06 87.63 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "X5R"
 			(at 226.06 87.63 0)
 			(hide yes)
 			(show_name no)
@@ -7664,7 +8142,7 @@
 				)
 			)
 		)
-		(property "Value" "100 pF"
+		(property "Value" "100p"
 			(at 151.13 119.38 90)
 			(show_name no)
 			(do_not_autoplace no)
@@ -7697,6 +8175,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 151.13 124.46 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "50V"
+			(at 151.13 124.46 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "C0G"
 			(at 151.13 124.46 0)
 			(hide yes)
 			(show_name no)
@@ -7823,7 +8323,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "100 nF"
+		(property "Value" "100n"
 			(at 250.19 71.1199 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -7857,6 +8357,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 246.38 69.85 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "16V"
+			(at 246.38 69.85 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "X7R"
 			(at 246.38 69.85 0)
 			(hide yes)
 			(show_name no)
@@ -7983,7 +8505,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "10uF"
+		(property "Value" "10u"
 			(at 219.71 53.3399 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -8017,6 +8539,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 215.9 52.07 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "10V"
+			(at 215.9 52.07 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "X5R"
 			(at 215.9 52.07 0)
 			(hide yes)
 			(show_name no)
@@ -8143,7 +8687,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "270 pF"
+		(property "Value" "270p"
 			(at 218.44 152.3999 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -8177,6 +8721,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 214.63 151.13 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "50V"
+			(at 214.63 151.13 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "C0G"
 			(at 214.63 151.13 0)
 			(hide yes)
 			(show_name no)
@@ -8225,7 +8791,7 @@
 				(justify right)
 			)
 		)
-		(property "Value" "FB 600 Ohm @ 100MHz"
+		(property "Value" "600R@100MHz"
 			(at 151.13 71.1707 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -8305,7 +8871,7 @@
 				)
 			)
 		)
-		(property "Value" "470n"
+		(property "Value" "470nH"
 			(at 189.484 114.808 90)
 			(show_name no)
 			(do_not_autoplace no)
@@ -8462,7 +9028,7 @@
 				)
 			)
 		)
-		(property "Value" "CSI1"
+		(property "Value" "CSI"
 			(at 78.994 128.778 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -8540,7 +9106,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "100nF"
+		(property "Value" "100n"
 			(at 229.87 36.8299 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -8574,6 +9140,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 226.06 35.56 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "16V"
+			(at 226.06 35.56 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "X7R"
 			(at 226.06 35.56 0)
 			(hide yes)
 			(show_name no)
@@ -8622,7 +9210,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "2.2uF"
+		(property "Value" "2.2u"
 			(at 260.35 36.8299 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -8656,6 +9244,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 256.54 35.56 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "10V"
+			(at 256.54 35.56 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "X5R"
 			(at 256.54 35.56 0)
 			(hide yes)
 			(show_name no)
@@ -8703,7 +9313,7 @@
 				)
 			)
 		)
-		(property "Value" "1 KOhm"
+		(property "Value" "1k"
 			(at 163.83 120.65 90)
 			(show_name no)
 			(do_not_autoplace no)
@@ -8860,7 +9470,7 @@
 				)
 			)
 		)
-		(property "Value" "470n"
+		(property "Value" "470nH"
 			(at 189.484 142.748 90)
 			(show_name no)
 			(do_not_autoplace no)
@@ -8940,7 +9550,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "ABM8-27.120MHZ"
+		(property "Value" "27.12MHz"
 			(at 38.608 115.062 90)
 			(show_name no)
 			(do_not_autoplace no)
@@ -8974,6 +9584,17 @@
 			)
 		)
 		(property "Description" "Four pin crystal, GND on pins 2 and 4"
+			(at 63.5 118.11 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "MPN" "ABM8-27.120MHZ"
 			(at 63.5 118.11 0)
 			(hide yes)
 			(show_name no)
@@ -9050,7 +9671,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "100 nF"
+		(property "Value" "100n"
 			(at 219.71 88.8999 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -9084,6 +9705,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 215.9 87.63 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "16V"
+			(at 215.9 87.63 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "X7R"
 			(at 215.9 87.63 0)
 			(hide yes)
 			(show_name no)
@@ -9131,7 +9774,7 @@
 				)
 			)
 		)
-		(property "Value" "68 pF"
+		(property "Value" "68p"
 			(at 205.74 139.7 90)
 			(show_name no)
 			(do_not_autoplace no)
@@ -9164,6 +9807,28 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
+			(at 205.74 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Voltage" "50V"
+			(at 205.74 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "C0G"
 			(at 205.74 144.78 0)
 			(hide yes)
 			(show_name no)
@@ -9211,7 +9876,7 @@
 				)
 			)
 		)
-		(property "Value" "68 pF"
+		(property "Value" "68p"
 			(at 205.74 111.76 90)
 			(show_name no)
 			(do_not_autoplace no)
@@ -9254,6 +9919,28 @@
 				)
 			)
 		)
+		(property "Voltage" "50V"
+			(at 205.74 116.84 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Dielectric" "C0G"
+			(at 205.74 116.84 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "1"
 			(uuid "c08ff59c-723b-4e74-ba83-def03b8c8c4f")
 		)
@@ -9268,5 +9955,511 @@
 				)
 			)
 		)
+	)
+
+	(wire
+		(pts
+			(xy 147.32 59.69) (xy 147.32 66.04)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "6f3a2524-4730-452e-8755-55113ac1f82b")
+	)
+	(wire
+		(pts
+			(xy 129.54 78.74) (xy 170.18 78.74)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "63d79af0-18f0-4f91-a600-6aa5df27a188")
+	)
+	(wire
+		(pts
+			(xy 129.54 81.28) (xy 152.4 81.28)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "2e0c08e6-07c9-4c4b-85f5-936cea422103")
+	)
+	(symbol
+		(lib_id "power:+3V3")
+		(at 83.82 63.5 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "cdb8df38-745a-47a9-873d-d9110f42282e")
+		(property "Reference" "#PWR076"
+			(at 83.82 63.5 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "+3V3"
+			(at 83.82 58.42 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Package_DFN_QFN:Diodes_UDFN3810-9_TYPE_B"
+			(at 83.82 63.5 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 83.82 63.5 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"+3V3\""
+			(at 83.82 63.5 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "b1ed62b6-5703-4665-bb56-f80bba8cbc75")
+		)
+		(instances
+			(project "Attendance Management System"
+				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/c8797de9-443e-4542-ab6c-38920db86e79"
+					(reference "#PWR076")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:+3V3")
+		(at 170.18 78.74 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "002b9ac8-18dd-4659-8612-a1b8ca5d21ca")
+		(property "Reference" "#PWR077"
+			(at 170.18 78.74 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "+3V3"
+			(at 170.18 73.66 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Package_DFN_QFN:Diodes_UDFN3810-9_TYPE_B"
+			(at 170.18 78.74 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 170.18 78.74 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"+3V3\""
+			(at 170.18 78.74 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "00d01e58-e5bf-479d-aacf-2c57c4d3a537")
+		)
+		(instances
+			(project "Attendance Management System"
+				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/c8797de9-443e-4542-ab6c-38920db86e79"
+					(reference "#PWR077")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:+BATT")
+		(at 152.4 81.28 270)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "c9e80837-5932-48f3-8796-e5f462d0287f")
+		(property "Reference" "#PWR078"
+			(at 152.4 81.28 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "BAT+"
+			(at 156.21 81.28 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Package_DFN_QFN:Diodes_UDFN3810-9_TYPE_B"
+			(at 152.4 81.28 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 152.4 81.28 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"BAT+\""
+			(at 152.4 81.28 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "4d343f75-5cb7-4df4-8590-d0120e233255")
+		)
+		(instances
+			(project "Attendance Management System"
+				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/c8797de9-443e-4542-ab6c-38920db86e79"
+					(reference "#PWR078")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:+BATT")
+		(at 208.28 48.26 90)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "af838e57-1c02-4379-8e23-dacd8eaa51ae")
+		(property "Reference" "#PWR079"
+			(at 208.28 48.26 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "BAT+"
+			(at 204.47 48.26 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Package_DFN_QFN:Diodes_UDFN3810-9_TYPE_B"
+			(at 208.28 48.26 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 208.28 48.26 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"BAT+\""
+			(at 208.28 48.26 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "6300fe67-85e1-4b30-85fb-a9848c8b8789")
+		)
+		(instances
+			(project "Attendance Management System"
+				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/c8797de9-443e-4542-ab6c-38920db86e79"
+					(reference "#PWR079")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:PWR_FLAG")
+		(at 208.28 31.75 90)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "9087f2ad-4e2c-46e0-9c07-7742c9fd5ecc")
+		(property "Reference" "#FLG01"
+			(at 208.28 31.75 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "PWR_FLAG"
+			(at 204.47 31.75 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Package_DFN_QFN:Diodes_UDFN3810-9_TYPE_B"
+			(at 208.28 31.75 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 208.28 31.75 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Special symbol for telling ERC where power comes from"
+			(at 208.28 31.75 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "966c87fc-73aa-4ad1-8ea5-0b5d6ce4af82")
+		)
+		(instances
+			(project "Attendance Management System"
+				(path "/7913fd27-5946-47b8-84cf-c21ab2f68a0e/c8797de9-443e-4542-ab6c-38920db86e79"
+					(reference "#FLG01")
+					(unit 1)
+				)
+			)
+		)
+	)
+
+	(rectangle
+		(start 45.72 40.64)
+		(end 176.53 154.94)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(fill
+			(type none)
+		)
+		(uuid "9fcc90e1-2b8b-4602-80fe-b6db8e76bb12")
+	)
+	(text "NFC READER  ST25R3916 (SPI)"
+		(exclude_from_sim no)
+		(at 46.99 43.815 0)
+		(effects
+			(font
+				(size 1.524 1.524)
+				(thickness 0.3048)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "04ee602a-9ce1-4228-aaaf-a0f0c9894aa4")
+	)
+	(rectangle
+		(start 177.8 104.14)
+		(end 246.38 163.83)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(fill
+			(type none)
+		)
+		(uuid "5a390e78-791f-430d-8993-2fbc74621ee5")
+	)
+	(text "EMC FILTER, MATCHING NETWORK AND ANTENNA"
+		(exclude_from_sim no)
+		(at 179.07 107.315 0)
+		(effects
+			(font
+				(size 1.524 1.524)
+				(thickness 0.3048)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "a6120de7-2df5-4ec0-abcc-c00e71d86caf")
+	)
+	(rectangle
+		(start 190.5 24.13)
+		(end 267.97 101.6)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(fill
+			(type none)
+		)
+		(uuid "d3970b44-c871-49c0-956a-4c596e0b9741")
+	)
+	(text "ST25R3916 SUPPLY AND REGULATOR DECOUPLING"
+		(exclude_from_sim no)
+		(at 191.77 27.305 0)
+		(effects
+			(font
+				(size 1.524 1.524)
+				(thickness 0.3048)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "160ca69a-48ca-4cec-9852-cc5fb6756b21")
+	)
+	(text "VDD / VDD_TX: straight from the Li-ion cell (BAT+).  VDD_IO: +3V3 so the SPI/IRQ levels match the MCU."
+		(exclude_from_sim no)
+		(at 46.99 153.67 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "001b2b8e-6d4e-43c9-b039-91ab9c95b623")
 	)
 )

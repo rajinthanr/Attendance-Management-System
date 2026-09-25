@@ -106,7 +106,10 @@ Every other part comes from the stock KiCad libraries.
 ### `rfid.kicad_sch`
 
 - **U5:** ST25R3916-AQWT (QFN-32), in SPI mode because I2C_EN is tied to GND. It was U4 before re-annotation.
-- **Supplies:** a single power symbol, `#PWR050`, feeds the `DC2` net, which carries VDD_IO, VDD_TX, R12 (the BSS pull-up), C11, C21 and C25, plus VDD through FB2 (a ferrite bead, 600 Ω at 100 MHz). That symbol was changed from `+3V3` to `BAT+` on 2026-09-25, so all of these now run from the battery. There is no load switch, so the reader is always powered. See the open issues about VDD_IO.
+- **Supplies:** the reader runs straight from the Li-ion cell, with no load switch, so it is always powered.
+  - VDD_TX, decoupled by C21 and C25, is on `BAT+`. So is VDD, through FB2 (600 Ω at 100 MHz).
+  - VDD_IO (with C11) and R12, the BSS pull-up, are on `+3V3`, so SPI and IRQ run at the MCU's logic level.
+  - Keep that split. Moving VDD_IO to `BAT+` drives 4.2 V into PB0, PB1 and PB4.
 - **Decoupling:** the internal regulator pins (VDD_A, VDD_D, VDD_AM, VDD_RF/VDD_DR, AGDC) each have 100 nF plus 1–2.2 µF.
 - **Crystal:** Y1 (ABM8-27.120MHZ, 3225 4-pad) on XTI/XTO, with C9 and C10 (15 pF).
 - **Antenna path:** RFO1/RFO2 go through an EMC filter (L3/L4, 470 nH in 0402, with C12/C13, 150 pF), then the matching network (C16–C19) to the antenna AE1/AE2. R15 (1.5 kΩ) sits across the antenna. RFI1/RFI2 take the receive signal back through C14/C15 (100 pF) and R13/R14 (1 kΩ).
@@ -116,6 +119,9 @@ Every other part comes from the stock KiCad libraries.
 ### `power.kicad_sch`
 
 - **USB input:** J1 is a USB-C receptacle (GCT USB4110, USB 2.0 only). It is set up as a sink with 5.1 kΩ CC pull-downs (R1, R2), and VBUS becomes `+5V`. SBU1 and SBU2 are not connected.
+- **USB ESD:** U6 is a USBLC6-2SC6 (SOT-23-6).
+  - D+ is on I/O1 (pins 1 and 6), D- is on I/O2 (pins 3 and 4), VBUS is on `+5V`, and pin 2 is GND.
+  - On the board, place it next to J1 and route D+/D- straight through its pads.
 - **Charger:** U2 is an MCP73833 Li-ion charger, fed from `+5V` and charging `BAT+`.
   - R6 (1 kΩ) on PROG sets about 1 A of charge current (I_REG = 1000 V / R_PROG).
   - TH1, an NTC thermistor, is on THERM.
@@ -125,7 +131,7 @@ Every other part comes from the stock KiCad libraries.
 - **Bulk capacitors (0805):**
   - C35 (4.7 µF) on `+5V`. Keep the total on VBUS at or below USB's 10 µF limit.
   - C36 (10 µF) on `BAT+`, covering the charger output, the LDO input and the motor.
-  - `+3V3` has C2 (4.7 µF) plus the 100 nF decouplers C1 and C3. C21 moved to `BAT+` with the reader supply.
+  - `+3V3` has C2 (4.7 µF), C1 and C3 (100 nF), and C11 (100 nF, at U5's VDD_IO).
 
 ### `mcu.kicad_sch`
 
@@ -146,7 +152,23 @@ Every other part comes from the stock KiCad libraries.
   - **Firmware:** the PN532 uses SPI mode 0, LSB first, at up to 5 MHz, and its IRQ is active low. Reconfigure SPI1 whenever you switch readers. PB6 is EXTI6, which shares the `EXTI9_5_IRQn` vector with PA9 (VBUS).
   - **Power:** VCC is on `BAT+`, so the module's RF current bypasses the 200 mA LDO. This only works if the module makes its own 3.3 V I/O rail; see the open issues.
 
-### Status and open issues (full check of the files saved at 2026-09-25 14:47; re-run ERC and DRC before relying on this)
+### Schematic conventions (set 2026-09-25)
+
+- **Power symbols:** use the matching library power symbol for every net: `power:+BATT` with value `BAT+`, plus `power:VDDA`, `power:+5V` and `power:+3V3`. Never use a `+3V3` symbol with its value changed.
+- **ERC flags:** `PWR_FLAG`s sit on `+5V` (at C35), `VDDA` (at C5) and the ST25R3916's `DC1` (VDD after FB2).
+- **Edited embedded symbols:** three pins were fixed in the schematics' embedded symbol copies, so *Update symbols from library* would undo them:
+  - U3 pin 5 (OUT) is set to power output.
+  - U5 pin 9 (VDD_RF) is set to power output.
+  - U5's hidden pin 16 (GND_DR, stacked on pin 12) is set to passive.
+
+  Fix the same pins in the `External` library too.
+- **No-connects:** every unused MCU pin has a no-connect flag.
+- **Values:** SI style: `100n`, `4.7u`, `15p`, `10k`, `4.7M`, `470R`, `600R@100MHz`, `470nH`. Capacitors carry hidden `Dielectric` and `Voltage` fields (C0G 50V for RF and crystal parts, X7R 16V for 100n/10n, X5R 10V/16V for bulk). Y1 carries an `MPN` field.
+- **Layout:** every functional block sits in a titled frame, and each sheet has a filled title block (title, date, rev 0.1, description).
+
+### Status and open issues (checked 2026-09-25; re-run ERC and DRC before relying on this)
+
+**ERC is clean:** 0 errors and 1 warning. The warning is `lib_symbol_mismatch` on U5, because its embedded symbol differs from the `External` library copy.
 
 **Verified:**
 - **MCU wiring:** every U1 signal is connected to the pin the `.ioc` assigns it, except PA15 and PB6, which the `.ioc` doesn't have yet:
@@ -160,42 +182,25 @@ Every other part comes from the stock KiCad libraries.
   | `BAT_SENSE` | PA7 and PB7 |
   | `VBUS` | PA9 |
 
-  The only unconnected MCU pins are PA1, PA5, PA6, PA8 and PA10.
-- **No dangling nets:** no net has just one connection. Every deliberately unconnected pin is intentional: J1 SBU1/SBU2, J7 pin 8, U3 NC, and U5 AAT_A, AAT_B, EXT_LM and MCU_CLK.
-- **ST25R3916 (U5):** its pinout matches the datasheet's SPI configuration. I2C_EN and the exposed pad are on GND. Each internal regulator pin has its decoupling, and Y1 is on XTI/XTO with 15 pF load capacitors.
-- **Power parts:** the charger, the LDO, the flyback diode, the dividers and the bulk capacitors are all connected as described above.
+  PA1, PA5, PA6, PA8 and PA10 have no-connect flags.
+- **No dangling nets:** no net has just one connection.
 
 **Battery divider:** R16/R17 put the PB7 PVD trip at about 1.2 V ÷ 0.365 ≈ 3.3 V, which matches `APP_BATT_CUTOFF_MV`. The firmware still assumes 4.7 M / 4.7 M, so change `APP_BATT_DIV_LOW_KOHM` to 2700.
 
 **Must fix:**
-- **U5's VDD_IO and R12 are on `BAT+`, up to 4.2 V.** VDD_IO sets the ST25R3916's logic level, so MISO (PB4) and IRQ (PB1) would swing to battery voltage.
-  - **R12:** it pulls PB0 to `BAT+`. STM32L4 pins reset to analog mode, and in analog mode they aren't 5 V tolerant, so current leaks through the protection diode whenever PB0 isn't configured, including in Standby.
-  - **Shared MISO:** the 4.2 V swing on MISO also reaches the PN532's MISO pin.
-  - **Fix:** put VDD_IO, its 100 nF decoupler and R12 back on `+3V3`. Keep VDD_TX, its capacitors and FB2 (VDD) on `BAT+`.
-- **The charge current is too high for USB.** R6 = 1 kΩ sets 1 A. A USB-C sink with plain 5.1 kΩ Rd that never reads CC may only draw the USB 2.0 default of 500 mA, and the MSOP-10 MCP73833 has no exposed pad, so it will hit thermal fold-back at 1 A. Use R6 ≥ 2 kΩ (≤ 500 mA), and less if the system load shares VBUS.
-- **The antenna has no footprint.** AE1 and AE2 are two single-pin symbols. AE1's board footprint is still the old DFN-8, and AE2 is missing. Draw the loop as one 2-terminal footprint.
-- **The board is out of date.** It is from 09:19 and has 21 parity issues:
-  - C35, C36, J7, R20 and U5 are missing, and U4 is extra (U4 is U5 after re-annotation).
-  - 13 net conflicts: nets renamed from `U4-*` to `U5-*`, the move from `+3V3` to `BAT+`, and PA15/PB6.
-
-  Run *Update PCB from Schematic*.
+- **The charge current is too high for USB.** R6 = 1 kΩ sets 1 A. A USB-C sink with plain 5.1 kΩ Rd that never reads CC may only draw the USB 2.0 default of 500 mA, and the MSOP-10 MCP73833 has no exposed pad, so it will hit thermal fold-back at 1 A. Use R6 ≥ 2 kΩ (≤ 500 mA).
+- **The antenna has no footprint.** AE1 and AE2 are two single-pin symbols. Draw the loop as one 2-terminal footprint.
+- **The board is behind the schematic.** It is from 09:19, before C35, C36, J7, R20, U6, the U4 → U5 re-annotation and the VDD_IO split. Run *Update PCB from Schematic*.
 
 **Should fix:**
-- **J7 VCC is on `BAT+`.** That's fine only if the PN532 module makes its own 3.3 V I/O rail. If its I/O follows VCC, MISO and IRQ reach 4.2 V, so put pin 5 back on `+3V3`.
-- **`BAT+` is drawn with `power:+3V3` symbols whose value is changed to `BAT+`.** The netlist uses the value, but ERC's `multiple_net_names` message still calls `#PWR050` "+3V3". Use `power:+BATT` (or a dedicated `BAT+` power symbol) so the net can never merge with `+3V3`.
+- **J7 VCC is on `BAT+`.** That's fine only if the PN532 module makes its own 3.3 V I/O rail. If its I/O follows VCC, MISO and IRQ reach 4.2 V.
 - **Add PA15 (`PN532_NSS`) and PB6 (`PN532_IRQ`) to the `.ioc`.**
-- **ERC: 10 errors and 3 warnings.**
-  - 5 `pin_not_connected` errors on PA1, PA5, PA6, PA8 and PA10. Add no-connect flags.
-  - 5 `power_pin_not_driven` errors, on `+5V`, `+3V3`, `VDDA` and U5's VDD (DC1) and VDD_DR (DC3). Add `PWR_FLAG` symbols.
-  - Warnings: two `multiple_net_names` and one `lib_symbol_mismatch` on U5. All are harmless.
-- **TH1's value is just "Therm_NTC".** The MCP73833 THERM input expects a 10 kΩ NTC, so specify the part.
-- **Check the LSE load capacitors.** C6 and C7 are only 4.3 pF, which implies a crystal with CL ≈ 4–5 pF. Check against Y2's CL: C ≈ 2 × (CL − about 2 pF of stray capacitance).
-- **Check the EMC inductors' rating.** L3/L4 (470 nH, 0402) carry the full transmitter current, so confirm the part's current rating. Also specify C0G/NP0 for C12–C19.
-- **Consider USB ESD protection** on D+ and D-. There is none now.
+- **Check the LSE load capacitors.** C6 and C7 are only 4.3 pF, which implies a crystal with CL ≈ 4–5 pF. Check against Y2's CL.
+- **Check the EMC inductors' rating.** L3/L4 (470 nH, 0402) carry the full transmitter current, so confirm the part's current rating.
 
 **Layout** (unchanged since 09:19):
-- **Not routed:** all footprints are on F.Cu and overlapping. There is no Edge.Cuts outline, and there are no tracks, vias or zones. DRC reports 180 unconnected items, `invalid_outline`, and 132 silkscreen warnings.
-- **Some DRC errors come from the stock footprints themselves:** U2's MSOP-10 pads are 0.15 mm apart, against the 0.2 mm default clearance (6 errors). J1's GND pads are 0.19 mm from its own NPTH holes, against the 0.25 mm hole clearance (4 errors). Fix both with a footprint-level or custom-rule override rather than by moving pads.
+- **Not routed:** all footprints are on F.Cu and overlapping. There is no Edge.Cuts outline, and there are no tracks, vias or zones.
+- **Some DRC errors come from the stock footprints themselves:** U2's MSOP-10 pads are 0.15 mm apart, against the 0.2 mm default clearance. J1's GND pads are 0.19 mm from its own NPTH holes, against the 0.25 mm hole clearance. Fix both with a footprint-level or custom-rule override rather than by moving pads.
 
 ## CubeMX-generated code (`Core/`, `Drivers/`, `Middlewares/`)
 
