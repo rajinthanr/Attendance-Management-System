@@ -2970,6 +2970,18 @@
 		)
 		(uuid "a6120de7-2df5-4ec0-abcc-c00e71d86caf")
 	)
+	(text "RFID"
+		(exclude_from_sim no)
+		(at 150.114 17.526 0)
+		(effects
+			(font
+				(size 5.08 5.08)
+				(thickness 1.524)
+				(bold yes)
+			)
+		)
+		(uuid "c94987f5-3fff-459f-88a2-9403da15bae5")
+	)
 	(junction
 		(at 246.38 31.75)
 		(diameter 0)
