@@ -419,9 +419,48 @@ static void test_battery(void)
     CHECK(batt_classify(3400u) == BATT_WARN, "warn band");
     CHECK(batt_classify(3200u) == BATT_CRITICAL, "critical band");
 
+    /* Divider ratio against the schematic: 4.2 V full and 3.3 V cutoff. */
+    s.vbat_counts = 1895u;   /* 4.2 V * 2.7 / 7.4 = 1532 mV at the node */
+    mv = batt_millivolts(&s);
+    CHECK(mv > 4190u && mv < 4210u, "full cell %u mV", mv);
+    s.vbat_counts = 1444u;   /* 3.2 V */
+    mv = batt_millivolts(&s);
+    CHECK(mv > 3190u && mv < 3210u, "flat cell %u mV", mv);
+    CHECK(batt_classify(mv) == BATT_CRITICAL, "flat cell is critical");
+
+    /* A sagging VDDA (LDO in dropout) must not change the answer. VDDA
+     * 3100 mV: VREFINT reads 1602 and the same 1532 mV node reads 2024. */
+    s.vrefint_counts = 1602u;
+    s.vbat_counts = 2024u;
+    mv = batt_millivolts(&s);
+    CHECK(mv > 4180u && mv < 4220u, "low VDDA, full cell %u mV", mv);
+
     s.vrefint_counts = 0u;
     CHECK(batt_millivolts(&s) == 0u, "bad sample yields 0");
     CHECK(batt_classify(0u) == BATT_OK, "bad sample must not shut the unit down");
+
+    s.vrefint_counts = 3u;   /* implies VDDA of 1.6 kV: a glitch, not a supply */
+    s.vbat_counts = 1751u;
+    CHECK(batt_millivolts(&s) == 0u, "impossible VDDA rejected");
+
+    {
+        batt_reading_t r;
+        batt_evaluate(&s, &r);
+        CHECK(r.status == BATT_SAMPLE_BAD_VDDA && r.vdda_mv > 3600u,
+              "reason reported: %u", (unsigned)r.status);
+
+        s.vrefint_counts = 1500u;
+        s.vbat_counts = 2200u;
+        batt_evaluate(&s, &r);
+        CHECK(r.status == BATT_SAMPLE_TOO_HIGH && r.vbat_mv > 4500u,
+              "rejected voltage still shown: %u mV", r.vbat_mv);
+    }
+
+    s.vrefint_counts = 1500u;
+    s.vbat_counts = 4095u;   /* saturated: R8 open or the node shorted to BAT+ */
+    CHECK(batt_millivolts(&s) == 0u, "saturated input rejected");
+    s.vbat_counts = 2200u;   /* 4.89 V: no single cell reads that */
+    CHECK(batt_millivolts(&s) == 0u, "impossible cell voltage rejected");
 }
 
 /* ===================================================================== */
@@ -727,6 +766,79 @@ static void test_fsm(void)
 }
 
 /* ===================================================================== */
+static void test_battery_boot(void)
+{
+    static jmp_buf jb;
+    volatile int powered_off;
+
+    printf("battery at boot\n");
+
+    host_flash_erase_all();
+    host_card_present = false;
+    host_button = false;
+    host_vbus = false;
+    host_deep_sleep_jmp = &jb;
+
+    /* A flat cell found after the divider has settled: straight back off. */
+    host_ms = 5000u;
+    host_adc_vbat_counts = 1444u;   /* 3.2 V */
+    powered_off = 0;
+    if (setjmp(jb) == 0) {
+        app_init();
+        CHECK(app_state() == ST_SHUTDOWN, "flat at boot: shutting down");
+        run_ms(3000u);
+    } else {
+        powered_off = 1;
+    }
+    CHECK(powered_off == 1, "flat at boot: off");
+
+    /* A fresh battery, read before C3 has charged: looks flat, is not. */
+    host_ms = 0u;
+    host_adc_vbat_counts = 1300u;   /* 2.9 V, C3 still charging */
+    powered_off = 0;
+    if (setjmp(jb) == 0) {
+        app_init();
+        CHECK(app_state() == ST_IDLE, "early low reading is not trusted");
+        host_adc_vbat_counts = 1751u;   /* settled: 3.88 V */
+        run_ms(APP_BATT_SETTLE_MS + 3000u);
+        CHECK(app_state() == ST_IDLE && dbg_battery_mv > 3800u,
+              "settled reading keeps it on");
+    } else {
+        powered_off = 1;
+    }
+    CHECK(powered_off == 0, "fresh battery: stays on");
+
+    /* Early and still flat once settled: off, without three 10 s samples. */
+    host_ms = 0u;
+    host_adc_vbat_counts = 1444u;
+    powered_off = 0;
+    if (setjmp(jb) == 0) {
+        app_init();
+        run_ms(APP_BATT_SETTLE_MS + 3000u);
+    } else {
+        powered_off = 1;
+    }
+    CHECK(powered_off == 1 && host_ms < APP_BATT_SETTLE_MS + 3000u,
+          "flat once settled: off at %u ms", (unsigned)host_ms);
+
+    /* On USB power a flat cell is charging: stay on. */
+    host_ms = 0u;
+    host_vbus = true;
+    powered_off = 0;
+    if (setjmp(jb) == 0) {
+        app_init();
+        run_ms(APP_BATT_SETTLE_MS + 1000u);
+    } else {
+        powered_off = 1;
+    }
+    CHECK(powered_off == 0, "charging: stays on");
+
+    host_vbus = false;
+    host_adc_vbat_counts = 1751u;
+    host_deep_sleep_jmp = NULL;
+}
+
+/* ===================================================================== */
 int main(void)
 {
     printf("Level 2 logic tests (no HAL linked)\n\n");
@@ -744,6 +856,7 @@ int main(void)
     test_card_reader();
     test_button();
     test_fsm();
+    test_battery_boot();
 
     printf("\n%d checks, %d failures\n", g_run, g_fail);
     return (g_fail == 0) ? 0 : 1;

@@ -11,6 +11,7 @@
  */
 #include "host_platform.h"
 #include "platform_if.h"
+#include "app_debug.h"
 #include "nv_layout.h"
 #include "crc.h"
 #include "timeutil.h"
@@ -22,6 +23,50 @@ uint8_t  host_flash[HOST_FLASH_BYTES];
 uint32_t host_out_mask;
 uint32_t host_write_failures;
 static uint32_t s_writes;
+
+/* Live-debug globals; Core/Src/main.c defines them on the target. */
+volatile uint32_t dbg_battery_mv;
+volatile uint8_t  dbg_battery_state;
+volatile uint16_t dbg_battery_counts;
+volatile uint32_t dbg_battery_samples;
+volatile uint8_t  dbg_battery_error;
+volatile uint32_t dbg_battery_raw_mv;
+volatile uint32_t dbg_vdda_mv;
+volatile uint16_t dbg_vrefint_counts;
+volatile uint16_t dbg_vrefint_cal;
+volatile uint8_t  dbg_adc_error;
+volatile uint32_t dbg_card_id;
+volatile uint8_t  dbg_card_uid[10];
+volatile uint8_t  dbg_card_uid_len;
+volatile uint8_t  dbg_card_atqa[2];
+volatile uint8_t  dbg_card_sak;
+volatile uint32_t dbg_card_count;
+volatile uint8_t  dbg_scan_result;
+volatile bool     dbg_button_down;
+volatile uint32_t dbg_button_short_count;
+volatile uint32_t dbg_button_long_count;
+volatile bool     dbg_nfc_ready;
+volatile uint8_t  dbg_nfc_chip_id;
+volatile bool     dbg_nfc_supply_3v3;
+volatile uint8_t  dbg_nfc_amplitude;
+volatile uint8_t  dbg_nfc_last_status;
+volatile uint32_t dbg_nfc_polls;
+volatile uint32_t dbg_nfc_errors;
+volatile uint32_t dbg_nfc_collisions;
+volatile uint32_t dbg_nfc_last_irq;
+volatile uint32_t dbg_nfc_irq_pin_misses;
+volatile uint8_t  dbg_state;
+volatile uint8_t  dbg_boot_cause;
+volatile uint32_t dbg_uptime_ms;
+volatile bool     dbg_vbus;
+volatile bool     dbg_usb_host;
+volatile uint32_t dbg_records_ram;
+volatile uint32_t dbg_records_flash;
+volatile uint32_t dbg_records_free;
+volatile uint32_t dbg_students;
+volatile app_datetime_t dbg_now;
+volatile app_datetime_t dbg_set_time;
+volatile bool     dbg_set_time_request;
 
 uint32_t host_ms;
 bool     host_button;

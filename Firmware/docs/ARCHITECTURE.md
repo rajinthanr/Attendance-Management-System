@@ -313,11 +313,13 @@ unknown card always gets the red pattern.
 
 ## Live debugging
 
-`App/Inc/app_debug.h` declares `dbg_*` globals for the STM32CubeIDE Live
-Expressions view: battery millivolts and raw counts, the last card's UID,
-ATQA, SAK and logged ID, the scan result, button state and press counts,
-reader status and counters, record counts, and the RTC. `bsp_nfc.c` adds
-`dbg_nfc_last_irq` and `dbg_nfc_irq_pin_misses`.
+The `dbg_*` globals for the STM32CubeIDE Live Expressions view are defined in
+`Core/Src/main.c` (the `USER CODE BEGIN PV` block, so CubeMX regeneration
+keeps them) and declared in `App/Inc/app_debug.h`: battery millivolts and raw
+counts, the last card's UID, ATQA, SAK and logged ID, the scan result, button
+state and press counts, reader status, counters and interrupt flags, record
+counts, and the RTC. The host build defines its own copies in
+`Tests/host_platform.c`.
 
 To set the clock from the debugger, fill in `dbg_set_time` and set
 `dbg_set_time_request` to 1. A unit whose RTC was never set starts from the

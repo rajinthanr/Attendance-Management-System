@@ -19,16 +19,10 @@
  * dbg_nfc_irq_pin_misses.
  */
 #include "bsp.h"
+#include "app_debug.h"
 #include <string.h>
 
 SPI_HandleTypeDef hbsp_spi;
-
-/** Interrupt bits seen on the last completed exchange: main | timer << 8 |
- *  error << 16 (Tables 62-64). For Live Expressions. */
-volatile uint32_t dbg_nfc_last_irq;
-/** Waits that ended on the timeout read although the event had happened:
- *  non-zero means the IRQ line is not reaching PB1. */
-volatile uint32_t dbg_nfc_irq_pin_misses;
 
 /* ------------------------------------------------------------------------ */
 /* Chip definitions                                                         */

@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include "bsp.h"
 #include "app_fsm.h"
+#include "app_debug.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -57,7 +58,63 @@ PCD_HandleTypeDef hpcd_USB_FS;
 
 /* USER CODE BEGIN PV */
 
-/* Live-debug globals (dbg_*) live in App/Src/app_debug.c. */
+/* Global, volatile state for STM32CubeIDE Live Expressions. Declared in
+ * App/Inc/app_debug.h, which documents each one; written by the application
+ * (and the reader driver) every pass of the main loop. */
+
+/* Battery */
+volatile uint32_t dbg_battery_mv = 0u;
+volatile uint8_t  dbg_battery_state = 0u;
+volatile uint16_t dbg_battery_counts = 0u;
+volatile uint32_t dbg_battery_samples = 0u;
+volatile uint8_t  dbg_battery_error = 0u;
+volatile uint32_t dbg_battery_raw_mv = 0u;
+volatile uint32_t dbg_vdda_mv = 0u;
+volatile uint16_t dbg_vrefint_counts = 0u;
+volatile uint16_t dbg_vrefint_cal = 0u;
+volatile uint8_t  dbg_adc_error = 0u;
+
+/* Last card */
+volatile uint32_t dbg_card_id = 0u;
+volatile uint8_t  dbg_card_uid[10] = { 0u };
+volatile uint8_t  dbg_card_uid_len = 0u;
+volatile uint8_t  dbg_card_atqa[2] = { 0u };
+volatile uint8_t  dbg_card_sak = 0u;
+volatile uint32_t dbg_card_count = 0u;
+volatile uint8_t  dbg_scan_result = 0u;
+
+/* Button */
+volatile bool     dbg_button_down = false;
+volatile uint32_t dbg_button_short_count = 0u;
+volatile uint32_t dbg_button_long_count = 0u;
+
+/* Reader */
+volatile bool     dbg_nfc_ready = false;
+volatile uint8_t  dbg_nfc_chip_id = 0u;
+volatile bool     dbg_nfc_supply_3v3 = false;
+volatile uint8_t  dbg_nfc_amplitude = 0u;
+volatile uint8_t  dbg_nfc_last_status = 0u;
+volatile uint32_t dbg_nfc_polls = 0u;
+volatile uint32_t dbg_nfc_errors = 0u;
+volatile uint32_t dbg_nfc_collisions = 0u;
+volatile uint32_t dbg_nfc_last_irq = 0u;
+volatile uint32_t dbg_nfc_irq_pin_misses = 0u;
+
+/* System */
+volatile uint8_t  dbg_state = 0u;
+volatile uint8_t  dbg_boot_cause = 0u;
+volatile uint32_t dbg_uptime_ms = 0u;
+volatile bool     dbg_vbus = false;
+volatile bool     dbg_usb_host = false;
+volatile uint32_t dbg_records_ram = 0u;
+volatile uint32_t dbg_records_flash = 0u;
+volatile uint32_t dbg_records_free = 0u;
+volatile uint32_t dbg_students = 0u;
+volatile app_datetime_t dbg_now = { 0u, 0u, 0u, 0u, 0u, 0u };
+
+/* Written from the debugger to set the RTC */
+volatile app_datetime_t dbg_set_time = { 0u, 0u, 0u, 0u, 0u, 0u };
+volatile bool     dbg_set_time_request = false;
 
 /* USER CODE END PV */
 

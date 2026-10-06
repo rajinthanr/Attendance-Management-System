@@ -127,6 +127,14 @@ void plat_sleep_idle(plat_idle_pred_t still_idle)
 {
     uint32_t primask;
 
+    /* With a debugger attached the core stays awake, as the bring-up loop
+     * did. Reads the debugger makes while the core sits in WFI can come back
+     * as zero, which makes Live Expressions flicker. Nothing depends on the
+     * sleep for timing: the loop runs off plat_uptime_ms(). */
+    if ((CoreDebug->DHCSR & CoreDebug_DHCSR_C_DEBUGEN_Msk) != 0u) {
+        return;
+    }
+
     if (!sleep_arm(still_idle, &primask)) {
         return;
     }

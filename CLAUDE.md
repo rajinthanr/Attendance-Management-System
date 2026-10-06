@@ -46,7 +46,7 @@ The netlist is the quickest way to see which pin is on which net. The `.kicad_sc
 - **Deciding where a constant goes:** policy values go in `App/Inc/app_config.h`. Hardware facts such as pins, timer instances, clocks and antenna parameters go in `Bsp/Inc/bsp_board.h`, which also holds the full pin map.
 - **Adding a platform function** takes three steps: declare it in `platform_if.h`, implement it in `Bsp/Src/`, and add a stub to `Tests/host_platform.c`. The stub is required because the host build compiles every `App/Src/*.c`, `app_fsm.c` included, so a missing stub fails at link time. The stub platform backs flash with RAM and can inject write failures (`host_write_failures`).
 - Level 2 modules own no hidden static buffers when they can avoid it: `card_reader_t`, `button_t`, `feedback_t` and friends are caller-owned structs, which is what lets the tests run several instances.
-- **Live debugging:** `App/Inc/app_debug.h` declares the `dbg_*` globals for STM32CubeIDE Live Expressions (battery mV, last card UID/ID, scan result, button counts, reader status, record counts, RTC). Writing `dbg_set_time` and then `dbg_set_time_request = 1` sets the RTC. `bsp_nfc.c` adds `dbg_nfc_last_irq` and `dbg_nfc_irq_pin_misses`.
+- **Live debugging:** the `dbg_*` globals for STM32CubeIDE Live Expressions (battery mV, last card UID/ID, scan result, button counts, reader status, record counts, RTC) are defined in `Core/Src/main.c`, in the `USER CODE BEGIN PV` block, and declared in `App/Inc/app_debug.h`. `Tests/host_platform.c` defines its own copies, so a new one goes in all three places. Writing `dbg_set_time` and then `dbg_set_time_request = 1` sets the RTC. While a debugger is attached, `plat_sleep_idle()` skips the WFI so Live Expressions reads stay stable.
 
 ### Timing and power rules
 
@@ -73,7 +73,7 @@ All 18 used pins are locked in CubeMX.
 | PA2 | LED_GREEN | `GPIO_Output` | Active high |
 | PA3 | LED_RED | `GPIO_Output` | Active high |
 | PA4 | VIB_EN | `GPIO_Output` | Enables the vibration motor driver, active high |
-| PA7 | BATT_SENSE | `ADC1_IN12`, single-ended | Battery through a divider: R16 (4.7 MΩ) over R17 (2.7 MΩ), with C34 (100 nF) across R17. The firmware matches (`APP_BATT_DIV_*_KOHM`). Sampled for 640.5 cycles every 10 s |
+| PA7 | BATT_SENSE | `ADC1_IN12`, single-ended | Battery through a divider: R7 (4.7 MΩ) over R8 (2.7 MΩ), with C3 (100 nF) across R8. The firmware matches (`APP_BATT_DIV_*_KOHM`). Sampled for 640.5 cycles every 10 s |
 | PA9 | USB_VBUS | `GPIO_EXTI9`, both edges, no pull | Detects VBUS for USB attach and detach |
 | PA11 | USB_DM | `USB_DM` (Device) | Crystal-less USB FS on HSI48 + CRS. Set to analog on unplug |
 | PA12 | USB_DP | `USB_DP` (Device) | |
@@ -152,8 +152,9 @@ Every other part comes from the stock KiCad libraries.
 - **LEDs:** D6 (green) on PA2 and D5 (red) on PA3, each through 470 Ω to GND. They are active high, which matches the firmware.
 - **Vibration motor:** the motor plugs into J4, between `BAT+` and the drain of Q1, an AO3400A low-side N-MOSFET. Q1's gate is driven by PA4 (`VIB_EN`) and pulled down by R11 (10 kΩ). D4, an SS14 flyback diode, sits across J4 with its cathode on `BAT+`.
 - **Button:** SW3 (`KEY`) switches to GND, with R8 (10 kΩ) pulling it up to `+3V3`.
-- **Battery sense:** R16 (4.7 MΩ, from `BAT+`) over R17 (2.7 MΩ), with C34 (100 nF) across R17, feeds both PA7 and PB7.
-- **VBUS sense:** R18 and R19 (4.7 MΩ each) divide `+5V` down to PA9.
+- **Battery sense:** R7 (4.7 MΩ, from `BAT+`) over R8 (2.7 MΩ), with C3 (100 nF) across R8, feeds both PA7 and PB7 (net `/MCU/BAT_SENSE`). C3 charges through R7 ∥ R8 = 1.7 MΩ, a 171 ms time constant, so a reading right after a battery is connected is low; `APP_BATT_SETTLE_MS` covers that.
+- **VBUS sense:** R9 and R10 (4.7 MΩ each) divide `+5V` down to PA9.
+- **Reference designators were re-annotated after the notes in this section were written** (the MCU is now U4). Check the netlist rather than trusting the designators here.
 - **PN532 backup header:** J7 is a 1×8 2.54 mm socket for a PN532 breakout, pinned for the Elechouse V3's SPI header with the module's DIP switches set to SPI.
   - **Pinout:** 1 SCK, 2 MISO, 3 MOSI, 4 SS, 5 VCC (now `BAT+`), 6 GND, 7 IRQ. Pin 8 (RSTO) has a no-connect flag.
   - **Shared:** SCK, MISO and MOSI, with U5.
@@ -203,14 +204,14 @@ Every other part comes from the stock KiCad libraries.
 - **Global minimums:** hole clearance 0.15 mm, annular ring 0.2 mm, hole-to-hole 1 mm, courtyard clearance 0.1 mm, connection width 0.15 mm, and at least 4 thermal-relief spokes.
 - **Exceptions:** U2's MSOP-10 pad-to-pad clearance (0.15 mm), and AE3's coil crossover, where hole clearance is ignored.
 
-**Battery divider:** R16/R17 put the PB7 PVD trip at about 1.2 V ÷ 0.365 ≈ 3.3 V, which matches `APP_BATT_CUTOFF_MV`. The firmware uses the same 4.7 M / 2.7 M values. The PVD itself is off in polling mode (`BSP_ENABLE_BATTERY_PVD`); the ADC is sampled instead.
+**Battery divider:** R7/R8 put the PB7 PVD trip at about 1.2 V ÷ 0.365 ≈ 3.3 V, which matches `APP_BATT_CUTOFF_MV`. The firmware uses the same 4.7 M / 2.7 M values. The PVD itself is off in polling mode (`BSP_ENABLE_BATTERY_PVD`); the ADC is sampled instead.
 
 **Open issues:**
 - **The antenna isn't on the board.** Run *Update PCB from Schematic* so AE3 gets `Snapeda:NFC_Loop_40x30_3T`, place it in the antenna rule area, and route its feed to R21/R22. Then tune C16–C19, R15 and the RX divider against the coil's measured L, R and C.
 - **The charge current is too high for USB.** R6 = 1 kΩ sets 1 A, more than a USB-C sink with plain 5.1 kΩ Rd may draw (500 mA) and more than the MSOP-10 MCP73833 can dissipate. Use R6 ≥ 2 kΩ.
 - **The PN532 header sits close to the antenna.** J7 is just under the antenna area, so a module plugged in there may detune the ST25R3916 loop. Its VCC is on `BAT+`, which is fine only if the module makes its own 3.3 V I/O rail.
 - **The `.ioc` lacks PA15 (`PN532_NSS`) and PB6 (`PN532_IRQ`).**
-- **U1 is out of stock at LCSC and JLCPCB** (checked 2026-09-26). Buy the STM32L432KCU6 elsewhere (Digi-Key had stock) and consign it, or solder it by hand. The 128 kB STM32L432KBU6 is not a drop-in: the log lives in the upper 128 kB of flash.
+- **The schematic and the JLCPCB BOM specify the 128 kB part.** `mcu.kicad_sch` and `production/bom.csv` give U4 as STM32L432KBUx (LCSC C2928224), while `bom/jlcpcb_bom.csv` and `bom/digikey_upload_1_board.csv` still say STM32L432KCU6. The firmware keeps the student list and log in the upper 128 kB (`0x08020000`), which a KB part does not have: there, every access to it is outside the specified memory and may fault or may appear to work on untested flash. Check the fitted part (`*(uint16_t *)0x1FFF75E0` is the flash size in kB: 128 or 256) before relying on any build. A KB part needs the `NVDATA` region moved below 128 kB, which shrinks the log.
 - **The RX signal is about 6× too weak.** On the bench the reader's amplitude measurement read 30 counts (13.02 mVpp each, so ~0.39 Vpp on RFI) where DS12484 recommends 2.5 Vpp (~190 counts) in reader mode. The C37/C38 and C15/C39 dividers (10 pF over 150 pF, ~1/16) cut too much; try 15–33 pF for C38/C39 and check `dbg_nfc_amplitude` with no card present, staying below 230 (the 3 Vpp limit).
 - **No watchdog.** Before enabling the IWDG, clear the `IWDG_STDBY` option bit: by default the IWDG keeps running in Standby and would reset the unit back on.
 

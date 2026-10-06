@@ -59,7 +59,9 @@ typedef bool (*plat_idle_pred_t)(void);
 
 /**
  * Core halted until the next interrupt (STM32 Sleep mode). SysTick fires every
- * millisecond, so in polling mode this paces the main loop at 1 kHz.
+ * millisecond, so in polling mode this paces the main loop at 1 kHz. With a
+ * debugger attached it returns at once instead, so the debugger's reads of
+ * the dbg_* globals are never made while the core sleeps.
  *
  * @p still_idle is re-tested with interrupts masked, immediately before the
  * core is halted, so an event posted from an interrupt between the caller's

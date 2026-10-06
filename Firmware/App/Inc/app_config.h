@@ -122,13 +122,21 @@
  *  a load spike cannot switch the unit off. */
 #define APP_BATT_CRITICAL_SAMPLES       (3u)
 
+/** Time after reset before a reading can be trusted. C3 (100 nF) across the
+ *  divider charges through R7 || R8 (1.7 M), a 171 ms time constant, and
+ *  starts empty when a battery is first connected; after 7 time constants
+ *  it is within 0.1 %, about 4 mV at the battery. A critical reading taken
+ *  before this is checked again once it has passed. */
+#define APP_BATT_SETTLE_MS              (1200u)
+
 /**
  * Resistor divider on the battery sense node: Vadc = Vbat * LOW/(LOW+HIGH).
  *
- * R16 4.7 M over R17 2.7 M. High impedance because this divider is permanently
- * connected: the PVD comparator watches the same node. A 100 nF cap across the
- * low leg keeps the source impedance low enough for the ADC's 640.5-cycle
- * sampling window.
+ * R7 4.7 M (BAT+ to the node) over R8 2.7 M (node to GND), C3 100 nF across
+ * R8; the node feeds PA7 (ADC1_IN12) and PB7 (PVD_IN). High impedance because
+ * the divider is permanently connected: the PVD comparator watches the same
+ * node. C3 supplies the charge for the ADC's sampling capacitor, which the
+ * 1.7 M source could not, and averages out load transients.
  */
 #define APP_BATT_DIV_HIGH_KOHM          (4700u)
 #define APP_BATT_DIV_LOW_KOHM           (2700u)
