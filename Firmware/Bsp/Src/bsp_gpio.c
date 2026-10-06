@@ -1,6 +1,6 @@
 /**
  * @file    bsp_gpio.c
- * @brief   Level 1 (HAL) — pin configuration, discrete outputs, touch IC.
+ * @brief   Level 1 (HAL) — pin configuration and discrete outputs.
  *
  * Unused pins are left as analog inputs, which is the lowest-leakage state on
  * an L4 and is worth real microamps in Stop 2 across sixteen spare pins.
@@ -34,16 +34,28 @@ void bsp_gpio_init(void)
     HAL_GPIO_WritePin(PORT_LED_GREEN, PIN_LED_GREEN, GPIO_PIN_RESET);
     HAL_GPIO_WritePin(PORT_LED_RED, PIN_LED_RED, GPIO_PIN_RESET);
     HAL_GPIO_WritePin(PORT_VIB_EN, PIN_VIB_EN, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(PORT_RF_PWR_EN, PIN_RF_PWR_EN, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(PORT_TOUCH_PWR_EN, PIN_TOUCH_PWR_EN, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(PORT_TOUCH_RESET, PIN_TOUCH_RESET, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(PORT_NFC_NSS, PIN_NFC_NSS, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(PORT_PN532_NSS, PIN_PN532_NSS, GPIO_PIN_SET);
 
     g.Mode = GPIO_MODE_OUTPUT_PP;
     g.Pull = GPIO_NOPULL;
     g.Speed = GPIO_SPEED_FREQ_LOW;
-    g.Pin = PIN_LED_GREEN | PIN_LED_RED | PIN_VIB_EN |
-            PIN_RF_PWR_EN | PIN_TOUCH_PWR_EN | PIN_TOUCH_RESET;
+    g.Pin = PIN_LED_GREEN | PIN_LED_RED | PIN_VIB_EN | PIN_PN532_NSS;
     HAL_GPIO_Init(GPIOA, &g);
+    g.Pin = PIN_NFC_NSS;
+    HAL_GPIO_Init(PORT_NFC_NSS, &g);
+
+    /* bsp_gpio_init runs after MX_SPI1_Init, so restore the shared SPI pins
+     * after parking unused pins as analog. NSS remains software controlled. */
+    g.Mode = GPIO_MODE_AF_PP;
+    g.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    g.Alternate = GPIO_AF5_SPI1;
+    g.Pull = GPIO_NOPULL;
+    g.Pin = PIN_NFC_SCK | PIN_NFC_MOSI;
+    HAL_GPIO_Init(PORT_NFC_SPI, &g);
+    g.Pull = GPIO_PULLDOWN;
+    g.Pin = PIN_NFC_MISO;
+    HAL_GPIO_Init(PORT_NFC_SPI, &g);
 
     /* Power button: WKUP1 wakes from Standby, EXTI0 catches a press while
      * running. Pulled up, so the button shorts to ground. */
@@ -59,12 +71,18 @@ void bsp_gpio_init(void)
     g.Pin = PIN_USB_VBUS;
     HAL_GPIO_Init(PORT_USB_VBUS, &g);
 
-    /* Touch interrupt: open-drain output on the touch IC, so it needs a pull
-     * up here to define the idle level. */
+    /* ST25R3916 IRQ is active high; the pull-down keeps its idle state
+     * defined while the reader is resetting. */
+    g.Mode = GPIO_MODE_IT_RISING;
+    g.Pull = GPIO_PULLDOWN;
+    g.Pin = PIN_NFC_IRQ;
+    HAL_GPIO_Init(PORT_NFC_IRQ, &g);
+
+    /* The optional PN532 has its own active-low interrupt on EXTI6. */
     g.Mode = GPIO_MODE_IT_FALLING;
     g.Pull = GPIO_PULLUP;
-    g.Pin = PIN_TOUCH_INT;
-    HAL_GPIO_Init(PORT_TOUCH_INT, &g);
+    g.Pin = PIN_PN532_IRQ;
+    HAL_GPIO_Init(PORT_PN532_IRQ, &g);
 
     /* Battery divider node feeds the ADC and the PVD comparator. */
     g.Mode = GPIO_MODE_ANALOG;
@@ -78,7 +96,7 @@ void bsp_gpio_init(void)
     HAL_NVIC_SetPriority(EXTI1_IRQn, BSP_PRIO_EXTI, 0u);
     HAL_NVIC_SetPriority(EXTI9_5_IRQn, BSP_PRIO_EXTI, 0u);
 
-    /* The button and VBUS are always live; touch is armed by the application. */
+    /* The button and VBUS are always live; NFC is armed by the application. */
     HAL_NVIC_EnableIRQ(EXTI0_IRQn);
     HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 }
@@ -103,16 +121,14 @@ void plat_out_write(uint32_t mask)
 
 void plat_touch_power(bool on)
 {
-    HAL_GPIO_WritePin(PORT_TOUCH_PWR_EN, PIN_TOUCH_PWR_EN,
-                      on ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    /* ST25R3916 is powered directly from the battery. */
+    (void)on;
 }
 
 void plat_touch_irq_enable(bool enable)
 {
     if (enable) {
-        /* Clear anything latched while the carrier was running, or the pad
-         * would fire immediately on re-arming. */
-        __HAL_GPIO_EXTI_CLEAR_IT(PIN_TOUCH_INT);
+        __HAL_GPIO_EXTI_CLEAR_IT(PIN_NFC_IRQ);
         HAL_NVIC_ClearPendingIRQ(EXTI1_IRQn);
         HAL_NVIC_EnableIRQ(EXTI1_IRQn);
     } else {
@@ -122,12 +138,7 @@ void plat_touch_irq_enable(bool enable)
 
 void plat_touch_recalibrate(void)
 {
-    /* Active-low reset. The datasheet minimum is a few microseconds; the
-     * self-calibration that follows takes the IC tens of milliseconds, which
-     * overlaps the rest of start-up. */
-    HAL_GPIO_WritePin(PORT_TOUCH_RESET, PIN_TOUCH_RESET, GPIO_PIN_RESET);
-    HAL_Delay(1u);
-    HAL_GPIO_WritePin(PORT_TOUCH_RESET, PIN_TOUCH_RESET, GPIO_PIN_SET);
+    /* No discrete capacitive touch controller is fitted on this PCB. */
 }
 
 /* ------------------------------------------------------------------------ */
@@ -150,8 +161,12 @@ void HAL_GPIO_EXTI_Callback(uint16_t pin)
         app_event_post(APP_EVT_BUTTON);
         break;
 
-    case PIN_TOUCH_INT:
+    case PIN_NFC_IRQ:
         app_event_post(APP_EVT_TOUCH);
+        break;
+
+    case PIN_PN532_IRQ:
+        /* Backup reader support is not enabled by the application yet. */
         break;
 
     case PIN_USB_VBUS:

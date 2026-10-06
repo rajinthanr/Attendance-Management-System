@@ -13,24 +13,27 @@
  *  PC14  LSE_IN            32.768 kHz crystal. Required: the RTC and both
  *  PC15  LSE_OUT           LPTIMs must keep counting through Stop 2.
  *  PA0   PWR_BTN           WKUP1, EXTI0. The only Standby wake source.
- *  PA1   RF_DATA           TIM2_CH2 input capture, both edges, DMA.
+ *  PA1   --                Spare.
  *  PA2   LED_GREEN         Active high.
  *  PA3   LED_RED           Active high.
  *  PA4   VIB_EN            Vibration motor driver enable.
- *  PA5   RF_PWR_EN         Load switch for the 125 kHz front end.
- *  PA6   TOUCH_PWR_EN      Load switch for the capacitive touch IC.
- *  PA7   BATT_SENSE        ADC1_IN12, 4.7M/4.7M divider off the cell.
- *  PA8   RF_CARRIER        TIM1_CH1 PWM, 125 kHz, 50 %.
+ *  PA5   --                Spare.
+ *  PA6   --                Spare.
+ *  PA7   BATT_SENSE        ADC1_IN12, 4.7M/2.7M divider off the cell.
+ *  PA8   --                Spare.
  *  PA9   USB_VBUS          VBUS detect, EXTI9, both edges.
- *  PA10  TOUCH_RESET       Pulsed to make the touch IC re-calibrate.
+ *  PA10  --                Spare.
  *  PA11  USB_DM            Fixed function.
  *  PA12  USB_DP            Fixed function.
  *  PA13  SWDIO             Debug. Left configured so the part stays attachable.
  *  PA14  SWCLK             Debug.
- *  PA15  --                Spare.
- *  PB0   --                Spare.
- *  PB1   TOUCH_INT         Card-presence interrupt from the touch IC, EXTI1.
- *  PB3   --                Spare.
+ *  PA15  PN532_NSS         Backup reader chip select, active low.
+ *  PB0   NFC_NSS           ST25R3916 chip select, active low.
+ *  PB1   NFC_IRQ           ST25R3916 interrupt, rising EXTI1.
+ *  PB3   NFC_SCK           Shared SPI1 clock, AF5.
+ *  PB4   NFC_MISO          Shared SPI1 input, AF5, pull-down.
+ *  PB5   NFC_MOSI          Shared SPI1 output, AF5.
+ *  PB6   PN532_IRQ         Backup reader interrupt, falling EXTI6.
  *  PB7   PVD_IN            Same node as PA7; the PVD compares it to VREFINT.
  *  PH3   BOOT0             Strapped low.
  */
@@ -80,14 +83,29 @@
 #define PIN_USB_DP          GPIO_PIN_12
 #define PORT_USB            GPIOA
 
+#define PIN_PN532_NSS       GPIO_PIN_15
+#define PORT_PN532_NSS      GPIOA
+
+#define PIN_NFC_NSS         GPIO_PIN_0
+#define PORT_NFC_NSS        GPIOB
+#define PIN_NFC_IRQ         GPIO_PIN_1
+#define PORT_NFC_IRQ        GPIOB
+#define PIN_NFC_SCK         GPIO_PIN_3
+#define PIN_NFC_MISO        GPIO_PIN_4
+#define PIN_NFC_MOSI        GPIO_PIN_5
+#define PORT_NFC_SPI        GPIOB
+#define PIN_PN532_IRQ      GPIO_PIN_6
+#define PORT_PN532_IRQ     GPIOB
+
+/* Legacy EM4100 aliases remain until the application and RF driver are ported. */
 #define PIN_TOUCH_INT       GPIO_PIN_1
 #define PORT_TOUCH_INT      GPIOB
 
 #define PIN_PVD_IN          GPIO_PIN_7
 #define PORT_PVD_IN         GPIOB
 
-/** The touch IC signals a detection with a falling edge and holds it low. */
-#define TOUCH_INT_ACTIVE_LEVEL   GPIO_PIN_RESET
+/** ST25R3916 IRQ is active high. */
+#define NFC_IRQ_ACTIVE_LEVEL     GPIO_PIN_SET
 
 /* ------------------------------------------------------------------------ */
 /* Clocks                                                                   */

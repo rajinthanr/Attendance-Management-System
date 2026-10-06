@@ -49,8 +49,6 @@ extern "C" {
 
 /* USER CODE END EM */
 
-void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
-
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
 
@@ -62,30 +60,33 @@ void Error_Handler(void);
 #define PWR_BTN_Pin GPIO_PIN_0
 #define PWR_BTN_GPIO_Port GPIOA
 #define PWR_BTN_EXTI_IRQn EXTI0_IRQn
-#define RF_DATA_Pin GPIO_PIN_1
-#define RF_DATA_GPIO_Port GPIOA
 #define LED_GREEN_Pin GPIO_PIN_2
 #define LED_GREEN_GPIO_Port GPIOA
 #define LED_RED_Pin GPIO_PIN_3
 #define LED_RED_GPIO_Port GPIOA
 #define VIB_EN_Pin GPIO_PIN_4
 #define VIB_EN_GPIO_Port GPIOA
-#define RF_PWR_EN_Pin GPIO_PIN_5
-#define RF_PWR_EN_GPIO_Port GPIOA
-#define TOUCH_PWR_EN_Pin GPIO_PIN_6
-#define TOUCH_PWR_EN_GPIO_Port GPIOA
 #define BATT_SENSE_Pin GPIO_PIN_7
 #define BATT_SENSE_GPIO_Port GPIOA
-#define TOUCH_INT_Pin GPIO_PIN_1
-#define TOUCH_INT_GPIO_Port GPIOB
-#define TOUCH_INT_EXTI_IRQn EXTI1_IRQn
-#define RF_CARRIER_Pin GPIO_PIN_8
-#define RF_CARRIER_GPIO_Port GPIOA
+#define NFC_NSS_Pin GPIO_PIN_0
+#define NFC_NSS_GPIO_Port GPIOB
+#define NFC_IRQ_Pin GPIO_PIN_1
+#define NFC_IRQ_GPIO_Port GPIOB
+#define NFC_IRQ_EXTI_IRQn EXTI1_IRQn
 #define USB_VBUS_Pin GPIO_PIN_9
 #define USB_VBUS_GPIO_Port GPIOA
 #define USB_VBUS_EXTI_IRQn EXTI9_5_IRQn
-#define TOUCH_RESET_Pin GPIO_PIN_10
-#define TOUCH_RESET_GPIO_Port GPIOA
+#define PN532_NSS_Pin GPIO_PIN_15
+#define PN532_NSS_GPIO_Port GPIOA
+#define NFC_SCK_Pin GPIO_PIN_3
+#define NFC_SCK_GPIO_Port GPIOB
+#define NFC_MISO_Pin GPIO_PIN_4
+#define NFC_MISO_GPIO_Port GPIOB
+#define NFC_MOSI_Pin GPIO_PIN_5
+#define NFC_MOSI_GPIO_Port GPIOB
+#define PN532_IRQ_Pin GPIO_PIN_6
+#define PN532_IRQ_GPIO_Port GPIOB
+#define PN532_IRQ_EXTI_IRQn EXTI9_5_IRQn
 #define PVD_IN_Pin GPIO_PIN_7
 #define PVD_IN_GPIO_Port GPIOB
 

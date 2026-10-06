@@ -11,6 +11,7 @@
  */
 #include "bsp.h"
 #include "app_events.h"
+#include "bsp_nfc_probe.h"
 
 TIM_HandleTypeDef hbsp_tim_carrier;
 TIM_HandleTypeDef hbsp_tim_capture;
@@ -219,4 +220,104 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *h)
     if (h->Instance == BSP_CAPTURE_TIM) {
         app_event_post(APP_EVT_CAPTURE_FULL);
     }
+}
+
+/* Temporary ST25R3916 antenna probe used by the boot LED diagnostic. */
+extern SPI_HandleTypeDef hspi1;
+
+#define NFC_REG_OPERATION       0x02u
+#define NFC_REG_IRQ_MAIN        0x1Au
+#define NFC_REG_IRQ_TIMER       0x1Bu
+#define NFC_REG_ADC_OUTPUT      0x25u
+#define NFC_REG_ID              0x3Fu
+#define NFC_CMD_SET_DEFAULT     0xC1u
+#define NFC_CMD_MEASURE_AMPL    0xD3u
+#define NFC_IRQ_OSC_STABLE      0x80u
+#define NFC_IRQ_CMD_DONE        0x80u
+#define NFC_SPI_TIMEOUT_MS      10u
+
+static bool nfc_read(uint8_t reg, uint8_t *value)
+{
+    uint8_t tx[2] = { (uint8_t)(0x40u | reg), 0u };
+    uint8_t rx[2] = { 0u, 0u };
+
+    HAL_GPIO_WritePin(PORT_NFC_NSS, PIN_NFC_NSS, GPIO_PIN_RESET);
+    HAL_StatusTypeDef status = HAL_SPI_TransmitReceive(&hspi1, tx, rx, 2u,
+                                                       NFC_SPI_TIMEOUT_MS);
+    HAL_GPIO_WritePin(PORT_NFC_NSS, PIN_NFC_NSS, GPIO_PIN_SET);
+    if (status != HAL_OK) {
+        return false;
+    }
+    *value = rx[1];
+    return true;
+}
+
+static bool nfc_write(uint8_t reg, uint8_t value)
+{
+    uint8_t tx[2] = { reg, value };
+
+    HAL_GPIO_WritePin(PORT_NFC_NSS, PIN_NFC_NSS, GPIO_PIN_RESET);
+    HAL_StatusTypeDef status = HAL_SPI_Transmit(&hspi1, tx, 2u,
+                                                NFC_SPI_TIMEOUT_MS);
+    HAL_GPIO_WritePin(PORT_NFC_NSS, PIN_NFC_NSS, GPIO_PIN_SET);
+    return status == HAL_OK;
+}
+
+static bool nfc_command(uint8_t command)
+{
+    HAL_GPIO_WritePin(PORT_NFC_NSS, PIN_NFC_NSS, GPIO_PIN_RESET);
+    HAL_StatusTypeDef status = HAL_SPI_Transmit(&hspi1, &command, 1u,
+                                                NFC_SPI_TIMEOUT_MS);
+    HAL_GPIO_WritePin(PORT_NFC_NSS, PIN_NFC_NSS, GPIO_PIN_SET);
+    return status == HAL_OK;
+}
+
+static bool nfc_wait_irq(uint8_t reg, uint8_t mask)
+{
+    uint32_t start = HAL_GetTick();
+    uint8_t irq = 0u;
+
+    do {
+        if (!nfc_read(reg, &irq)) {
+            return false;
+        }
+        if ((irq & mask) != 0u) {
+            return true;
+        }
+    } while ((uint32_t)(HAL_GetTick() - start) < NFC_SPI_TIMEOUT_MS);
+    return false;
+}
+
+bool bsp_nfc_probe_init(void)
+{
+    uint8_t id = 0u;
+
+    /* Bits 7:3 are 00101 for ST25R3916/7; bits 2:0 are the silicon revision. */
+    if (!nfc_read(NFC_REG_ID, &id) || (id & 0xF8u) != 0x28u) {
+        return false;
+    }
+    if (!nfc_command(NFC_CMD_SET_DEFAULT)) {
+        return false;
+    }
+    /* Ready mode: oscillator on, receiver and continuous RF field off. */
+    if (!nfc_write(NFC_REG_OPERATION, 0x80u)) {
+        return false;
+    }
+    return nfc_wait_irq(NFC_REG_IRQ_MAIN, NFC_IRQ_OSC_STABLE);
+}
+
+bool bsp_nfc_probe_amplitude(uint8_t *amplitude)
+{
+    uint8_t ignored = 0u;
+
+    if (amplitude == NULL) {
+        return false;
+    }
+    /* Reading the IRQ register clears any completion from an earlier sample. */
+    if (!nfc_read(NFC_REG_IRQ_TIMER, &ignored) ||
+        !nfc_command(NFC_CMD_MEASURE_AMPL) ||
+        !nfc_wait_irq(NFC_REG_IRQ_TIMER, NFC_IRQ_CMD_DONE)) {
+        return false;
+    }
+    return nfc_read(NFC_REG_ADC_OUTPUT, amplitude);
 }

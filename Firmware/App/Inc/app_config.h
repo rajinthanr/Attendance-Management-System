@@ -63,7 +63,7 @@
  * impedance low enough for the ADC's 640.5-cycle sampling window.
  */
 #define APP_BATT_DIV_HIGH_KOHM          (4700u)
-#define APP_BATT_DIV_LOW_KOHM           (4700u)
+#define APP_BATT_DIV_LOW_KOHM           (2700u)
 
 /* ------------------------------------------------------------------------ */
 /* RF / EM4100 policy                                                       */

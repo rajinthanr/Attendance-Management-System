@@ -18,14 +18,15 @@ void EXTI0_IRQHandler(void)          /* power button */
     HAL_GPIO_EXTI_IRQHandler(PIN_PWR_BTN);
 }
 
-void EXTI1_IRQHandler(void)          /* touch IC */
+void EXTI1_IRQHandler(void)          /* ST25R3916 IRQ */
 {
-    HAL_GPIO_EXTI_IRQHandler(PIN_TOUCH_INT);
+    HAL_GPIO_EXTI_IRQHandler(PIN_NFC_IRQ);
 }
 
-void EXTI9_5_IRQHandler(void)        /* USB VBUS */
+void EXTI9_5_IRQHandler(void)        /* USB VBUS and PN532 IRQ */
 {
     HAL_GPIO_EXTI_IRQHandler(PIN_USB_VBUS);
+    HAL_GPIO_EXTI_IRQHandler(PIN_PN532_IRQ);
 }
 
 /* ---- Timers ---- */

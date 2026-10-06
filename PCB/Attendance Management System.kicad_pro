@@ -1380,7 +1380,7 @@
         "uuid": "7913fd27-5946-47b8-84cf-c21ab2f68a0e"
       }
     ],
-    "used_designators": "U1-5,D1-6,C1-39,Q1,NT1,R1-22,Pad_CSO1,J1-7,L1-4,FB1-2,#PWR1-82,Y1-3,SW1-3,Pad_CSI1,AE1-3,#FLG1-3,TH1",
+    "used_designators": "Y1-3,#PWR1-82,FB1-2,L1-4,TH1,#FLG1-3,Q1,U1-5,D1-6,C1-39,NT1,AE1-3,SW1-3,Pad_CSI1,R1-22,Pad_CSO1,J1-7",
     "variants": []
   },
   "sheets": [
