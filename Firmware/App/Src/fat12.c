@@ -1,16 +1,10 @@
 /**
  * @file    fat12.c
- * @brief   Level 2 (logic) — FAT12 metadata synthesis.
+ * @brief   Level 2 (logic) — FAT12 structure helpers.
  */
 #include "fat12.h"
 
-/* 8.3 name of the exported file, space padded exactly as FAT stores it. */
-static const char k_file_name[11] = { 'A','T','T','E','N','D','C','S','V',' ',' ' };
 static const char k_volume_label[11] = { 'A','T','T','E','N','D','A','N','C','E',' ' };
-
-#define ATTR_READ_ONLY   0x01u
-#define ATTR_VOLUME_ID   0x08u
-#define ATTR_ARCHIVE     0x20u
 
 static void wr16(uint8_t *p, uint16_t v)
 {
@@ -26,11 +20,32 @@ static void wr32(uint8_t *p, uint32_t v)
     p[3] = (uint8_t)((v >> 24) & 0xFFu);
 }
 
+uint16_t fat12_rd16(const uint8_t *p)
+{
+    return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
+}
+
+uint32_t fat12_rd32(const uint8_t *p)
+{
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
 static void zero(uint8_t *p, uint32_t n)
 {
     while (n-- > 0u) {
         *p++ = 0u;
     }
+}
+
+uint32_t fat12_cluster_count(uint32_t total_sectors)
+{
+    return (total_sectors > FAT12_DATA_START_LBA) ? (total_sectors - FAT12_DATA_START_LBA) : 0u;
+}
+
+uint32_t fat12_cluster_lba(uint32_t cluster)
+{
+    return FAT12_DATA_START_LBA + (cluster - FAT12_FIRST_CLUSTER);
 }
 
 void fat12_pack_datetime(const app_datetime_t *dt, uint16_t *date, uint16_t *time)
@@ -64,7 +79,7 @@ void fat12_boot_sector(const fat12_vol_t *vol, uint8_t *s)
     wr16(&s[14], FAT12_RESERVED_SECTORS);       /* reserved sectors      */
     s[16] = (uint8_t)FAT12_NUM_FATS;            /* number of FATs        */
     wr16(&s[17], FAT12_ROOT_ENTRIES);           /* root dir entries      */
-    wr16(&s[19], FAT12_TOTAL_SECTORS);          /* total sectors (16-bit)*/
+    wr16(&s[19], (uint16_t)vol->total_sectors); /* total sectors (16-bit)*/
     s[21] = 0xF8u;                              /* media: fixed disk     */
     wr16(&s[22], FAT12_SECTORS_PER_FAT);        /* sectors per FAT       */
     wr16(&s[24], 32u);                          /* sectors per track     */
@@ -90,99 +105,57 @@ void fat12_boot_sector(const fat12_vol_t *vol, uint8_t *s)
     s[511] = 0xAAu;
 }
 
-/**
- * Write one 12-bit FAT entry into @p sector, if any of its bytes fall inside
- * that sector.
- *
- * FAT12 entries straddle byte boundaries: entry n occupies the byte at
- * n*3/2 and part of the next one, so an entry can span two sectors. Handling
- * each of its two bytes independently makes that case fall out for free.
- */
-static void put_fat_entry(uint8_t *sector, uint32_t sector_base,
-                          uint32_t entry, uint16_t value)
+uint16_t fat12_get(const uint8_t *fat, uint32_t cluster)
 {
-    uint32_t offset = (entry * 3u) / 2u;
-    uint8_t lo, hi;
+    uint32_t o = (cluster * 3u) / 2u;
 
-    if ((entry & 1u) == 0u) {
-        /* Even: low byte is the low 8 bits, high nibble goes to the next byte. */
-        lo = (uint8_t)(value & 0xFFu);
-        hi = (uint8_t)((value >> 8) & 0x0Fu);
-    } else {
-        /* Odd: low nibble shares a byte with the previous entry. */
-        lo = (uint8_t)((value & 0x0Fu) << 4);
-        hi = (uint8_t)((value >> 4) & 0xFFu);
+    if (cluster >= FAT12_FAT_ENTRIES) {
+        return FAT12_EOC;
     }
-
-    if (offset >= sector_base && offset < (sector_base + FAT12_SECTOR_SIZE)) {
-        /* An odd entry ORs into the byte the previous even entry already
-         * wrote, so never overwrite it. */
-        sector[offset - sector_base] |= lo;
+    if ((cluster & 1u) == 0u) {
+        return (uint16_t)(fat[o] | ((uint16_t)(fat[o + 1u] & 0x0Fu) << 8));
     }
-    offset++;
-    if (offset >= sector_base && offset < (sector_base + FAT12_SECTOR_SIZE)) {
-        if ((entry & 1u) == 0u) {
-            sector[offset - sector_base] |= hi;
-        } else {
-            sector[offset - sector_base] = hi;
-        }
-    }
+    return (uint16_t)((fat[o] >> 4) | ((uint16_t)fat[o + 1u] << 4));
 }
 
-void fat12_fat_sector(const fat12_vol_t *vol, uint32_t index, uint8_t *sector)
+void fat12_set(uint8_t *fat, uint32_t cluster, uint16_t value)
 {
-    zero(sector, FAT12_SECTOR_SIZE);
+    uint32_t o = (cluster * 3u) / 2u;
 
-    if (index >= FAT12_SECTORS_PER_FAT) {
+    if (cluster >= FAT12_FAT_ENTRIES) {
         return;
     }
-
-    uint32_t base = index * FAT12_SECTOR_SIZE;
-
-    /* How many clusters the file occupies, rounded up. */
-    uint32_t clusters = (vol->file_size + (FAT12_SECTOR_SIZE * FAT12_SECTORS_PER_CLUSTER) - 1u)
-                        / (FAT12_SECTOR_SIZE * FAT12_SECTORS_PER_CLUSTER);
-    if (clusters > FAT12_DATA_SECTORS) {
-        clusters = FAT12_DATA_SECTORS;
-    }
-
-    /* Entries 0 and 1 are reserved: media byte in the low 8 bits, then EOC. */
-    put_fat_entry(sector, base, 0u, 0x0FF8u);
-    put_fat_entry(sector, base, 1u, 0x0FFFu);
-
-    /* Only walk the entries that can touch this sector. Each entry covers
-     * 1.5 bytes, so the first one is at (base*2)/3; step back one to catch an
-     * entry that began in the previous sector. */
-    uint32_t first = (base * 2u) / 3u;
-    if (first > 0u) {
-        first--;
-    }
-    uint32_t last = (((base + FAT12_SECTOR_SIZE) * 2u) / 3u) + 1u;
-
-    uint32_t e;
-    for (e = first; e <= last; e++) {
-        if (e < 2u) {
-            continue;
-        }
-        uint32_t cluster_index = e - 2u;   /* 0-based position in the file */
-
-        if (cluster_index >= clusters) {
-            break;   /* beyond the file: leave free (0x000) */
-        }
-
-        /* Contiguous chain; the final cluster gets the end-of-chain marker. */
-        uint16_t value = (cluster_index == (clusters - 1u))
-                       ? 0x0FFFu
-                       : (uint16_t)(e + 1u);
-
-        put_fat_entry(sector, base, e, value);
+    value &= 0x0FFFu;
+    if ((cluster & 1u) == 0u) {
+        fat[o] = (uint8_t)(value & 0xFFu);
+        fat[o + 1u] = (uint8_t)((fat[o + 1u] & 0xF0u) | (value >> 8));
+    } else {
+        fat[o] = (uint8_t)((fat[o] & 0x0Fu) | ((value & 0x0Fu) << 4));
+        fat[o + 1u] = (uint8_t)(value >> 4);
     }
 }
 
-/** Fill one 32-byte directory entry. */
-static void make_dirent(uint8_t *d, const char name[11], uint8_t attr,
-                        uint16_t first_cluster, uint32_t size,
-                        uint16_t date, uint16_t time)
+void fat12_fat_init(uint8_t *fat)
+{
+    zero(fat, FAT12_FAT_BYTES);
+    fat12_set(fat, 0u, 0x0FF8u);          /* media byte in the low 8 bits */
+    fat12_set(fat, 1u, FAT12_EOC);
+}
+
+void fat12_chain(uint8_t *fat, uint32_t first, uint32_t count)
+{
+    uint32_t i;
+
+    for (i = 0u; i < count; i++) {
+        uint32_t c = first + i;
+
+        fat12_set(fat, c, (i == (count - 1u)) ? FAT12_EOC : (uint16_t)(c + 1u));
+    }
+}
+
+void fat12_dirent(uint8_t *d, const char name[11], uint8_t attr,
+                  uint16_t first_cluster, uint32_t size,
+                  uint16_t date, uint16_t time)
 {
     uint8_t i;
 
@@ -191,29 +164,12 @@ static void make_dirent(uint8_t *d, const char name[11], uint8_t attr,
         d[i] = (uint8_t)name[i];
     }
     d[11] = attr;
-    wr16(&d[16], date);   /* creation date    */
     wr16(&d[14], time);   /* creation time    */
+    wr16(&d[16], date);   /* creation date    */
     wr16(&d[18], date);   /* last access date */
     wr16(&d[20], 0u);     /* cluster high (always 0 on FAT12) */
     wr16(&d[22], time);   /* write time       */
     wr16(&d[24], date);   /* write date       */
     wr16(&d[26], first_cluster);
     wr32(&d[28], size);
-}
-
-void fat12_root_sector(const fat12_vol_t *vol, uint32_t index, uint8_t *sector)
-{
-    zero(sector, FAT12_SECTOR_SIZE);
-
-    /* Both entries live in the first root sector; the rest stay all-zero,
-     * which FAT reads as "no more entries". */
-    if (index != 0u) {
-        return;
-    }
-
-    make_dirent(&sector[0], k_volume_label, ATTR_VOLUME_ID,
-                0u, 0u, vol->fat_date, vol->fat_time);
-
-    make_dirent(&sector[32], k_file_name, ATTR_READ_ONLY | ATTR_ARCHIVE,
-                2u, vol->file_size, vol->fat_date, vol->fat_time);
 }

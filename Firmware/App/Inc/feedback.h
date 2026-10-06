@@ -16,8 +16,10 @@ typedef enum {
     FB_NONE = 0,
     FB_ACCEPTED,    /**< Green LED + one short pulse. */
     FB_DUPLICATE,   /**< Two short pulses. */
-    FB_UNKNOWN,     /**< Red LED + one long pulse. */
-    FB_LOW_BATTERY  /**< Red LED blinks. */
+    FB_LOW_BATTERY, /**< Red LED blinks. */
+    FB_SAVED,       /**< Green LED + two pulses: settings written. */
+    FB_REJECTED,    /**< Red LED + three pulses: settings file refused. */
+    FB_UNKNOWN      /**< Red LED + one pulse: the card is not on the registered list. */
 } fb_pattern_t;
 
 typedef struct {

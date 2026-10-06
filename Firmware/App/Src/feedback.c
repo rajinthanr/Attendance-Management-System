@@ -29,9 +29,32 @@ static const fb_step_t k_duplicate[] = {
     { 0u,  0u }
 };
 
+/* A card that is not on the registered list: red and one long buzz. It is
+ * still recorded, so the PC can offer to register it. */
 static const fb_step_t k_unknown[] = {
-    { RED | VIB, APP_FB_REJECT_VIB_MS },
+    { RED | VIB, APP_FB_UNKNOWN_VIB_MS },
     { 0u,        0u }
+};
+
+/* Settings import finished. Two pulses and a long green hold for success;
+ * three red pulses for a refusal, so the two cannot be mistaken for each other
+ * across a room. */
+static const fb_step_t k_saved[] = {
+    { GREEN | VIB, 90u  },
+    { GREEN,       90u  },
+    { GREEN | VIB, 90u  },
+    { GREEN,       600u },
+    { 0u,          0u   }
+};
+
+static const fb_step_t k_rejected[] = {
+    { RED | VIB, 150u },
+    { RED,       100u },
+    { RED | VIB, 150u },
+    { RED,       100u },
+    { RED | VIB, 150u },
+    { RED,       400u },
+    { 0u,        0u   }
 };
 
 /* Built at run time from APP_FB_LOWBATT_BLINKS so the count stays a policy
@@ -72,6 +95,14 @@ uint16_t fb_start(feedback_t *fb, fb_pattern_t pattern)
     case FB_DUPLICATE:
         fb->steps = k_duplicate;
         fb->n_steps = (uint8_t)(sizeof(k_duplicate) / sizeof(k_duplicate[0]));
+        break;
+    case FB_SAVED:
+        fb->steps = k_saved;
+        fb->n_steps = (uint8_t)(sizeof(k_saved) / sizeof(k_saved[0]));
+        break;
+    case FB_REJECTED:
+        fb->steps = k_rejected;
+        fb->n_steps = (uint8_t)(sizeof(k_rejected) / sizeof(k_rejected[0]));
         break;
     case FB_UNKNOWN:
         fb->steps = k_unknown;

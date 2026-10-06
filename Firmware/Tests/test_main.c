@@ -6,8 +6,7 @@
  * the flash log format and its power-loss recovery, and the FAT image the host
  * has to accept without complaint.
  */
-#include <stdio.h>
-#include <string.h>
+#include "test_util.h"
 
 #include "em4100.h"
 #include "timeutil.h"
@@ -17,28 +16,13 @@
 #include "usb_storage.h"
 #include "log_store.h"
 #include "record_buffer.h"
-#include "student_db.h"
 #include "dedup.h"
 #include "battery.h"
 #include "nv_layout.h"
 #include "platform_if.h"
 
-extern uint8_t host_flash[];
-extern uint32_t host_write_failures;
-void host_flash_erase_all(void);
-
-static int g_fail;
-static int g_run;
-
-#define CHECK(cond, ...) do {                        \
-    g_run++;                                         \
-    if (!(cond)) {                                   \
-        g_fail++;                                    \
-        printf("  FAIL %s:%d  ", __FILE__, __LINE__);\
-        printf(__VA_ARGS__);                         \
-        printf("\n");                                \
-    }                                                \
-} while (0)
+int g_fail;
+int g_run;
 
 /* ===================================================================== */
 /* EM4100: build a reference encoder so decode can be checked end to end  */
@@ -100,7 +84,7 @@ static uint16_t make_edges(const uint8_t bits[64], int repeats,
                     if (n >= cap) { return n; }
                     uint32_t j = 0u;
                     if (jitter_us > 0) {
-                        seed = (seed * 1103515245) + 12345;
+                        seed = (int)(((uint32_t)seed * 1103515245u) + 12345u);   /* unsigned: wraps by definition */
                         j = (uint32_t)(((seed >> 16) & 0x7FFF) % (2 * jitter_us));
                         j = j - (uint32_t)jitter_us;
                     }
@@ -112,6 +96,14 @@ static uint16_t make_edges(const uint8_t bits[64], int repeats,
         }
     }
     return n;
+}
+
+void present_card(uint32_t id)
+{
+    uint8_t bits[64];
+
+    em4100_encode(0x2Au, id, bits);
+    host_cap_n = make_edges(bits, 4, 256u, 0, host_cap_buf, EM4100_MAX_EDGES);
 }
 
 static void test_em4100(void)
@@ -207,73 +199,6 @@ static void test_crc(void)
     /* Standard check vectors for the "123456789" input. */
     CHECK(crc16_ccitt("123456789", 9u) == 0x29B1u, "CRC-16/CCITT-FALSE");
     CHECK(crc32_ieee("123456789", 9u) == 0xCBF43926u, "CRC-32/ISO-HDLC");
-}
-
-/* ===================================================================== */
-static void test_csv(void)
-{
-    printf("csv\n");
-
-    char row[CSV_ROW_BYTES + 1];
-    row[CSV_ROW_BYTES] = '\0';
-
-    csv_header(row);
-    CHECK(strcmp(row, "SCAN_DATE,SCAN_TIME,STUDENT_ID\r\n") == 0, "header [%s]", row);
-
-    app_datetime_t dt = { 2026u, 9u, 10u, 13u, 27u, 45u };
-    app_record_t rec = { 123456u, time_to_epoch(&dt) };
-    csv_row(&rec, row);
-    CHECK(strcmp(row, "2026-09-10,13:27:45,0000123456\r\n") == 0, "row [%s]", row);
-
-    CHECK((512u % CSV_ROW_BYTES) == 0u, "rows divide a sector");
-    CHECK(csv_size(0u) == CSV_ROW_BYTES, "empty file is just the header");
-}
-
-/* ===================================================================== */
-static void provision_students(uint32_t count)
-{
-    uint32_t i;
-    nv_config_t cfg;
-
-    for (i = 0u; i < count; i++) {
-        uint32_t id = 1000u + (i * 7u);
-        memcpy(&host_flash[NV_STUDENTS_OFFSET + (i * 4u)], &id, 4u);
-    }
-
-    cfg.magic = NV_CONFIG_MAGIC;
-    cfg.format_version = 1u;
-    cfg.student_count = count;
-    cfg.student_crc32 = crc32_ieee(&host_flash[NV_STUDENTS_OFFSET], count * 4u);
-    cfg.device_id = 0xC0FFEEu;
-    memset(cfg.reserved, 0, sizeof(cfg.reserved));
-    memcpy(&host_flash[NV_CONFIG_OFFSET], &cfg, sizeof(cfg));
-}
-
-static void test_student_db(void)
-{
-    static student_db_t db;
-    printf("student_db\n");
-
-    host_flash_erase_all();
-    CHECK(!sdb_load(&db), "blank flash means no list");
-    CHECK(!sdb_contains(&db, 1000u), "unloaded list matches nothing");
-
-    provision_students(500u);
-    CHECK(sdb_load(&db), "load provisioned list");
-    CHECK(sdb_verify(&db), "crc verifies");
-    CHECK(sdb_count(&db) == 500u, "count");
-    CHECK(sdb_device_id(&db) == 0xC0FFEEu, "device id");
-
-    CHECK(sdb_contains(&db, 1000u), "first entry");
-    CHECK(sdb_contains(&db, 1000u + (499u * 7u)), "last entry");
-    CHECK(sdb_contains(&db, 1000u + (250u * 7u)), "middle entry");
-    CHECK(!sdb_contains(&db, 1001u), "gap between entries");
-    CHECK(!sdb_contains(&db, 0u), "below range");
-    CHECK(!sdb_contains(&db, 0xFFFFFFFFu), "above range");
-
-    /* Flip a byte: the CRC must notice. */
-    host_flash[NV_STUDENTS_OFFSET + 40u] ^= 0xFFu;
-    CHECK(!sdb_verify(&db), "corruption detected");
 }
 
 /* ===================================================================== */
@@ -393,93 +318,6 @@ static void test_log_store(void)
 }
 
 /* ===================================================================== */
-static void test_usb_volume(void)
-{
-    static log_store_t ls;
-    static record_buffer_t rb;
-    static uint8_t sector[512];
-    app_record_t rec;
-    uint32_t i;
-
-    printf("usb volume\n");
-
-    host_flash_erase_all();
-    log_init(&ls);
-    rb_init(&rb);
-
-    app_datetime_t dt = { 2026u, 9u, 10u, 13u, 27u, 45u };
-    for (i = 0u; i < 100u; i++) {
-        rec.student_id = 5000u + i;
-        rec.stamp = time_to_epoch(&dt) + i;
-        rb_push(&rb, &rec);
-        if (rb_needs_flush(&rb)) { log_flush(&ls, &rb); }
-    }
-    log_flush(&ls, &rb);
-
-    usbs_begin(&ls, 0xC0FFEEu, &dt);
-    CHECK(usbs_file_size() == csv_size(100u), "file size %u", usbs_file_size());
-    CHECK(usbs_sector_count() == FAT12_TOTAL_SECTORS, "sector count");
-
-    /* Boot sector sanity, the fields a host actually validates. */
-    CHECK(usbs_read(0u, sector, 1u), "read boot sector");
-    CHECK(sector[510] == 0x55u && sector[511] == 0xAAu, "boot signature");
-    CHECK(((uint16_t)sector[11] | ((uint16_t)sector[12] << 8)) == 512u, "bytes/sector");
-    CHECK(sector[21] == 0xF8u, "media byte");
-
-    /* Cluster count must stay inside FAT12's range or a host reads it as FAT16. */
-    uint32_t clusters = FAT12_DATA_SECTORS / FAT12_SECTORS_PER_CLUSTER;
-    CHECK(clusters < 4085u, "cluster count %u is FAT12", clusters);
-
-    /* Root directory: the file entry must carry the right size and cluster. */
-    CHECK(usbs_read(FAT12_ROOT_START_LBA, sector, 1u), "read root");
-    CHECK(memcmp(&sector[32], "ATTENDCSV  ", 11) == 0, "8.3 name");
-    uint32_t size;
-    memcpy(&size, &sector[32 + 28], 4u);
-    CHECK(size == csv_size(100u), "dirent size %u", size);
-    uint16_t first;
-    memcpy(&first, &sector[32 + 26], 2u);
-    CHECK(first == 2u, "first cluster");
-
-    /* FAT chain: 101 rows * 32 B = 3232 B -> 7 clusters, 2..8, 8 = EOC. */
-    CHECK(usbs_read(FAT12_FAT_START_LBA, sector, 1u), "read fat");
-    uint32_t n_clusters = (csv_size(100u) + 511u) / 512u;
-    uint32_t e;
-    uint32_t chain_bad = 0u;
-    for (e = 2u; e < (2u + n_clusters); e++) {
-        uint32_t off = (e * 3u) / 2u;
-        uint16_t v = ((e & 1u) == 0u)
-            ? (uint16_t)(sector[off] | ((sector[off + 1u] & 0x0Fu) << 8))
-            : (uint16_t)((sector[off] >> 4) | (sector[off + 1u] << 4));
-        uint16_t expect = (e == (1u + n_clusters)) ? 0x0FFFu : (uint16_t)(e + 1u);
-        if (v != expect) { chain_bad++; }
-    }
-    CHECK(chain_bad == 0u, "%u bad FAT entries (of %u)", chain_bad, n_clusters);
-
-    /* Free cluster just past the file. */
-    {
-        uint32_t off = ((2u + n_clusters) * 3u) / 2u;
-        uint16_t v = (((2u + n_clusters) & 1u) == 0u)
-            ? (uint16_t)(sector[off] | ((sector[off + 1u] & 0x0Fu) << 8))
-            : (uint16_t)((sector[off] >> 4) | (sector[off + 1u] << 4));
-        CHECK(v == 0u, "cluster past EOF is free, got 0x%03X", v);
-    }
-
-    /* First data sector: header row then the first fifteen records. */
-    CHECK(usbs_read(FAT12_DATA_START_LBA, sector, 1u), "read data");
-    CHECK(memcmp(sector, "SCAN_DATE,SCAN_TIME,STUDENT_ID\r\n", 32) == 0, "csv header");
-    CHECK(memcmp(&sector[32], "2026-09-10,13:27:45,0000005000\r\n", 32) == 0,
-          "first record row");
-
-    /* Second data sector starts at record 15 (row 16). */
-    CHECK(usbs_read(FAT12_DATA_START_LBA + 1u, sector, 1u), "read data 2");
-    CHECK(memcmp(sector, "2026-09-10,13:28:00,0000005015\r\n", 32) == 0,
-          "row 16 [%.32s]", sector);
-
-    CHECK(!usbs_write(FAT12_DATA_START_LBA, sector, 1u), "writes rejected");
-    CHECK(!usbs_read(FAT12_TOTAL_SECTORS, sector, 1u), "read past volume fails");
-}
-
-/* ===================================================================== */
 static void test_dedup(void)
 {
     static dedup_t d;
@@ -506,11 +344,11 @@ static void test_battery(void)
     printf("battery\n");
 
     /* VREFINT_CAL 1655 measured at 3.0 V; reading 1500 implies VDDA = 3310 mV.
-     * A 1:1 divider reading 2400/4095 puts the node at 1940 mV, so the cell is
-     * about 3880 mV. */
+     * The divider is 4.7 M over 2.7 M (x2.74), so a node reading of
+     * 1750/4095 is 1414 mV, which puts the cell at about 3880 mV. */
     s.vrefint_cal = 1655u;
     s.vrefint_counts = 1500u;
-    s.vbat_counts = 2400u;
+    s.vbat_counts = 1750u;
     uint32_t mv = batt_millivolts(&s);
     CHECK(mv > 3800u && mv < 3960u, "computed %u mV", mv);
     CHECK(batt_classify(mv) == BATT_OK, "healthy cell");
@@ -532,10 +370,17 @@ int main(void)
     test_time();
     test_crc();
     test_csv();
-    test_student_db();
+    test_device_cfg();
+    test_settings_parser();
     test_record_buffer();
     test_log_store();
     test_usb_volume();
+    test_usb_settings();
+    test_usb_robustness();
+    test_sessions();
+    test_fsm();
+    test_fsm_sessions();
+    test_cards();
     test_dedup();
     test_battery();
 

@@ -24,7 +24,6 @@ typedef enum {
 typedef struct {
     uint32_t scans_accepted;
     uint32_t scans_duplicate;
-    uint32_t scans_unknown;
     uint32_t false_wakes;
     uint32_t records_dropped;
     uint32_t flush_failures;

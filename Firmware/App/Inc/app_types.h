@@ -52,9 +52,8 @@ typedef struct {
 
 /** Outcome of presenting a card, used to pick the feedback pattern. */
 typedef enum {
-    APP_SCAN_ACCEPTED = 0,  /**< Known student, recorded. */
+    APP_SCAN_ACCEPTED = 0,  /**< Recorded. */
     APP_SCAN_DUPLICATE,     /**< Same ID inside the dedup window. */
-    APP_SCAN_UNKNOWN,       /**< Valid tag, not on the student list. */
     APP_SCAN_NO_CARD        /**< Touch fired but nothing decodable. */
 } app_scan_result_t;
 

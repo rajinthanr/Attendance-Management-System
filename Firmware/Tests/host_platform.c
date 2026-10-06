@@ -9,13 +9,33 @@
 #include "platform_if.h"
 #include "nv_layout.h"
 #include <string.h>
+#include <setjmp.h>
 
 #define HOST_FLASH_BYTES  (NV_PAGE_SIZE * 64u)
 
 uint8_t  host_flash[HOST_FLASH_BYTES];
 uint32_t host_out_mask;
 uint32_t host_write_failures;   /* set to N to fail the Nth write, for tests */
+uint32_t host_flash_writes;     /* double-words programmed since the last erase_all */
+uint32_t host_flash_erases;     /* pages erased since the last erase_all */
+uint32_t host_corrupt_write;    /* flip one bit of the double-word at this write count */
 static uint32_t s_writes;
+
+/* Card capture: the test fills host_cap_buf with edges, sets host_cap_n, and
+ * posts the capture-full event. */
+uint32_t *host_cap_buf;
+uint16_t  host_cap_n;
+
+/* plat_sleep_deep() never returns on the target. The test arms this and
+ * setjmp()s; the stub then jumps back instead of spinning forever. */
+jmp_buf host_deep_sleep_jmp;
+bool    host_deep_sleep_armed;
+uint32_t host_deep_sleeps;
+
+uint32_t host_timer_ms;         /* last one-shot requested */
+uint32_t host_usb_starts;
+uint32_t host_usb_stops;
+uint32_t host_rtc_sets;
 
 static app_datetime_t s_now = { 2026u, 9u, 10u, 13u, 27u, 45u };
 
@@ -24,9 +44,18 @@ void host_flash_erase_all(void)
     memset(host_flash, 0xFF, sizeof(host_flash));
     s_writes = 0u;
     host_write_failures = 0u;
+    host_flash_writes = 0u;
+    host_flash_erases = 0u;
+    host_corrupt_write = 0u;
 }
 
 void host_set_time(const app_datetime_t *dt) { s_now = *dt; }
+
+/** Let @p n more double-word writes succeed, then fail every one after. */
+void host_fail_writes_after(uint32_t n) { host_write_failures = s_writes + n + 1u; }
+
+/** Make the double-word written after @p n more writes come out wrong, silently. */
+void host_corrupt_write_after(uint32_t n) { host_corrupt_write = s_writes + n + 1u; }
 
 /* ---- outputs ---- */
 void plat_out_write(uint32_t mask) { host_out_mask = mask; }
@@ -34,7 +63,15 @@ void plat_out_write(uint32_t mask) { host_out_mask = mask; }
 /* ---- power ---- */
 void plat_sleep_idle(plat_idle_pred_t p) { (void)p; }
 void plat_sleep_light(plat_idle_pred_t p) { (void)p; }
-void plat_sleep_deep(void) { for (;;) { } }
+void plat_sleep_deep(void)
+{
+    host_deep_sleeps++;
+    if (host_deep_sleep_armed) {
+        host_deep_sleep_armed = false;
+        longjmp(host_deep_sleep_jmp, 1);
+    }
+    for (;;) { }
+}
 void plat_critical_enter(void) { }
 void plat_critical_exit(void) { }
 app_boot_cause_t plat_boot_cause(void) { return APP_BOOT_POWER_ON; }
@@ -42,8 +79,8 @@ app_boot_cause_t plat_boot_cause(void) { return APP_BOOT_POWER_ON; }
 /* ---- rf ---- */
 void plat_rf_power(bool on) { (void)on; }
 void plat_rf_carrier(bool on) { (void)on; }
-void plat_rf_capture_start(uint32_t *b, uint16_t c) { (void)b; (void)c; }
-uint16_t plat_rf_capture_stop(void) { return 0u; }
+void plat_rf_capture_start(uint32_t *b, uint16_t c) { (void)c; host_cap_buf = b; host_cap_n = 0u; }
+uint16_t plat_rf_capture_stop(void) { return host_cap_n; }
 uint32_t plat_rf_capture_hz(void) { return 1000000u; }
 
 /* ---- touch ---- */
@@ -54,13 +91,13 @@ void plat_touch_recalibrate(void) { }
 /* ---- timers ---- */
 void plat_inactivity_restart(uint32_t ms) { (void)ms; }
 void plat_inactivity_stop(void) { }
-void plat_timer_start(uint32_t ms) { (void)ms; }
+void plat_timer_start(uint32_t ms) { host_timer_ms = ms; }
 void plat_timer_stop(void) { }
 uint32_t plat_uptime_ms(void) { return 0u; }
 
 /* ---- rtc ---- */
 void plat_rtc_get(app_datetime_t *o) { *o = s_now; }
-void plat_rtc_set(const app_datetime_t *d) { s_now = *d; }
+void plat_rtc_set(const app_datetime_t *d) { s_now = *d; host_rtc_sets++; }
 bool plat_rtc_is_valid(void) { return true; }
 
 /* ---- flash ---- */
@@ -89,7 +126,11 @@ bool plat_flash_write_dw(uint32_t off, uint64_t value)
     memcpy(&current, &host_flash[off], 8u);
     if (current != NV_ERASED_DW) { return false; }
 
+    if (host_corrupt_write != 0u && s_writes == host_corrupt_write) {
+        value ^= 1u;            /* a write that "succeeds" but stores the wrong bit */
+    }
     memcpy(&host_flash[off], &value, 8u);
+    host_flash_writes++;
     return true;
 }
 
@@ -98,6 +139,7 @@ bool plat_flash_erase(uint32_t off)
     uint32_t page = off / NV_PAGE_SIZE;
     if (((page + 1u) * NV_PAGE_SIZE) > HOST_FLASH_BYTES) { return false; }
     memset(&host_flash[page * NV_PAGE_SIZE], 0xFF, NV_PAGE_SIZE);
+    host_flash_erases++;
     return true;
 }
 
@@ -112,5 +154,5 @@ bool plat_adc_sample(app_adc_sample_t *o)
 
 /* ---- usb ---- */
 bool plat_usb_vbus_present(void) { return false; }
-void plat_usb_start(void) { }
-void plat_usb_stop(void) { }
+void plat_usb_start(void) { host_usb_starts++; }
+void plat_usb_stop(void) { host_usb_stops++; }

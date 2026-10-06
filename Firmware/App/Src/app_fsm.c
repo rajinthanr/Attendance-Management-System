@@ -17,7 +17,7 @@
 #include "app_config.h"
 #include "platform_if.h"
 #include "em4100.h"
-#include "student_db.h"
+#include "device_cfg.h"
 #include "record_buffer.h"
 #include "log_store.h"
 #include "dedup.h"
@@ -35,7 +35,7 @@ static struct {
 
     record_buffer_t rb;
     log_store_t     log;
-    student_db_t    db;
+    device_cfg_t    cfg;
     dedup_t         dedup;
     feedback_t      fb;
     app_stats_t     stats;
@@ -194,14 +194,19 @@ static void handle_tag(const app_tag_t *tag)
         return;
     }
 
-    /* "ID in student list?" */
-    if (!sdb_contains(&g.db, tag->unique_id)) {
-        g.stats.scans_unknown++;
-        begin_feedback(FB_UNKNOWN);
+    /* Already signed in to this lecture? The 10 s window above only covers a
+     * card held on the reader; this covers a student coming back later, even
+     * after the unit has slept in between, because it reads the flash log. */
+    if (sess_card_seen(&g.log, &g.rb, tag->unique_id, now,
+                       APP_SESSION_MAX_AGE_S, APP_SESSION_SCAN_MAX)) {
+        g.stats.scans_duplicate++;
+        begin_feedback(FB_DUPLICATE);
         return;
     }
 
-    /* "Create record / Store data in RAM buffer" */
+    /* "Create record / Store data in RAM buffer". Every card is recorded,
+     * known or not: the PC finds out who it belongs to from the number, and an
+     * unknown card is how it learns there is someone new to register. */
     app_record_t rec;
     rec.student_id = tag->unique_id;
     rec.stamp = now;
@@ -215,7 +220,8 @@ static void handle_tag(const app_tag_t *tag)
     /* Feedback first, flush second. The user gets their confirmation inside a
      * few milliseconds instead of waiting out a page erase, and the erase then
      * overlaps the tail of the vibration pattern. */
-    begin_feedback(g.battery_low ? FB_LOW_BATTERY : FB_ACCEPTED);
+    begin_feedback(g.battery_low ? FB_LOW_BATTERY :
+                   (cards_is_known(&g.cfg, tag->unique_id) ? FB_ACCEPTED : FB_UNKNOWN));
 
     /* "RAM buffer >= 80 % full?" */
     if (rb_needs_flush(&g.rb)) {
@@ -245,6 +251,36 @@ static void finish_read(void)
 /* USB                                                                      */
 /* ------------------------------------------------------------------------ */
 
+/**
+ * Write a lecture marker into the log: everything tapped from here on belongs
+ * to @p module / @p lecture. Flushes first so the marker's few records always
+ * fit in the RAM buffer, and last so the lecture is in flash straight away.
+ */
+static void start_session(const char *module, const char *lecture)
+{
+    app_record_t recs[SESS_MAX_RECORDS];
+    uint16_t n, i;
+
+    flush_to_flash();
+    n = sess_encode(recs, SESS_MAX_RECORDS, now_epoch(), module, lecture);
+    for (i = 0u; i < n; i++) {
+        (void)rb_push(&g.rb, &recs[i]);
+    }
+    flush_to_flash();
+}
+
+/** "Load config from flash": the device ID and the registered cards. */
+static void load_config(void)
+{
+    devcfg_load(&g.cfg);
+
+    /* A list that fails its CRC is no list: better that every card shows green
+     * than that every card shows red because a page was damaged. */
+    if (g.cfg.card_count > 0u && !cards_verify(&g.cfg)) {
+        g.cfg.card_count = 0u;
+    }
+}
+
 /** Flow chart: "Wake MCU, enable USB clock / Pause timer / Flush / Enumerate". */
 static void usb_attach(void)
 {
@@ -260,7 +296,7 @@ static void usb_attach(void)
 
     app_datetime_t dt;
     plat_rtc_get(&dt);
-    usbs_begin(&g.log, sdb_device_id(&g.db), &dt);
+    usbs_begin(&g.log, &g.cfg, &dt);
 
     plat_usb_start();
     g.state = ST_USB;
@@ -269,7 +305,35 @@ static void usb_attach(void)
 /** Flow chart: "Power Down / De initialize USB / Switch off Clock". */
 static void usb_detach(void)
 {
+    usbs_result_t res;
+
     plat_usb_stop();
+
+    /* The host may have edited SETTINGS.CSV. This runs only now, with USB
+     * stopped, because storing a new device ID erases a flash page and the
+     * core stalls while it does. */
+    usbs_end(&res);
+
+    if (res.outcome == USBS_IMPORT_OK && res.device_set) {
+        /* Read the ID back before claiming success. The write path checks it
+         * too, but this proves what the next boot will load. A mismatch shows
+         * red, the same as a refusal. */
+        load_config();
+        if (!g.cfg.valid || g.cfg.device_id != res.device_id ||
+            (res.cards_set && g.cfg.card_count != res.card_count)) {
+            res.outcome = USBS_IMPORT_FAILED;
+        }
+    }
+    if (res.outcome == USBS_IMPORT_OK && res.session_start) {
+        start_session(res.module, res.lecture);
+    }
+    if (res.outcome != USBS_IMPORT_NONE) {
+        /* Tell the user how it went before powering down: green for applied,
+         * red for refused. A refusal changes nothing. */
+        g.shutdown_after_feedback = true;
+        begin_feedback((res.outcome == USBS_IMPORT_OK) ? FB_SAVED : FB_REJECTED);
+        return;
+    }
     shutdown();
 }
 
@@ -318,13 +382,8 @@ void app_init(void)
         p[i] = 0u;
     }
 
-    /* "Load student list & config from flash" */
-    if (sdb_load(&g.db) && !sdb_verify(&g.db)) {
-        /* A corrupt list would reject every genuine card. Better to refuse to
-         * use it and let every tag read as unknown, which is visible, than to
-         * accept a list that may have silently lost entries. */
-        g.db.loaded = false;
-    }
+    /* "Load config from flash" */
+    load_config();
 
     log_init(&g.log);
 
