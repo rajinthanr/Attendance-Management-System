@@ -53,6 +53,9 @@
 /** Below this the unit still runs but warns on every scan. */
 #define APP_BATT_WARN_MV                (3500u)
 
+/* Temporarily bypass low-battery shutdown and warning during NFC bring-up. */
+#define APP_ENABLE_BATTERY_PROTECTION   (0u)
+
 /**
  * Resistor divider on the battery sense node: Vadc = Vbat * LOW/(LOW+HIGH).
  *

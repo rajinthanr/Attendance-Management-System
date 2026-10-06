@@ -235,6 +235,13 @@ static void finish_read(void)
                                        &g.ws, &tag);
 
     if (st == EM4100_OK) {
+        detected_card_id = tag.unique_id;
+        detected_card_uid[0] = (uint8_t)(tag.unique_id >> 24);
+        detected_card_uid[1] = (uint8_t)(tag.unique_id >> 16);
+        detected_card_uid[2] = (uint8_t)(tag.unique_id >> 8);
+        detected_card_uid[3] = (uint8_t)tag.unique_id;
+        detected_card_id_length = 4u;
+        detected_card_id_valid = true;
         handle_tag(&tag);
     } else {
         handle_no_card();
@@ -280,6 +287,7 @@ static void usb_detach(void)
 /** Flow chart: "Battery OK?" — read once at boot to catch a flat cell early. */
 static bool battery_startup_ok(void)
 {
+#if APP_ENABLE_BATTERY_PROTECTION
     app_adc_sample_t sample;
 
     if (!plat_adc_sample(&sample)) {
@@ -297,6 +305,9 @@ static bool battery_startup_ok(void)
         g.battery_low = false;
         return true;
     }
+#else
+    return true;
+#endif
 }
 
 void app_init(void)
@@ -427,6 +438,7 @@ void app_dispatch(app_event_t evt)
         break;
 
     case APP_EVT_LOW_BATTERY:
+#if APP_ENABLE_BATTERY_PROTECTION
         /* Flow chart: flush immediately, warn, then Standby. The flush comes
          * first because the PVD trips well above brown-out but there is no
          * guarantee of how much longer the cell will hold up under a page
@@ -437,6 +449,7 @@ void app_dispatch(app_event_t evt)
         log_seal(&g.log);
         g.shutdown_after_feedback = true;
         begin_feedback(FB_LOW_BATTERY);
+#endif
         break;
 
     case APP_EVT_BUTTON:

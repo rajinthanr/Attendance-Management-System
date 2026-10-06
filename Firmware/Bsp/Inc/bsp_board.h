@@ -42,6 +42,9 @@
 
 #include "stm32l4xx_hal.h"
 
+/* Temporarily disable the external battery PVD while testing NFC detection. */
+#define BSP_ENABLE_BATTERY_PVD 0u
+
 /* ------------------------------------------------------------------------ */
 /* GPIO                                                                     */
 /* ------------------------------------------------------------------------ */

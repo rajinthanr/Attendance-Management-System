@@ -31,6 +31,7 @@ void bsp_power_init(void)
     __HAL_PWR_CLEAR_FLAG(PWR_FLAG_SB | PWR_FLAG_WU);
     __HAL_RCC_CLEAR_RESET_FLAGS();
 
+#if BSP_ENABLE_BATTERY_PVD
     /* Programmable voltage detector on the external input, which the board
      * ties to the battery divider. Levels 0..6 watch VDD, which a regulator
      * holds steady until it drops out entirely and by then it is too late to
@@ -44,6 +45,7 @@ void bsp_power_init(void)
     HAL_NVIC_SetPriority(PVD_PVM_IRQn, BSP_PRIO_PVD, 0u);
     HAL_NVIC_EnableIRQ(PVD_PVM_IRQn);
     HAL_PWR_EnablePVD();
+#endif
 }
 
 app_boot_cause_t plat_boot_cause(void)

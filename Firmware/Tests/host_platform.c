@@ -7,6 +7,7 @@
  * the decoder and the FAT image can be tested at desk speed.
  */
 #include "platform_if.h"
+#include "app_fsm.h"
 #include "nv_layout.h"
 #include <string.h>
 
@@ -16,6 +17,12 @@ uint8_t  host_flash[HOST_FLASH_BYTES];
 uint32_t host_out_mask;
 uint32_t host_write_failures;   /* set to N to fail the Nth write, for tests */
 static uint32_t s_writes;
+
+/* Firmware debug globals are defined by Core/Src/main.c on target. */
+volatile uint32_t detected_card_id;
+volatile uint8_t detected_card_uid[10];
+volatile uint8_t detected_card_id_length;
+volatile bool detected_card_id_valid;
 
 static app_datetime_t s_now = { 2026u, 9u, 10u, 13u, 27u, 45u };
 

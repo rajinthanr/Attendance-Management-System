@@ -30,6 +30,14 @@ typedef struct {
     uint32_t flush_failures;
 } app_stats_t;
 
+/** Last card ID as a big-endian 32-bit value (easy to inspect in Live Expressions). */
+extern volatile uint32_t detected_card_id;
+/** Full UID bytes, retained for UIDs longer than four bytes. */
+extern volatile uint8_t detected_card_uid[10];
+extern volatile uint8_t detected_card_id_length;
+/** True after detected_card_id and detected_card_uid have been populated. */
+extern volatile bool detected_card_id_valid;
+
 /** One-time start-up: the flow chart's "Start" through to the first sleep. */
 void app_init(void);
 
