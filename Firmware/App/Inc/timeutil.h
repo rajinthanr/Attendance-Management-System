@@ -25,4 +25,11 @@ uint8_t time_days_in_month(uint16_t year, uint8_t month);
 /** Proleptic Gregorian leap year test. */
 bool time_is_leap(uint16_t year);
 
+/**
+ * Parse the compiler's __DATE__ ("Oct  6 2026") and __TIME__ ("16:41:00").
+ * Used to seed an RTC that has never been set, which gets a freshly flashed
+ * unit to within minutes of the right local time.
+ */
+bool time_from_build(const char *date, const char *clock, app_datetime_t *out);
+
 #endif /* TIMEUTIL_H */

@@ -2,9 +2,9 @@
  * @file    feedback.c
  * @brief   Level 2 (logic) — feedback pattern tables and stepping.
  *
- * The flow chart calls for vibration only after the carrier is off, which the
- * FSM guarantees by ordering; this module is purely "what to drive, and for
- * how long".
+ * The flow chart calls for vibration only while the reader field is off, which
+ * the FSM guarantees by pausing the reader for the length of a pattern; this
+ * module is purely "what to drive, and for how long".
  */
 #include "feedback.h"
 #include "app_config.h"
@@ -23,10 +23,10 @@ static const fb_step_t k_accepted[] = {
 };
 
 static const fb_step_t k_duplicate[] = {
-    { VIB, APP_FB_DUPLICATE_PULSE_MS },
-    { 0u,  APP_FB_DUPLICATE_GAP_MS   },
-    { VIB, APP_FB_DUPLICATE_PULSE_MS },
-    { 0u,  0u }
+    { GREEN | VIB, APP_FB_DUPLICATE_PULSE_MS },
+    { 0u,          APP_FB_DUPLICATE_GAP_MS   },
+    { GREEN | VIB, APP_FB_DUPLICATE_PULSE_MS },
+    { 0u,          0u }
 };
 
 static const fb_step_t k_unknown[] = {
@@ -34,27 +34,49 @@ static const fb_step_t k_unknown[] = {
     { 0u,        0u }
 };
 
-/* Built at run time from APP_FB_LOWBATT_BLINKS so the count stays a policy
- * knob rather than a hand-unrolled table. */
-static fb_step_t s_lowbatt[(APP_FB_LOWBATT_BLINKS * 2u) + 1u];
+static const fb_step_t k_power_on[] = {
+    { GREEN | VIB, APP_FB_POWER_ON_VIB_MS },
+    { GREEN,       APP_FB_POWER_ON_MS - APP_FB_POWER_ON_VIB_MS },
+    { 0u,          0u }
+};
 
-static void build_lowbatt(void)
+static const fb_step_t k_power_off[] = {
+    { RED | VIB, APP_FB_POWER_OFF_VIB_MS },
+    { RED,       APP_FB_POWER_OFF_MS - APP_FB_POWER_OFF_VIB_MS },
+    { 0u,        0u }
+};
+
+/* Blink tables are built at run time so the counts stay policy knobs rather
+ * than hand-unrolled tables. Each holds on/off pairs plus a terminator. */
+static fb_step_t s_lowbatt[(APP_FB_LOWBATT_BLINKS * 2u) + 1u];
+static fb_step_t s_error[(APP_FB_ERROR_BLINKS * 2u) + 1u];
+static fb_step_t s_status[(2u * 2u) + 1u];
+
+static void build_blinks(fb_step_t *table, uint8_t blinks, uint32_t outputs,
+                         uint16_t ms)
 {
     uint8_t i;
 
-    for (i = 0u; i < APP_FB_LOWBATT_BLINKS; i++) {
-        s_lowbatt[i * 2u].outputs     = RED;
-        s_lowbatt[i * 2u].ms          = APP_FB_LOWBATT_BLINK_MS;
-        s_lowbatt[(i * 2u) + 1u].outputs = 0u;
-        s_lowbatt[(i * 2u) + 1u].ms      = APP_FB_LOWBATT_BLINK_MS;
+    for (i = 0u; i < blinks; i++) {
+        table[i * 2u].outputs = outputs;
+        table[i * 2u].ms = ms;
+        table[(i * 2u) + 1u].outputs = 0u;
+        table[(i * 2u) + 1u].ms = ms;
     }
-    s_lowbatt[APP_FB_LOWBATT_BLINKS * 2u].outputs = 0u;
-    s_lowbatt[APP_FB_LOWBATT_BLINKS * 2u].ms      = 0u;
+    table[blinks * 2u].outputs = 0u;
+    table[blinks * 2u].ms = 0u;
 }
+
+#define USE_TABLE(fb, t) do {                                  \
+        (fb)->steps = (t);                                     \
+        (fb)->n_steps = (uint8_t)(sizeof(t) / sizeof((t)[0])); \
+    } while (0)
 
 void fb_init(feedback_t *fb)
 {
-    build_lowbatt();
+    build_blinks(s_lowbatt, APP_FB_LOWBATT_BLINKS, RED, APP_FB_LOWBATT_BLINK_MS);
+    build_blinks(s_error, APP_FB_ERROR_BLINKS, RED | VIB, APP_FB_ERROR_BLINK_MS);
+    build_blinks(s_status, 2u, GREEN, APP_FB_STATUS_BLINK_MS);
     fb->steps = NULL;
     fb->n_steps = 0u;
     fb->index = 0u;
@@ -65,22 +87,15 @@ void fb_init(feedback_t *fb)
 uint16_t fb_start(feedback_t *fb, fb_pattern_t pattern)
 {
     switch (pattern) {
-    case FB_ACCEPTED:
-        fb->steps = k_accepted;
-        fb->n_steps = (uint8_t)(sizeof(k_accepted) / sizeof(k_accepted[0]));
-        break;
-    case FB_DUPLICATE:
-        fb->steps = k_duplicate;
-        fb->n_steps = (uint8_t)(sizeof(k_duplicate) / sizeof(k_duplicate[0]));
-        break;
-    case FB_UNKNOWN:
-        fb->steps = k_unknown;
-        fb->n_steps = (uint8_t)(sizeof(k_unknown) / sizeof(k_unknown[0]));
-        break;
-    case FB_LOW_BATTERY:
-        fb->steps = s_lowbatt;
-        fb->n_steps = (uint8_t)(sizeof(s_lowbatt) / sizeof(s_lowbatt[0]));
-        break;
+    case FB_ACCEPTED:    USE_TABLE(fb, k_accepted);  break;
+    case FB_DUPLICATE:   USE_TABLE(fb, k_duplicate); break;
+    case FB_UNKNOWN:     USE_TABLE(fb, k_unknown);   break;
+    case FB_LOW_BATTERY: USE_TABLE(fb, s_lowbatt);   break;
+    case FB_ERROR:       USE_TABLE(fb, s_error);     break;
+    case FB_STATUS_OK:   USE_TABLE(fb, s_status);    break;
+    case FB_POWER_ON:    USE_TABLE(fb, k_power_on);  break;
+    case FB_POWER_OFF:   USE_TABLE(fb, k_power_off); break;
+    case FB_NONE:
     default:
         fb_cancel(fb);
         return 0u;

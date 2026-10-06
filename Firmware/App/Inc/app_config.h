@@ -3,7 +3,8 @@
  * @brief   Level 2 (logic) — compile-time tuning of the attendance application.
  *
  * Every value here is a *policy* decision, not a hardware fact. Hardware facts
- * (pins, timer instances, clock trees) live in Bsp/Inc/bsp_board.h.
+ * (pins, peripheral instances, clock trees, reader timings) live in
+ * Bsp/Inc/bsp_board.h.
  */
 #ifndef APP_CONFIG_H
 #define APP_CONFIG_H
@@ -15,16 +16,54 @@
 /** Inactivity window after which the unit flushes and goes to Standby. */
 #define APP_INACTIVITY_MS               (3u * 60u * 1000u)
 
-/** Maximum time the 125 kHz carrier stays on waiting for a decodable frame. */
-#define APP_CARD_READ_TIMEOUT_MS        (100u)
-
 /** A card presenting the same ID again inside this window is a duplicate. */
 #define APP_DEDUP_WINDOW_S              (10u)
 
 /** How many distinct recent cards are remembered for duplicate suppression. */
 #define APP_DEDUP_SLOTS                 (8u)
 
-/* Feedback pattern durations (ms). */
+/* ------------------------------------------------------------------------ */
+/* Card reader policy                                                       */
+/* ------------------------------------------------------------------------ */
+
+/** Interval between reader polls. The field is off between polls. */
+#define APP_NFC_POLL_MS                 (100u)
+
+/** Field-on time before REQA, so a card can power up (ISO14443-3: 5 ms). */
+#define APP_NFC_FIELD_GUARD_MS          (5u)
+
+/** Consecutive empty polls before a held card counts as taken away. Until
+ *  then the same card is not reported again, however many polls see it. */
+#define APP_NFC_REMOVE_MISSES           (3u)
+
+/** Retry interval when the reader failed to initialise. */
+#define APP_NFC_RETRY_MS                (5000u)
+
+/** Reader supply mode, with hysteresis. The reader's 3.3 V mode is only
+ *  allowed up to 3.6 V; below 3.5 V its 5 V mode loses regulator headroom. */
+#define APP_NFC_SUPPLY_3V3_BELOW_MV     (3500u)
+#define APP_NFC_SUPPLY_5V_ABOVE_MV      (3600u)
+
+/** Record cards even when no student list has been provisioned. With 0, an
+ *  unprovisioned unit rejects every card as unknown. */
+#define APP_ACCEPT_ALL_WHEN_NO_LIST     (1u)
+
+/* ------------------------------------------------------------------------ */
+/* Button policy                                                            */
+/* ------------------------------------------------------------------------ */
+
+#define APP_BTN_DEBOUNCE_MS             (30u)
+
+/** Hold this long to power off. Shorter presses show the battery status. */
+#define APP_BTN_LONG_MS                 (2000u)
+
+/** Give up waiting for the button to be released before Standby. */
+#define APP_BTN_RELEASE_TIMEOUT_MS      (10000u)
+
+/* ------------------------------------------------------------------------ */
+/* Feedback and indicator policy (ms)                                       */
+/* ------------------------------------------------------------------------ */
+
 #define APP_FB_ACCEPT_VIB_MS            (90u)
 #define APP_FB_ACCEPT_LED_MS            (250u)
 #define APP_FB_DUPLICATE_PULSE_MS       (60u)
@@ -32,6 +71,21 @@
 #define APP_FB_REJECT_VIB_MS            (450u)
 #define APP_FB_LOWBATT_BLINK_MS         (150u)
 #define APP_FB_LOWBATT_BLINKS           (5u)
+#define APP_FB_ERROR_BLINK_MS           (100u)
+#define APP_FB_ERROR_BLINKS             (4u)
+#define APP_FB_STATUS_BLINK_MS          (150u)
+#define APP_FB_POWER_ON_MS              (300u)
+#define APP_FB_POWER_ON_VIB_MS          (120u)
+#define APP_FB_POWER_OFF_MS             (700u)
+#define APP_FB_POWER_OFF_VIB_MS         (250u)
+
+/** Idle heartbeat: one short flash per period, green, or red on a low cell. */
+#define APP_IND_IDLE_PERIOD_MS          (4000u)
+#define APP_IND_IDLE_ON_MS              (30u)
+
+/** USB session: green flash once a second. */
+#define APP_IND_USB_PERIOD_MS           (1000u)
+#define APP_IND_USB_ON_MS               (100u)
 
 /* ------------------------------------------------------------------------ */
 /* Buffering policy                                                         */
@@ -43,6 +97,11 @@
 /** Flush threshold, in percent of APP_RAM_RECORDS (flow chart: 80 %). */
 #define APP_RAM_FLUSH_PERCENT           (80u)
 
+/** Also flush once no card has been recorded for this long, so a battery
+ *  pulled out of a running unit loses seconds of scans rather than a lesson's
+ *  worth. Appending is a few double-word programs; no erase is involved. */
+#define APP_FLUSH_IDLE_MS               (5000u)
+
 /* ------------------------------------------------------------------------ */
 /* Battery policy                                                           */
 /* ------------------------------------------------------------------------ */
@@ -50,34 +109,39 @@
 /** Below this the unit refuses to start / shuts down (single Li-ion, mV). */
 #define APP_BATT_CUTOFF_MV              (3300u)
 
-/** Below this the unit still runs but warns on every scan. */
+/** Below this the unit still runs but shows a red heartbeat. */
 #define APP_BATT_WARN_MV                (3500u)
 
-/* Temporarily bypass low-battery shutdown and warning during NFC bring-up. */
-#define APP_ENABLE_BATTERY_PROTECTION   (0u)
+/** Shut down on a flat cell. 0 only measures and reports. */
+#define APP_ENABLE_BATTERY_PROTECTION   (1u)
+
+/** Battery sampling interval while running. */
+#define APP_BATT_SAMPLE_MS              (10000u)
+
+/** Consecutive critical samples before a shutdown, so one sample taken during
+ *  a load spike cannot switch the unit off. */
+#define APP_BATT_CRITICAL_SAMPLES       (3u)
 
 /**
  * Resistor divider on the battery sense node: Vadc = Vbat * LOW/(LOW+HIGH).
  *
- * 4.7 M + 4.7 M rather than anything lower because this divider is permanently
- * connected: the PVD comparator watches the same node, and gating it would
- * blind the brown-out detection during exactly the current spikes that cause
- * one. 0.4 uA is the price; a 100 nF cap across the low leg keeps the source
- * impedance low enough for the ADC's 640.5-cycle sampling window.
+ * R16 4.7 M over R17 2.7 M. High impedance because this divider is permanently
+ * connected: the PVD comparator watches the same node. A 100 nF cap across the
+ * low leg keeps the source impedance low enough for the ADC's 640.5-cycle
+ * sampling window.
  */
 #define APP_BATT_DIV_HIGH_KOHM          (4700u)
 #define APP_BATT_DIV_LOW_KOHM           (2700u)
 
 /* ------------------------------------------------------------------------ */
-/* RF / EM4100 policy                                                       */
+/* USB policy                                                               */
 /* ------------------------------------------------------------------------ */
 
-/* The carrier frequency and the tank settling time are properties of the
- * antenna hardware, not of this application, so they live in
- * Bsp/Inc/bsp_board.h as BSP_RF_CARRIER_HZ and BSP_RF_SETTLE_MS. */
+#define APP_VBUS_DEBOUNCE_MS            (50u)
 
-/** Consecutive false wake-ups tolerated before the touch pad is recalibrated. */
-#define APP_FALSE_WAKE_RECAL_LIMIT      (20u)
+/** VBUS without enumeration for this long is a charger, not a host: USB is
+ *  stopped again and the unit keeps scanning while it charges. */
+#define APP_USB_ENUM_TIMEOUT_MS         (5000u)
 
 /* ------------------------------------------------------------------------ */
 /* Log / CSV policy                                                         */

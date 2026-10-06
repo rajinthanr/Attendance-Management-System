@@ -4,27 +4,51 @@
  *
  * The existence of this file is the point of the layering: App/ compiles and
  * runs on a workstation with no STM32 headers anywhere, so the log format,
- * the decoder and the FAT image can be tested at desk speed.
+ * the card protocol and the FAT image can be tested at desk speed.
+ *
+ * Time only moves when the code under test sleeps: every plat_sleep_idle()
+ * adds a millisecond, so N passes of app_task() are N ms of device time.
  */
+#include "host_platform.h"
 #include "platform_if.h"
-#include "app_fsm.h"
 #include "nv_layout.h"
+#include "crc.h"
+#include "timeutil.h"
 #include <string.h>
 
 #define HOST_FLASH_BYTES  (NV_PAGE_SIZE * 64u)
 
 uint8_t  host_flash[HOST_FLASH_BYTES];
 uint32_t host_out_mask;
-uint32_t host_write_failures;   /* set to N to fail the Nth write, for tests */
+uint32_t host_write_failures;
 static uint32_t s_writes;
 
-/* Firmware debug globals are defined by Core/Src/main.c on target. */
-volatile uint32_t detected_card_id;
-volatile uint8_t detected_card_uid[10];
-volatile uint8_t detected_card_id_length;
-volatile bool detected_card_id_valid;
+uint32_t host_ms;
+bool     host_button;
+bool     host_vbus;
+bool     host_usb_configured;
+bool     host_usb_started;
+uint16_t host_adc_vbat_counts = 1751u;   /* about 3.88 V */
 
-static app_datetime_t s_now = { 2026u, 9u, 10u, 13u, 27u, 45u };
+jmp_buf *host_deep_sleep_jmp;
+uint32_t host_deep_sleeps;
+
+bool     host_nfc_init_ok = true;
+bool     host_nfc_field;
+bool     host_nfc_powered_down;
+bool     host_nfc_collision;
+bool     host_card_present;
+
+static uint8_t s_uid[10];
+static uint8_t s_uid_len;
+static uint8_t s_sak;
+static uint8_t s_level;        /* cascade level the card expects next */
+static bool    s_card_ready;   /* answered REQA, not yet fully selected */
+
+/* The RTC runs from a base date plus the elapsed host time. */
+static app_epoch_t s_rtc_base = 842362065u;   /* 2026-09-10 13:27:45 */
+static uint32_t    s_rtc_base_ms;
+static bool        s_rtc_valid = true;
 
 void host_flash_erase_all(void)
 {
@@ -33,42 +57,153 @@ void host_flash_erase_all(void)
     host_write_failures = 0u;
 }
 
-void host_set_time(const app_datetime_t *dt) { s_now = *dt; }
+void host_set_time(const app_datetime_t *dt)
+{
+    s_rtc_base = time_to_epoch(dt);
+    s_rtc_base_ms = host_ms;
+}
 
-/* ---- outputs ---- */
+void host_card_set(const uint8_t *uid, uint8_t len, uint8_t sak)
+{
+    memcpy(s_uid, uid, len);
+    s_uid_len = len;
+    s_sak = sak;
+    host_card_present = true;
+}
+
+/* ---- outputs and inputs ---- */
 void plat_out_write(uint32_t mask) { host_out_mask = mask; }
+bool plat_button_pressed(void) { return host_button; }
+bool plat_usb_vbus_present(void) { return host_vbus; }
 
 /* ---- power ---- */
-void plat_sleep_idle(plat_idle_pred_t p) { (void)p; }
-void plat_sleep_light(plat_idle_pred_t p) { (void)p; }
-void plat_sleep_deep(void) { for (;;) { } }
+void plat_sleep_idle(plat_idle_pred_t p) { (void)p; host_ms++; }
+
+void plat_sleep_deep(void)
+{
+    host_deep_sleeps++;
+    if (host_deep_sleep_jmp != NULL) {
+        longjmp(*host_deep_sleep_jmp, 1);
+    }
+    for (;;) { }
+}
+
 void plat_critical_enter(void) { }
 void plat_critical_exit(void) { }
 app_boot_cause_t plat_boot_cause(void) { return APP_BOOT_POWER_ON; }
 
-/* ---- rf ---- */
-void plat_rf_power(bool on) { (void)on; }
-void plat_rf_carrier(bool on) { (void)on; }
-void plat_rf_capture_start(uint32_t *b, uint16_t c) { (void)b; (void)c; }
-uint16_t plat_rf_capture_stop(void) { return 0u; }
-uint32_t plat_rf_capture_hz(void) { return 1000000u; }
-
-/* ---- touch ---- */
-void plat_touch_power(bool on) { (void)on; }
-void plat_touch_irq_enable(bool e) { (void)e; }
-void plat_touch_recalibrate(void) { }
-
-/* ---- timers ---- */
-void plat_inactivity_restart(uint32_t ms) { (void)ms; }
-void plat_inactivity_stop(void) { }
-void plat_timer_start(uint32_t ms) { (void)ms; }
-void plat_timer_stop(void) { }
-uint32_t plat_uptime_ms(void) { return 0u; }
+/* ---- time ---- */
+uint32_t plat_uptime_ms(void) { return host_ms; }
 
 /* ---- rtc ---- */
-void plat_rtc_get(app_datetime_t *o) { *o = s_now; }
-void plat_rtc_set(const app_datetime_t *d) { s_now = *d; }
-bool plat_rtc_is_valid(void) { return true; }
+void plat_rtc_get(app_datetime_t *o)
+{
+    time_from_epoch(s_rtc_base + ((host_ms - s_rtc_base_ms) / 1000u), o);
+}
+
+void plat_rtc_set(const app_datetime_t *d)
+{
+    host_set_time(d);
+    s_rtc_valid = true;
+}
+
+bool plat_rtc_is_valid(void) { return s_rtc_valid; }
+
+/* ---- nfc: a simulated ISO14443-A card ---- */
+static uint8_t card_levels(void)
+{
+    return (s_uid_len == 4u) ? 1u : (s_uid_len == 7u) ? 2u : 3u;
+}
+
+/** The four UID-part bytes the card sends at cascade level @p level. */
+static void card_uid_part(uint8_t level, uint8_t out[4])
+{
+    bool last = (uint8_t)(level + 1u) == card_levels();
+    uint8_t start = (uint8_t)(level * 3u);
+
+    if (last) {
+        memcpy(out, &s_uid[start], 4u);
+    } else {
+        out[0] = 0x88u;
+        memcpy(&out[1], &s_uid[start], 3u);
+    }
+}
+
+bool plat_nfc_init(bool supply_3v3, uint8_t *chip_id)
+{
+    (void)supply_3v3;
+    *chip_id = host_nfc_init_ok ? 0x2Au : 0x00u;
+    host_nfc_powered_down = false;
+    host_nfc_field = false;
+    return host_nfc_init_ok;
+}
+
+bool plat_nfc_set_supply(bool supply_3v3) { (void)supply_3v3; return true; }
+
+void plat_nfc_field(bool on)
+{
+    host_nfc_field = on;
+    if (!on) {
+        s_card_ready = false;   /* no field, no power: the card resets */
+    }
+}
+
+plat_nfc_status_t plat_nfc_reqa(uint8_t atqa[2])
+{
+    if (!host_nfc_field || !host_card_present) {
+        return PLAT_NFC_TIMEOUT;
+    }
+    if (host_nfc_collision) {
+        return PLAT_NFC_COLLISION;
+    }
+    atqa[0] = (s_uid_len == 4u) ? 0x04u : 0x44u;
+    atqa[1] = 0x00u;
+    s_level = 0u;
+    s_card_ready = true;
+    return PLAT_NFC_OK;
+}
+
+plat_nfc_status_t plat_nfc_transceive(const uint8_t *tx, uint8_t tx_len,
+                                      uint8_t flags, uint8_t *rx,
+                                      uint8_t rx_cap, uint8_t *rx_len)
+{
+    static const uint8_t sel[3] = { 0x93u, 0x95u, 0x97u };
+    uint8_t part[4];
+
+    *rx_len = 0u;
+    if (!host_nfc_field || !host_card_present || !s_card_ready ||
+        s_level >= card_levels() || tx[0] != sel[s_level]) {
+        return PLAT_NFC_TIMEOUT;
+    }
+    card_uid_part(s_level, part);
+
+    if (tx_len == 2u && tx[1] == 0x20u && (flags & PLAT_NFC_ANTICOLLISION) != 0u) {
+        if (rx_cap < 5u) { return PLAT_NFC_RX_ERROR; }
+        memcpy(rx, part, 4u);
+        rx[4] = (uint8_t)(part[0] ^ part[1] ^ part[2] ^ part[3]);
+        *rx_len = 5u;
+        return PLAT_NFC_OK;
+    }
+
+    if (tx_len == 7u && tx[1] == 0x70u && (flags & PLAT_NFC_TX_CRC) != 0u &&
+        memcmp(&tx[2], part, 4u) == 0) {
+        bool last = (uint8_t)(s_level + 1u) == card_levels();
+        uint8_t sak = last ? s_sak : 0x04u;
+        uint16_t crc = crc16_iso14443a(&sak, 1u);
+
+        if (rx_cap < 3u) { return PLAT_NFC_RX_ERROR; }
+        rx[0] = sak;
+        rx[1] = (uint8_t)crc;
+        rx[2] = (uint8_t)(crc >> 8);
+        *rx_len = 3u;
+        s_level++;
+        return PLAT_NFC_OK;
+    }
+    return PLAT_NFC_TIMEOUT;
+}
+
+bool plat_nfc_measure_amplitude(uint8_t *raw) { *raw = 120u; return true; }
+void plat_nfc_power_down(void) { host_nfc_powered_down = true; host_nfc_field = false; }
 
 /* ---- flash ---- */
 uint32_t plat_flash_page_size(void) { return NV_PAGE_SIZE; }
@@ -111,13 +246,13 @@ bool plat_flash_erase(uint32_t off)
 /* ---- adc ---- */
 bool plat_adc_sample(app_adc_sample_t *o)
 {
-    o->vbat_counts = 2400u;
-    o->vrefint_counts = 1500u;
+    o->vbat_counts = host_adc_vbat_counts;
+    o->vrefint_counts = 1500u;   /* with the CAL value below: VDDA 3310 mV */
     o->vrefint_cal = 1655u;
     return true;
 }
 
 /* ---- usb ---- */
-bool plat_usb_vbus_present(void) { return false; }
-void plat_usb_start(void) { }
-void plat_usb_stop(void) { }
+void plat_usb_start(void) { host_usb_started = true; }
+void plat_usb_stop(void) { host_usb_started = false; }
+bool plat_usb_configured(void) { return host_usb_started && host_usb_configured; }

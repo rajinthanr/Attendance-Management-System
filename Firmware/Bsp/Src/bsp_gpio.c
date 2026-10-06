@@ -3,10 +3,12 @@
  * @brief   Level 1 (HAL) — pin configuration and discrete outputs.
  *
  * Unused pins are left as analog inputs, which is the lowest-leakage state on
- * an L4 and is worth real microamps in Stop 2 across sixteen spare pins.
+ * an L4 and is worth real microamps across sixteen spare pins.
+ *
+ * Polling mode: the button, VBUS and the reader's IRQ are plain inputs read
+ * from the main loop. No EXTI line is armed.
  */
 #include "bsp.h"
-#include "app_events.h"
 
 void bsp_gpio_init(void)
 {
@@ -18,6 +20,11 @@ void bsp_gpio_init(void)
     /* GPIOC is deliberately left unclocked: its only pins on this package are
      * PC14/PC15, which belong to the LSE oscillator and are configured by the
      * RCC, not by us. */
+
+    /* MX_GPIO_Init() armed EXTI on the inputs, and HAL_GPIO_Init() never
+     * disarms a line, so release them before reconfiguring. */
+    HAL_GPIO_DeInit(GPIOA, PIN_PWR_BTN | PIN_USB_VBUS);
+    HAL_GPIO_DeInit(GPIOB, PIN_NFC_IRQ | PIN_PN532_IRQ);
 
     /* Everything analog first, then override the pins we actually use. This
      * catches spare pins without having to enumerate them. */
@@ -57,29 +64,25 @@ void bsp_gpio_init(void)
     g.Pin = PIN_NFC_MISO;
     HAL_GPIO_Init(PORT_NFC_SPI, &g);
 
-    /* Power button: WKUP1 wakes from Standby, EXTI0 catches a press while
-     * running. Pulled up, so the button shorts to ground. */
-    g.Mode = GPIO_MODE_IT_FALLING;
+    /* Power button: WKUP1 wakes from Standby; polled while running. R8 pulls
+     * it up externally as well, and the button shorts it to ground. */
+    g.Mode = GPIO_MODE_INPUT;
     g.Pull = GPIO_PULLUP;
     g.Pin = PIN_PWR_BTN;
     HAL_GPIO_Init(PORT_PWR_BTN, &g);
 
-    /* VBUS: both edges, so attach and detach are distinguishable. No pull;
-     * the divider on the VBUS net defines the level. */
-    g.Mode = GPIO_MODE_IT_RISING_FALLING;
+    /* VBUS: no pull; the R18/R19 divider on the VBUS net defines the level. */
     g.Pull = GPIO_NOPULL;
     g.Pin = PIN_USB_VBUS;
     HAL_GPIO_Init(PORT_USB_VBUS, &g);
 
     /* ST25R3916 IRQ is active high; the pull-down keeps its idle state
      * defined while the reader is resetting. */
-    g.Mode = GPIO_MODE_IT_RISING;
     g.Pull = GPIO_PULLDOWN;
     g.Pin = PIN_NFC_IRQ;
     HAL_GPIO_Init(PORT_NFC_IRQ, &g);
 
-    /* The optional PN532 has its own active-low interrupt on EXTI6. */
-    g.Mode = GPIO_MODE_IT_FALLING;
+    /* The optional PN532 drives its active-low interrupt here. */
     g.Pull = GPIO_PULLUP;
     g.Pin = PIN_PN532_IRQ;
     HAL_GPIO_Init(PORT_PN532_IRQ, &g);
@@ -91,14 +94,6 @@ void bsp_gpio_init(void)
     HAL_GPIO_Init(PORT_BATT_SENSE, &g);
     g.Pin = PIN_PVD_IN;
     HAL_GPIO_Init(PORT_PVD_IN, &g);
-
-    HAL_NVIC_SetPriority(EXTI0_IRQn, BSP_PRIO_EXTI, 0u);
-    HAL_NVIC_SetPriority(EXTI1_IRQn, BSP_PRIO_EXTI, 0u);
-    HAL_NVIC_SetPriority(EXTI9_5_IRQn, BSP_PRIO_EXTI, 0u);
-
-    /* The button and VBUS are always live; NFC is armed by the application. */
-    HAL_NVIC_EnableIRQ(EXTI0_IRQn);
-    HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -116,66 +111,15 @@ void plat_out_write(uint32_t mask)
 }
 
 /* ------------------------------------------------------------------------ */
-/* platform_if: touch IC                                                    */
+/* platform_if: discrete inputs                                             */
 /* ------------------------------------------------------------------------ */
 
-void plat_touch_power(bool on)
+bool plat_button_pressed(void)
 {
-    /* ST25R3916 is powered directly from the battery. */
-    (void)on;
+    return (HAL_GPIO_ReadPin(PORT_PWR_BTN, PIN_PWR_BTN) == PWR_BTN_ACTIVE_LEVEL);
 }
-
-void plat_touch_irq_enable(bool enable)
-{
-    if (enable) {
-        __HAL_GPIO_EXTI_CLEAR_IT(PIN_NFC_IRQ);
-        HAL_NVIC_ClearPendingIRQ(EXTI1_IRQn);
-        HAL_NVIC_EnableIRQ(EXTI1_IRQn);
-    } else {
-        HAL_NVIC_DisableIRQ(EXTI1_IRQn);
-    }
-}
-
-void plat_touch_recalibrate(void)
-{
-    /* No discrete capacitive touch controller is fitted on this PCB. */
-}
-
-/* ------------------------------------------------------------------------ */
-/* platform_if: USB presence                                                */
-/* ------------------------------------------------------------------------ */
 
 bool plat_usb_vbus_present(void)
 {
     return (HAL_GPIO_ReadPin(PORT_USB_VBUS, PIN_USB_VBUS) == GPIO_PIN_SET);
-}
-
-/* ------------------------------------------------------------------------ */
-/* EXTI callback: the single place GPIO interrupts become events            */
-/* ------------------------------------------------------------------------ */
-
-void HAL_GPIO_EXTI_Callback(uint16_t pin)
-{
-    switch (pin) {
-    case PIN_PWR_BTN:
-        app_event_post(APP_EVT_BUTTON);
-        break;
-
-    case PIN_NFC_IRQ:
-        app_event_post(APP_EVT_TOUCH);
-        break;
-
-    case PIN_PN532_IRQ:
-        /* Backup reader support is not enabled by the application yet. */
-        break;
-
-    case PIN_USB_VBUS:
-        /* Both edges share one line, so the level decides which it was. */
-        app_event_post(plat_usb_vbus_present() ? APP_EVT_USB_ATTACH
-                                               : APP_EVT_USB_DETACH);
-        break;
-
-    default:
-        break;
-    }
 }

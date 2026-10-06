@@ -23,8 +23,6 @@
 /* USER CODE BEGIN Includes */
 #include "bsp.h"
 #include "app_fsm.h"
-#include "bsp_nfc_probe.h"
-#include "battery.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -59,27 +57,7 @@ PCD_HandleTypeDef hpcd_USB_FS;
 
 /* USER CODE BEGIN PV */
 
-/* Global, volatile state for STM32CubeIDE Live Expressions. */
-volatile uint8_t nfc_debug_reference = 0u;
-volatile uint8_t nfc_debug_amplitude = 0u;
-volatile uint8_t nfc_debug_delta = 0u;
-volatile uint32_t nfc_debug_battery_mv = 0u;
-volatile int32_t nfc_debug_reference_q4 = 0;
-volatile uint8_t nfc_debug_present_count = 0u;
-volatile uint8_t nfc_debug_absent_count = 0u;
-volatile bool nfc_debug_reader_ready = false;
-volatile bool nfc_debug_reference_valid = false;
-volatile bool nfc_debug_sample_ok = false;
-volatile bool nfc_debug_measurement_valid = false;
-volatile bool nfc_debug_amplitude_ok = false;
-volatile bool nfc_debug_amplitude_present = false;
-volatile bool nfc_debug_uid_found = false;
-volatile bool nfc_debug_card_near = false;
-volatile uint32_t detected_card_id = 0u;
-volatile uint8_t detected_card_uid[10] = { 0u };
-volatile uint8_t detected_card_id_length = 0u;
-volatile bool detected_card_id_valid = false;
-volatile uint32_t nfc_debug_last_sample_ms = 0u;
+/* Live-debug globals (dbg_*) live in App/Src/app_debug.c. */
 
 /* USER CODE END PV */
 
@@ -100,86 +78,6 @@ static void MX_TIM2_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-#define LED_BOOT_DEBUG 1
-#define NFC_SAMPLE_PERIOD_MS 100u
-#define NFC_PRESENT_DELTA 4u
-#define NFC_ABSENT_DELTA 2u
-#define NFC_STABLE_SAMPLES 3u
-#define NFC_AMPLITUDE_MIN 8u
-#define NFC_AMPLITUDE_MAX 230u
-
-static void nfc_debug_update_amplitude(uint8_t amplitude, bool sample_ok)
-{
-  nfc_debug_amplitude_ok = sample_ok;
-  if (!sample_ok)
-  {
-    nfc_debug_measurement_valid = false;
-    nfc_debug_amplitude_present = false;
-    nfc_debug_present_count = 0u;
-    nfc_debug_absent_count = 0u;
-    return;
-  }
-
-  nfc_debug_amplitude = amplitude;
-  nfc_debug_measurement_valid =
-      amplitude > NFC_AMPLITUDE_MIN && amplitude < NFC_AMPLITUDE_MAX;
-  if (!nfc_debug_measurement_valid)
-  {
-    nfc_debug_amplitude_present = false;
-    nfc_debug_present_count = 0u;
-    nfc_debug_absent_count = 0u;
-    return;
-  }
-
-  if (!nfc_debug_reference_valid)
-  {
-    nfc_debug_reference = amplitude;
-    nfc_debug_reference_q4 = (int32_t)amplitude * 16;
-    nfc_debug_reference_valid =
-        amplitude > NFC_AMPLITUDE_MIN + NFC_PRESENT_DELTA &&
-        amplitude < NFC_AMPLITUDE_MAX - NFC_PRESENT_DELTA;
-    return;
-  }
-
-  nfc_debug_delta = (amplitude > nfc_debug_reference)
-                    ? (uint8_t)(amplitude - nfc_debug_reference)
-                    : (uint8_t)(nfc_debug_reference - amplitude);
-
-  if (nfc_debug_amplitude_present)
-  {
-    nfc_debug_present_count = 0u;
-    if (nfc_debug_delta <= NFC_ABSENT_DELTA)
-    {
-      if (++nfc_debug_absent_count >= NFC_STABLE_SAMPLES)
-      {
-        nfc_debug_amplitude_present = false;
-        nfc_debug_absent_count = 0u;
-      }
-    }
-    else
-    {
-      nfc_debug_absent_count = 0u;
-    }
-  }
-  else if (nfc_debug_delta >= NFC_PRESENT_DELTA)
-  {
-    nfc_debug_absent_count = 0u;
-    if (++nfc_debug_present_count >= NFC_STABLE_SAMPLES)
-    {
-      nfc_debug_amplitude_present = true;
-      nfc_debug_present_count = 0u;
-    }
-  }
-  else
-  {
-    nfc_debug_present_count = 0u;
-    nfc_debug_reference_q4 +=
-        ((int32_t)amplitude * 16 - nfc_debug_reference_q4) / 16;
-    nfc_debug_reference =
-        (uint8_t)((nfc_debug_reference_q4 + 8) / 16);
-  }
-}
 
 /* USER CODE END 0 */
 
@@ -222,74 +120,11 @@ int main(void)
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
-#if LED_BOOT_DEBUG
-  /* Poll NFC-A UIDs directly while the card reader is being brought up. */
-  uint8_t uid[BSP_NFC_UID_MAX_BYTES] = { 0u };
-  uint8_t uid_length = 0u;
-  app_adc_sample_t battery_sample = {0};
-  if (plat_adc_sample(&battery_sample))
-  {
-    nfc_debug_battery_mv = batt_millivolts(&battery_sample);
-  }
-  nfc_debug_reader_ready = bsp_nfc_probe_init(nfc_debug_battery_mv);
-  nfc_debug_sample_ok = false;
-  nfc_debug_measurement_valid = false;
-  nfc_debug_amplitude_ok = false;
-  nfc_debug_amplitude_present = false;
-  nfc_debug_uid_found = false;
-  nfc_debug_card_near = false;
-  nfc_debug_last_sample_ms = HAL_GetTick();
-
-  HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_RESET);
-  HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_RED_Pin, GPIO_PIN_RESET);
-  while (1)
-  {
-    uint32_t now = HAL_GetTick();
-    if ((uint32_t)(now - nfc_debug_last_sample_ms) >= NFC_SAMPLE_PERIOD_MS)
-    {
-      uint8_t amplitude = 0u;
-      bool amplitude_ok;
-      nfc_debug_last_sample_ms = now;
-      uid_length = 0u;
-      nfc_debug_uid_found = nfc_debug_reader_ready &&
-                            bsp_nfc_poll_uid(uid, &uid_length);
-      nfc_debug_sample_ok = nfc_debug_uid_found;
-      if (nfc_debug_uid_found)
-      {
-        uint8_t i;
-        uint32_t id_value = 0u;
-        for (i = 0u; i < BSP_NFC_UID_MAX_BYTES; i++)
-        {
-          detected_card_uid[i] = 0u;
-        }
-        for (i = 0u; i < uid_length; i++)
-        {
-          detected_card_uid[i] = uid[i];
-          if (i < sizeof(detected_card_id))
-          {
-            id_value = (id_value << 8) | uid[i];
-          }
-        }
-        detected_card_id = id_value;
-        detected_card_id_length = uid_length;
-        detected_card_id_valid = true;
-      }
-      amplitude_ok = !nfc_debug_uid_found && nfc_debug_reader_ready &&
-                     bsp_nfc_probe_amplitude(&amplitude);
-      nfc_debug_update_amplitude(amplitude, amplitude_ok);
-      nfc_debug_card_near = nfc_debug_uid_found || nfc_debug_amplitude_present;
-      HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin,
-                        nfc_debug_card_near ? GPIO_PIN_SET : GPIO_PIN_RESET);
-    }
-    HAL_Delay(5);
-  }
-#endif
-
-  /* Level 1: clocks, pins, RTC, timers, ADC, PVD. Nothing is armed yet that
-   * could post an event, so the application decides when to start listening. */
+  /* Level 1: clocks, pins, RTC, ADC, power. Everything is polled from the
+   * main loop; only SysTick and USB interrupt. */
   bsp_init();
 
-  /* Level 2: the flow chart's "Start" through to the first sleep. */
+  /* Level 2: the flow chart's "Start" through to the first card poll. */
   app_init();
 
   /* USER CODE END 2 */
@@ -302,8 +137,8 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-    /* One pass: handle the next event, or sleep until one arrives. The part
-     * spends almost all of its life inside this call, in Stop 2. */
+    /* One pass: sample the inputs, poll the reader, run the timers and the
+     * feedback pattern, then sleep until the next SysTick. */
     app_task();
   }
   /* USER CODE END 3 */
@@ -526,6 +361,13 @@ static void MX_RTC_Init(void)
   }
 
   /* USER CODE BEGIN Check_RTC_BKUP */
+
+  /* The calendar runs on through Standby and resets. Once it has been set,
+   * the code below would put it back to 2000-01-01 on every boot. */
+  if (HAL_RTCEx_BKUPRead(&hrtc, BSP_BKP_RTC_VALID) == BSP_BKP_RTC_MAGIC)
+  {
+    return;
+  }
 
   /* USER CODE END Check_RTC_BKUP */
 

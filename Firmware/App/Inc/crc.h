@@ -22,4 +22,10 @@ uint16_t crc16_ccitt_update(uint16_t seed, const void *data, uint32_t len);
 uint32_t crc32_ieee(const void *data, uint32_t len);
 uint32_t crc32_ieee_update(uint32_t seed, const void *data, uint32_t len);
 
+/**
+ * CRC_A of ISO/IEC 14443-3: poly 0x1021 reflected, init 0x6363, no xorout.
+ * The card sends the low byte first.
+ */
+uint16_t crc16_iso14443a(const void *data, uint32_t len);
+
 #endif /* CRC_H */

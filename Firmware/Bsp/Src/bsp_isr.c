@@ -6,47 +6,12 @@
  * never touches them. Every handler does the same thing: hand the HAL its
  * interrupt and let the HAL callback post an event. No decisions are taken
  * at interrupt priority.
+ *
+ * Polling mode: the button, VBUS, the reader and the timers are sampled from
+ * the main loop, so only USB (and the PVD, when BSP_ENABLE_BATTERY_PVD is set)
+ * interrupt. EXTI and LPTIM handlers return here with the move to interrupts.
  */
 #include "bsp.h"
-
-extern PCD_HandleTypeDef hbsp_pcd;
-
-/* ---- EXTI ---- */
-
-void EXTI0_IRQHandler(void)          /* power button */
-{
-    HAL_GPIO_EXTI_IRQHandler(PIN_PWR_BTN);
-}
-
-void EXTI1_IRQHandler(void)          /* ST25R3916 IRQ */
-{
-    HAL_GPIO_EXTI_IRQHandler(PIN_NFC_IRQ);
-}
-
-void EXTI9_5_IRQHandler(void)        /* USB VBUS and PN532 IRQ */
-{
-    HAL_GPIO_EXTI_IRQHandler(PIN_USB_VBUS);
-    HAL_GPIO_EXTI_IRQHandler(PIN_PN532_IRQ);
-}
-
-/* ---- Timers ---- */
-
-void LPTIM1_IRQHandler(void)         /* 3-minute inactivity */
-{
-    HAL_LPTIM_IRQHandler(&hbsp_lptim_inact);
-}
-
-void LPTIM2_IRQHandler(void)         /* short one-shot delays */
-{
-    HAL_LPTIM_IRQHandler(&hbsp_lptim_delay);
-}
-
-/* ---- Capture DMA ---- */
-
-void DMA1_Channel7_IRQHandler(void)
-{
-    HAL_DMA_IRQHandler(&hbsp_dma_capture);
-}
 
 /* ---- Power ---- */
 

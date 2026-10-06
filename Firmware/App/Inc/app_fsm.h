@@ -2,9 +2,9 @@
  * @file    app_fsm.h
  * @brief   Level 2 (logic) — the application state machine.
  *
- * A direct transcription of the flow chart. Every branch in the diagram is a
- * branch here, and every "light sleep mode" terminator is a return to the
- * main loop with an empty event queue.
+ * A polling super-loop: every pass samples the inputs, advances the card
+ * reader, the feedback pattern and the timers, handles any events those
+ * produced, then sleeps until the next SysTick.
  */
 #ifndef APP_FSM_H
 #define APP_FSM_H
@@ -13,39 +13,28 @@
 #include "app_events.h"
 
 typedef enum {
-    ST_IDLE = 0,   /**< Waiting for a card, in Stop 2 between events. */
-    ST_READING,    /**< Carrier on, capturing; Sleep mode only. */
-    ST_FEEDBACK,   /**< Stepping an LED/vibration pattern. */
-    ST_USB,        /**< Enumerated as mass storage. */
-    ST_SHUTDOWN    /**< Finishing up before Standby. */
+    ST_IDLE = 0,   /**< Polling for cards. */
+    ST_USB,        /**< Enumerated as mass storage; the reader is off. */
+    ST_SHUTDOWN    /**< Playing the power-off pattern before Standby. */
 } app_state_t;
 
-/** Diagnostics, surfaced for test and for a future debug channel. */
+/** Counters since boot. */
 typedef struct {
     uint32_t scans_accepted;
     uint32_t scans_duplicate;
     uint32_t scans_unknown;
-    uint32_t false_wakes;
+    uint32_t scans_rejected_full;
     uint32_t records_dropped;
     uint32_t flush_failures;
+    uint32_t nfc_init_failures;
 } app_stats_t;
 
-/** Last card ID as a big-endian 32-bit value (easy to inspect in Live Expressions). */
-extern volatile uint32_t detected_card_id;
-/** Full UID bytes, retained for UIDs longer than four bytes. */
-extern volatile uint8_t detected_card_uid[10];
-extern volatile uint8_t detected_card_id_length;
-/** True after detected_card_id and detected_card_uid have been populated. */
-extern volatile bool detected_card_id_valid;
-
-/** One-time start-up: the flow chart's "Start" through to the first sleep. */
+/** One-time start-up: the flow chart's "Start" through to the first poll. */
 void app_init(void);
 
 /**
- * One pass of the pump: handle the next event, or sleep if there is none.
- *
- * Returns after each pass so the infinite loop stays in main(), where CubeMX
- * puts it. Call it from there, forever, after app_init().
+ * One pass of the loop. Returns after sleeping until the next interrupt, so
+ * the infinite loop stays in main(), where CubeMX puts it.
  */
 void app_task(void);
 
