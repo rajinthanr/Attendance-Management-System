@@ -30,11 +30,12 @@
 #include "button.h"
 #include "card_reader.h"
 #include "dedup.h"
+#include "device_cfg.h"
 #include "feedback.h"
 #include "log_store.h"
 #include "platform_if.h"
 #include "record_buffer.h"
-#include "student_db.h"
+#include "session.h"
 #include "timeutil.h"
 #include "usb_storage.h"
 
@@ -50,7 +51,7 @@ static struct {
 
   record_buffer_t rb;
   log_store_t log;
-  student_db_t db;
+  device_cfg_t cfg; /**< Device ID and the registered card list. */
   dedup_t dedup;
   feedback_t fb;
   button_t btn;
@@ -268,12 +269,27 @@ static void sample_battery(void) {
 /* Card handling                                                            */
 /* ------------------------------------------------------------------------ */
 
-/** Flow chart: "ID in student list?" */
+/**
+ * Flow chart: "ID in student list?" The list holds card numbers only; who a
+ * card belongs to is the PC's business. A card that is not on it is still
+ * recorded (the PC learns of new cards that way) but gets the red pattern.
+ */
 static bool student_allowed(uint32_t id) {
-  if (!g.db.loaded) {
+  if (g.cfg.card_count == 0u) {
     return APP_ACCEPT_ALL_WHEN_NO_LIST != 0u;
   }
-  return sdb_contains(&g.db, id);
+  return cards_is_known(&g.cfg, id);
+}
+
+/** "Load config from flash": the device ID and the registered cards. */
+static void load_config(void) {
+  devcfg_load(&g.cfg);
+
+  /* A list that fails its CRC is no list: better that every card shows green
+   * than that every card shows red because a page was damaged. */
+  if (g.cfg.card_count > 0u && !cards_verify(&g.cfg)) {
+    g.cfg.card_count = 0u;
+  }
 }
 
 static void publish_card(const iso14443a_card_t *card, uint32_t id) {
@@ -299,12 +315,16 @@ static void handle_card(const iso14443a_card_t *card) {
   touch_activity();
   publish_card(card, id);
 
-  if (!student_allowed(id)) {
-    g.stats.scans_unknown++;
-    result = APP_SCAN_UNKNOWN;
-    begin_feedback(FB_UNKNOWN);
-  } else if (dedup_check_and_mark(&g.dedup, id, stamp)) {
+  if (dedup_check_and_mark(&g.dedup, id, stamp)) {
     /* "Same ID read within last 10 s?" */
+    g.stats.scans_duplicate++;
+    result = APP_SCAN_DUPLICATE;
+    begin_feedback(FB_DUPLICATE);
+  } else if (sess_card_seen(&g.log, &g.rb, id, stamp, APP_SESSION_MAX_AGE_S,
+                            APP_SESSION_SCAN_MAX)) {
+    /* Already signed in to this lecture. The 10 s window above only covers a
+     * card held on the reader; this covers a student coming back later, even
+     * after the unit has been off, because it reads the flash log. */
     g.stats.scans_duplicate++;
     result = APP_SCAN_DUPLICATE;
     begin_feedback(FB_DUPLICATE);
@@ -320,10 +340,17 @@ static void handle_card(const iso14443a_card_t *card) {
     rec.stamp = stamp;
 
     if (rb_push(&g.rb, &rec)) {
-      g.stats.scans_accepted++;
       g.last_record = g.now;
-      result = APP_SCAN_ACCEPTED;
-      begin_feedback(FB_ACCEPTED);
+      if (student_allowed(id)) {
+        g.stats.scans_accepted++;
+        result = APP_SCAN_ACCEPTED;
+        begin_feedback(FB_ACCEPTED);
+      } else {
+        /* Recorded all the same, so the PC can offer to register the card. */
+        g.stats.scans_unknown++;
+        result = APP_SCAN_UNKNOWN;
+        begin_feedback(FB_UNKNOWN);
+      }
     } else {
       g.stats.records_dropped++;
       result = APP_SCAN_STORAGE_FULL;
@@ -403,7 +430,7 @@ static void usb_attach(void) {
   flush_to_flash();
 
   plat_rtc_get(&dt);
-  usbs_begin(&g.log, sdb_device_id(&g.db), &dt);
+  usbs_begin(&g.log, &g.cfg, &dt);
   plat_usb_start();
 
   g.state = ST_USB;
@@ -411,12 +438,56 @@ static void usb_attach(void) {
   g.usb_host = false;
 }
 
-/** Back to scanning, after a host session or on finding only a charger. */
+/**
+ * Write a lecture marker into the log: everything tapped from here on belongs
+ * to @p module / @p lecture. Flushes first so the marker's few records always
+ * fit in the RAM buffer, and last so the lecture is in flash straight away.
+ */
+static void start_session(const char *module, const char *lecture) {
+  app_record_t recs[SESS_MAX_RECORDS];
+  uint16_t n, i;
+
+  flush_to_flash();
+  n = sess_encode(recs, SESS_MAX_RECORDS, now_epoch(), module, lecture);
+  for (i = 0u; i < n; i++) {
+    (void)rb_push(&g.rb, &recs[i]);
+  }
+  flush_to_flash();
+}
+
+/**
+ * Back to scanning, after a host session or on finding only a charger.
+ *
+ * The host may have edited SETTINGS.CSV. That is applied only now, with USB
+ * stopped, because storing a new device ID or card list erases flash pages and
+ * the core stalls while it does. Green says it was applied, red that it was
+ * refused (and nothing changed).
+ */
 static void usb_leave(void) {
+  usbs_result_t res;
+
   plat_usb_stop();
+  usbs_end(&res);
+
   g.state = ST_IDLE;
   g.outputs = OUTPUTS_UNKNOWN;
   touch_activity();
+
+  if (res.outcome == USBS_IMPORT_OK && res.device_set) {
+    /* Read it back before claiming success: this proves what the next boot
+     * will load. A mismatch shows red, the same as a refusal. */
+    load_config();
+    if (!g.cfg.valid || g.cfg.device_id != res.device_id ||
+        (res.cards_set && g.cfg.card_count != res.card_count)) {
+      res.outcome = USBS_IMPORT_FAILED;
+    }
+  }
+  if (res.outcome == USBS_IMPORT_OK && res.session_start) {
+    start_session(res.module, res.lecture);
+  }
+  if (res.outcome != USBS_IMPORT_NONE) {
+    begin_feedback((res.outcome == USBS_IMPORT_OK) ? FB_SAVED : FB_REJECTED);
+  }
 }
 
 static void run_usb(void) {
@@ -577,11 +648,8 @@ void app_init(void) {
   btn_init(&g.btn, plat_button_pressed(), g.now);
 
   /* "Load student list & config from flash" */
-  if (sdb_load(&g.db) && !sdb_verify(&g.db)) {
-    /* A corrupt list could reject genuine cards. Refuse it outright. */
-    g.db.loaded = false;
-  }
-  dbg_students = sdb_count(&g.db);
+  load_config();
+  dbg_students = g.cfg.card_count;
 
   log_init(&g.log);
 

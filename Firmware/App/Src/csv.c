@@ -8,11 +8,9 @@
 #include "csv.h"
 #include "timeutil.h"
 
-/* Exactly 30 characters, so the header fills a row with just the CRLF. */
-static const char k_header[] = "SCAN_DATE,SCAN_TIME,STUDENT_ID";
+static const char k_header[] = "DATE,TIME,CARD_ID";
 
-/** Write @p value into @p out as exactly @p width zero-padded decimal digits. */
-static void put_padded(char *out, uint32_t value, uint8_t width)
+void csv_put_padded(char *out, uint32_t value, uint8_t width)
 {
     uint8_t i;
 
@@ -29,6 +27,9 @@ void csv_header(char *out)
     for (i = 0u; i < (uint8_t)(sizeof(k_header) - 1u); i++) {
         out[i] = k_header[i];
     }
+    for (; i < (uint8_t)(CSV_ROW_BYTES - 2u); i++) {
+        out[i] = ' ';
+    }
     out[CSV_ROW_BYTES - 2u] = '\r';
     out[CSV_ROW_BYTES - 1u] = '\n';
 }
@@ -40,23 +41,23 @@ void csv_row(const app_record_t *rec, char *out)
     time_from_epoch(rec->stamp, &dt);
 
     /* YYYY-MM-DD */
-    put_padded(&out[0], dt.year, 4u);
+    csv_put_padded(&out[0], dt.year, 4u);
     out[4] = '-';
-    put_padded(&out[5], dt.month, 2u);
+    csv_put_padded(&out[5], dt.month, 2u);
     out[7] = '-';
-    put_padded(&out[8], dt.day, 2u);
+    csv_put_padded(&out[8], dt.day, 2u);
     out[10] = ',';
 
     /* HH:MM:SS */
-    put_padded(&out[11], dt.hour, 2u);
+    csv_put_padded(&out[11], dt.hour, 2u);
     out[13] = ':';
-    put_padded(&out[14], dt.minute, 2u);
+    csv_put_padded(&out[14], dt.minute, 2u);
     out[16] = ':';
-    put_padded(&out[17], dt.second, 2u);
+    csv_put_padded(&out[17], dt.second, 2u);
     out[19] = ',';
 
-    /* Student ID, ten digits: the widest a 32-bit value can be. */
-    put_padded(&out[20], rec->student_id, 10u);
+    /* Card ID, ten digits: the widest a 32-bit value can be. */
+    csv_put_padded(&out[20], rec->student_id, 10u);
 
     out[CSV_ROW_BYTES - 2u] = '\r';
     out[CSV_ROW_BYTES - 1u] = '\n';

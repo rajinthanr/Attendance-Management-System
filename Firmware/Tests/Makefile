@@ -7,13 +7,13 @@ CFLAGS  := -std=c11 -O1 -g -Wall -Wextra -Wpedantic -Wshadow \
 # Every Level 2 source, app_fsm.c included. The FSM is not driven by these
 # tests -- it needs a real platform to be worth running -- but compiling it
 # here still holds it to the host's stricter warning set.
-SRC     := $(wildcard ../App/Src/*.c) host_platform.c test_main.c
+SRC     := $(wildcard ../App/Src/*.c) host_platform.c $(wildcard test_*.c)
 BIN     := run_tests
 
 all: $(BIN)
 	./$(BIN)
 
-$(BIN): $(SRC)
+$(BIN): $(SRC) $(wildcard *.h)
 	$(CC) $(CFLAGS) -o $@ $^
 
 clean:

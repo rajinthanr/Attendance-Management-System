@@ -172,6 +172,19 @@ SECTIONS
     __bss_end__ = _ebss;
   } >RAM
 
+  /* Buffers the application places in the second SRAM block with
+     __attribute__((section(".ram2"))). NOLOAD: the startup code neither
+     copies nor clears them, so only buffers that are fully initialised before
+     use belong here (see usb_storage.c). Nothing here is on the stack's side
+     of RAM, so it cannot collide with it. */
+  .ram2 (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(.ram2)
+    *(.ram2*)
+    . = ALIGN(4);
+  } >RAM2
+
   /* User_heap_stack section, used to check that there is enough "RAM" Ram  type memory left */
   ._user_heap_stack :
   {

@@ -19,6 +19,19 @@
 /** A card presenting the same ID again inside this window is a duplicate. */
 #define APP_DEDUP_WINDOW_S              (10u)
 
+/**
+ * A card already recorded in the current lecture is not recorded again, however
+ * long ago, so a student who taps twice by accident, or comes back to the
+ * reader later, is counted once. A lecture lasts until the next one is started
+ * from the USB drive; with none started, or a very long one, this is the most
+ * time a record is looked back over. It reads the flash log, so it survives
+ * the unit going to Standby between taps.
+ */
+#define APP_SESSION_MAX_AGE_S           (6u * 3600u)
+
+/** Records examined at most per tap by that check (a few hundred microseconds each 100). */
+#define APP_SESSION_SCAN_MAX            (2048u)
+
 /** How many distinct recent cards are remembered for duplicate suppression. */
 #define APP_DEDUP_SLOTS                 (8u)
 
@@ -68,7 +81,7 @@
 #define APP_FB_ACCEPT_LED_MS            (250u)
 #define APP_FB_DUPLICATE_PULSE_MS       (60u)
 #define APP_FB_DUPLICATE_GAP_MS         (90u)
-#define APP_FB_REJECT_VIB_MS            (450u)
+#define APP_FB_UNKNOWN_VIB_MS           (450u)
 #define APP_FB_LOWBATT_BLINK_MS         (150u)
 #define APP_FB_LOWBATT_BLINKS           (5u)
 #define APP_FB_ERROR_BLINK_MS           (100u)

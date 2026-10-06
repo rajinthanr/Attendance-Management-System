@@ -22,6 +22,10 @@
 uint8_t  host_flash[HOST_FLASH_BYTES];
 uint32_t host_out_mask;
 uint32_t host_write_failures;
+uint32_t host_flash_writes;     /* double-words programmed since the last erase_all */
+uint32_t host_flash_erases;     /* pages erased since the last erase_all */
+uint32_t host_corrupt_write;    /* flip one bit of the double-word at this write count */
+uint32_t host_rtc_sets;         /* plat_rtc_set() calls */
 static uint32_t s_writes;
 
 /* Live-debug globals; Core/Src/main.c defines them on the target. */
@@ -100,7 +104,16 @@ void host_flash_erase_all(void)
     memset(host_flash, 0xFF, sizeof(host_flash));
     s_writes = 0u;
     host_write_failures = 0u;
+    host_flash_writes = 0u;
+    host_flash_erases = 0u;
+    host_corrupt_write = 0u;
 }
+
+/** Fail the (n+1)th flash write from now on. */
+void host_fail_writes_after(uint32_t n) { host_write_failures = s_writes + n + 1u; }
+
+/** Store the (n+1)th write from now with one bit wrong, reporting success. */
+void host_corrupt_write_after(uint32_t n) { host_corrupt_write = s_writes + n + 1u; }
 
 void host_set_time(const app_datetime_t *dt)
 {
@@ -150,6 +163,7 @@ void plat_rtc_set(const app_datetime_t *d)
 {
     host_set_time(d);
     s_rtc_valid = true;
+    host_rtc_sets++;
 }
 
 bool plat_rtc_is_valid(void) { return s_rtc_valid; }
@@ -276,7 +290,11 @@ bool plat_flash_write_dw(uint32_t off, uint64_t value)
     memcpy(&current, &host_flash[off], 8u);
     if (current != NV_ERASED_DW) { return false; }
 
+    if (host_corrupt_write != 0u && s_writes == host_corrupt_write) {
+        value ^= 1u;            /* a write that "succeeds" but stores the wrong bit */
+    }
     memcpy(&host_flash[off], &value, 8u);
+    host_flash_writes++;
     return true;
 }
 
@@ -285,6 +303,7 @@ bool plat_flash_erase(uint32_t off)
     uint32_t page = off / NV_PAGE_SIZE;
     if (((page + 1u) * NV_PAGE_SIZE) > HOST_FLASH_BYTES) { return false; }
     memset(&host_flash[page * NV_PAGE_SIZE], 0xFF, NV_PAGE_SIZE);
+    host_flash_erases++;
     return true;
 }
 

@@ -58,9 +58,9 @@ static int8_t storage_is_ready(uint8_t lun)
 static int8_t storage_is_write_protected(uint8_t lun)
 {
     (void)lun;
-    /* The volume is a view of an append-only log; there is nowhere to put a
-     * modified sector. Declaring it up front stops the host from trying. */
-    return 1;
+    /* STUDENTS.CSV is edited by the host, so the volume has to be writable.
+     * Writes only ever land in RAM; usbs_end() decides what reaches flash. */
+    return 0;
 }
 
 static int8_t storage_read(uint8_t lun, uint8_t *buf, uint32_t blk_addr, uint16_t blk_len)
@@ -80,8 +80,10 @@ static int8_t storage_read(uint8_t lun, uint8_t *buf, uint32_t blk_addr, uint16_
 static int8_t storage_write(uint8_t lun, uint8_t *buf, uint32_t blk_addr, uint16_t blk_len)
 {
     (void)lun;
-    (void)usbs_write(blk_addr, buf, blk_len);
-    return -1;
+
+    /* usbs_write() refuses sectors that belong to the read-only files; the
+     * MSC layer turns -1 into a write-error sense code for the host. */
+    return usbs_write(blk_addr, buf, blk_len) ? 0 : -1;
 }
 
 static int8_t storage_get_max_lun(void)

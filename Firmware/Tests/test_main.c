@@ -22,25 +22,16 @@
 #include "usb_storage.h"
 #include "log_store.h"
 #include "record_buffer.h"
-#include "student_db.h"
 #include "dedup.h"
 #include "battery.h"
 #include "nv_layout.h"
 #include "platform_if.h"
 #include "host_platform.h"
+#include "test_util.h"
 
-static int g_fail;
-static int g_run;
+int g_fail;
+int g_run;
 
-#define CHECK(cond, ...) do {                        \
-    g_run++;                                         \
-    if (!(cond)) {                                   \
-        g_fail++;                                    \
-        printf("  FAIL %s:%d  ", __FILE__, __LINE__);\
-        printf(__VA_ARGS__);                         \
-        printf("\n");                                \
-    }                                                \
-} while (0)
 
 /* ===================================================================== */
 static void test_time(void)
@@ -96,73 +87,6 @@ static void test_crc(void)
     /* Standard check vectors for the "123456789" input. */
     CHECK(crc16_ccitt("123456789", 9u) == 0x29B1u, "CRC-16/CCITT-FALSE");
     CHECK(crc32_ieee("123456789", 9u) == 0xCBF43926u, "CRC-32/ISO-HDLC");
-}
-
-/* ===================================================================== */
-static void test_csv(void)
-{
-    printf("csv\n");
-
-    char row[CSV_ROW_BYTES + 1];
-    row[CSV_ROW_BYTES] = '\0';
-
-    csv_header(row);
-    CHECK(strcmp(row, "SCAN_DATE,SCAN_TIME,STUDENT_ID\r\n") == 0, "header [%s]", row);
-
-    app_datetime_t dt = { 2026u, 9u, 10u, 13u, 27u, 45u };
-    app_record_t rec = { 123456u, time_to_epoch(&dt) };
-    csv_row(&rec, row);
-    CHECK(strcmp(row, "2026-09-10,13:27:45,0000123456\r\n") == 0, "row [%s]", row);
-
-    CHECK((512u % CSV_ROW_BYTES) == 0u, "rows divide a sector");
-    CHECK(csv_size(0u) == CSV_ROW_BYTES, "empty file is just the header");
-}
-
-/* ===================================================================== */
-static void provision_students(uint32_t count)
-{
-    uint32_t i;
-    nv_config_t cfg;
-
-    for (i = 0u; i < count; i++) {
-        uint32_t id = 1000u + (i * 7u);
-        memcpy(&host_flash[NV_STUDENTS_OFFSET + (i * 4u)], &id, 4u);
-    }
-
-    cfg.magic = NV_CONFIG_MAGIC;
-    cfg.format_version = 1u;
-    cfg.student_count = count;
-    cfg.student_crc32 = crc32_ieee(&host_flash[NV_STUDENTS_OFFSET], count * 4u);
-    cfg.device_id = 0xC0FFEEu;
-    memset(cfg.reserved, 0, sizeof(cfg.reserved));
-    memcpy(&host_flash[NV_CONFIG_OFFSET], &cfg, sizeof(cfg));
-}
-
-static void test_student_db(void)
-{
-    static student_db_t db;
-    printf("student_db\n");
-
-    host_flash_erase_all();
-    CHECK(!sdb_load(&db), "blank flash means no list");
-    CHECK(!sdb_contains(&db, 1000u), "unloaded list matches nothing");
-
-    provision_students(500u);
-    CHECK(sdb_load(&db), "load provisioned list");
-    CHECK(sdb_verify(&db), "crc verifies");
-    CHECK(sdb_count(&db) == 500u, "count");
-    CHECK(sdb_device_id(&db) == 0xC0FFEEu, "device id");
-
-    CHECK(sdb_contains(&db, 1000u), "first entry");
-    CHECK(sdb_contains(&db, 1000u + (499u * 7u)), "last entry");
-    CHECK(sdb_contains(&db, 1000u + (250u * 7u)), "middle entry");
-    CHECK(!sdb_contains(&db, 1001u), "gap between entries");
-    CHECK(!sdb_contains(&db, 0u), "below range");
-    CHECK(!sdb_contains(&db, 0xFFFFFFFFu), "above range");
-
-    /* Flip a byte: the CRC must notice. */
-    host_flash[NV_STUDENTS_OFFSET + 40u] ^= 0xFFu;
-    CHECK(!sdb_verify(&db), "corruption detected");
 }
 
 /* ===================================================================== */
@@ -291,93 +215,6 @@ static void test_log_store(void)
     CHECK(log_total(&ls) == 3u && ls.n_used == 1u, "one page for three boots");
     CHECK(log_remaining(&ls) == NV_LOG_CAPACITY - 3u, "remaining %u",
           log_remaining(&ls));
-}
-
-/* ===================================================================== */
-static void test_usb_volume(void)
-{
-    static log_store_t ls;
-    static record_buffer_t rb;
-    static uint8_t sector[512];
-    app_record_t rec;
-    uint32_t i;
-
-    printf("usb volume\n");
-
-    host_flash_erase_all();
-    log_init(&ls);
-    rb_init(&rb);
-
-    app_datetime_t dt = { 2026u, 9u, 10u, 13u, 27u, 45u };
-    for (i = 0u; i < 100u; i++) {
-        rec.student_id = 5000u + i;
-        rec.stamp = time_to_epoch(&dt) + i;
-        rb_push(&rb, &rec);
-        if (rb_needs_flush(&rb)) { log_flush(&ls, &rb); }
-    }
-    log_flush(&ls, &rb);
-
-    usbs_begin(&ls, 0xC0FFEEu, &dt);
-    CHECK(usbs_file_size() == csv_size(100u), "file size %u", usbs_file_size());
-    CHECK(usbs_sector_count() == FAT12_TOTAL_SECTORS, "sector count");
-
-    /* Boot sector sanity, the fields a host actually validates. */
-    CHECK(usbs_read(0u, sector, 1u), "read boot sector");
-    CHECK(sector[510] == 0x55u && sector[511] == 0xAAu, "boot signature");
-    CHECK(((uint16_t)sector[11] | ((uint16_t)sector[12] << 8)) == 512u, "bytes/sector");
-    CHECK(sector[21] == 0xF8u, "media byte");
-
-    /* Cluster count must stay inside FAT12's range or a host reads it as FAT16. */
-    uint32_t clusters = FAT12_DATA_SECTORS / FAT12_SECTORS_PER_CLUSTER;
-    CHECK(clusters < 4085u, "cluster count %u is FAT12", clusters);
-
-    /* Root directory: the file entry must carry the right size and cluster. */
-    CHECK(usbs_read(FAT12_ROOT_START_LBA, sector, 1u), "read root");
-    CHECK(memcmp(&sector[32], "ATTENDCSV  ", 11) == 0, "8.3 name");
-    uint32_t size;
-    memcpy(&size, &sector[32 + 28], 4u);
-    CHECK(size == csv_size(100u), "dirent size %u", size);
-    uint16_t first;
-    memcpy(&first, &sector[32 + 26], 2u);
-    CHECK(first == 2u, "first cluster");
-
-    /* FAT chain: 101 rows * 32 B = 3232 B -> 7 clusters, 2..8, 8 = EOC. */
-    CHECK(usbs_read(FAT12_FAT_START_LBA, sector, 1u), "read fat");
-    uint32_t n_clusters = (csv_size(100u) + 511u) / 512u;
-    uint32_t e;
-    uint32_t chain_bad = 0u;
-    for (e = 2u; e < (2u + n_clusters); e++) {
-        uint32_t off = (e * 3u) / 2u;
-        uint16_t v = ((e & 1u) == 0u)
-            ? (uint16_t)(sector[off] | ((sector[off + 1u] & 0x0Fu) << 8))
-            : (uint16_t)((sector[off] >> 4) | (sector[off + 1u] << 4));
-        uint16_t expect = (e == (1u + n_clusters)) ? 0x0FFFu : (uint16_t)(e + 1u);
-        if (v != expect) { chain_bad++; }
-    }
-    CHECK(chain_bad == 0u, "%u bad FAT entries (of %u)", chain_bad, n_clusters);
-
-    /* Free cluster just past the file. */
-    {
-        uint32_t off = ((2u + n_clusters) * 3u) / 2u;
-        uint16_t v = (((2u + n_clusters) & 1u) == 0u)
-            ? (uint16_t)(sector[off] | ((sector[off + 1u] & 0x0Fu) << 8))
-            : (uint16_t)((sector[off] >> 4) | (sector[off + 1u] << 4));
-        CHECK(v == 0u, "cluster past EOF is free, got 0x%03X", v);
-    }
-
-    /* First data sector: header row then the first fifteen records. */
-    CHECK(usbs_read(FAT12_DATA_START_LBA, sector, 1u), "read data");
-    CHECK(memcmp(sector, "SCAN_DATE,SCAN_TIME,STUDENT_ID\r\n", 32) == 0, "csv header");
-    CHECK(memcmp(&sector[32], "2026-09-10,13:27:45,0000005000\r\n", 32) == 0,
-          "first record row");
-
-    /* Second data sector starts at record 15 (row 16). */
-    CHECK(usbs_read(FAT12_DATA_START_LBA + 1u, sector, 1u), "read data 2");
-    CHECK(memcmp(sector, "2026-09-10,13:28:00,0000005015\r\n", 32) == 0,
-          "row 16 [%.32s]", sector);
-
-    CHECK(!usbs_write(FAT12_DATA_START_LBA, sector, 1u), "writes rejected");
-    CHECK(!usbs_read(FAT12_TOTAL_SECTORS, sector, 1u), "read past volume fails");
 }
 
 /* ===================================================================== */
@@ -620,152 +457,6 @@ static void test_button(void)
 }
 
 /* ===================================================================== */
-/** Run the state machine for @p ms of simulated time. */
-static void run_ms(uint32_t ms)
-{
-    uint32_t end = host_ms + ms;
-    while (host_ms < end) {
-        app_task();
-    }
-}
-
-static void test_fsm(void)
-{
-    static jmp_buf jb;
-    volatile int powered_off;
-
-    printf("state machine\n");
-
-    host_flash_erase_all();
-    host_ms = 0u;
-    host_card_present = false;
-    host_button = false;
-    host_vbus = false;
-    host_nfc_init_ok = true;
-    host_deep_sleeps = 0u;
-    host_deep_sleep_jmp = &jb;
-
-    app_init();
-    CHECK(app_state() == ST_IDLE, "idle after boot");
-    CHECK(dbg_nfc_ready && dbg_nfc_chip_id == 0x2Au, "reader up");
-    CHECK(dbg_battery_mv > 3800u && dbg_battery_mv < 3960u, "battery %u mV",
-          (unsigned)dbg_battery_mv);
-    CHECK(!dbg_nfc_supply_3v3, "3.9 V cell: reader in 5 V mode");
-    CHECK((host_out_mask & PLAT_OUT_LED_GREEN) != 0u, "power-on pattern");
-    run_ms(1000u);
-
-    /* No list provisioned: every card is recorded. */
-    host_card_set(k_uid4, 4u, 0x08u);
-    while (dbg_card_count == 0u && host_ms < 3000u) {
-        app_task();
-    }
-    CHECK(dbg_scan_result == APP_SCAN_ACCEPTED, "accepted, got %u", dbg_scan_result);
-    CHECK(dbg_card_id == 0x0AF41A9Eu, "card id %08X", (unsigned)dbg_card_id);
-    CHECK(dbg_records_ram == 1u, "one record in RAM");
-    CHECK((host_out_mask & PLAT_OUT_VIBRATION) != 0u, "motor runs");
-    run_ms(50u);
-    CHECK(!host_nfc_field, "field off while the motor runs");
-
-    run_ms(3000u);
-    CHECK(dbg_card_count == 1u, "held card counted once, got %u", (unsigned)dbg_card_count);
-
-    run_ms(APP_FLUSH_IDLE_MS);
-    CHECK(dbg_records_flash == 1u && dbg_records_ram == 0u, "flushed after idle");
-
-    /* Take it away and tap again inside the window: duplicate. */
-    host_card_present = false;
-    run_ms(1000u);
-    host_card_present = true;
-    run_ms(500u);
-    CHECK(dbg_scan_result == APP_SCAN_DUPLICATE, "duplicate, got %u", dbg_scan_result);
-    CHECK(dbg_records_flash == 1u && dbg_records_ram == 0u, "duplicate not recorded");
-
-    /* After the window it counts again. */
-    host_card_present = false;
-    run_ms((APP_DEDUP_WINDOW_S * 1000u) + 1000u);
-    host_card_present = true;
-    run_ms(500u);
-    CHECK(dbg_scan_result == APP_SCAN_ACCEPTED, "accepted after window");
-
-    /* Tap the button: battery status, no shutdown. */
-    host_card_present = false;
-    host_button = true;
-    run_ms(200u);
-    host_button = false;
-    run_ms(500u);
-    CHECK(dbg_button_short_count == 1u && app_state() == ST_IDLE, "tap shows status");
-
-    /* VBUS with a host: USB session, reader off. */
-    host_vbus = true;
-    host_usb_configured = true;
-    run_ms(200u);
-    CHECK(app_state() == ST_USB && host_usb_started, "USB session");
-    CHECK(dbg_records_flash == 2u, "flushed before export, got %u",
-          (unsigned)dbg_records_flash);
-    host_card_set(k_uid7, 7u, 0x00u);
-    run_ms(500u);
-    CHECK(dbg_card_count == 3u, "no scanning during USB");
-    host_vbus = false;
-    run_ms(200u);
-    CHECK(app_state() == ST_IDLE && !host_usb_started, "back to scanning");
-    run_ms(500u);
-    CHECK(dbg_card_count == 4u && dbg_card_id == 0x33445566u, "scans after USB");
-
-    /* VBUS without a host: a charger. Keep scanning. */
-    host_card_present = false;
-    host_usb_configured = false;
-    host_vbus = true;
-    run_ms(APP_USB_ENUM_TIMEOUT_MS + 500u);
-    CHECK(app_state() == ST_IDLE && !host_usb_started, "charger: scanning");
-    host_vbus = false;
-    run_ms(200u);
-
-    /* Hold the button: power off once released. */
-    powered_off = 0;
-    if (setjmp(jb) == 0) {
-        host_button = true;
-        run_ms(APP_BTN_LONG_MS + 2000u);
-        CHECK(app_state() == ST_SHUTDOWN && host_deep_sleeps == 0u,
-              "waits for release");
-        host_button = false;
-        run_ms(1000u);
-    } else {
-        powered_off = 1;
-    }
-    CHECK(powered_off == 1, "powered off");
-    CHECK(host_nfc_powered_down && host_out_mask == 0u, "reader and outputs off");
-
-    /* Reboot: records survive, and the open page is reused, not wasted. */
-    {
-        static log_store_t ls;
-        log_init(&ls);
-        CHECK(log_total(&ls) == 3u, "log after power-off: %u", log_total(&ls));
-        CHECK(log_remaining(&ls) == NV_LOG_CAPACITY - 3u, "no page wasted");
-    }
-
-    /* With a list provisioned, a stranger is refused and not recorded. */
-    host_ms = 0u;
-    provision_students(10u);
-    app_init();
-    host_card_set(k_uid4, 4u, 0x08u);
-    run_ms(500u);
-    CHECK(dbg_scan_result == APP_SCAN_UNKNOWN, "unknown, got %u", dbg_scan_result);
-    CHECK(dbg_records_ram == 0u, "unknown not recorded");
-    host_card_present = false;
-
-    /* Three minutes of nothing: power off. */
-    powered_off = 0;
-    if (setjmp(jb) == 0) {
-        run_ms(APP_INACTIVITY_MS + 2000u);
-    } else {
-        powered_off = 1;
-    }
-    CHECK(powered_off == 1, "inactivity power-off");
-
-    host_deep_sleep_jmp = NULL;
-}
-
-/* ===================================================================== */
 static void test_battery_boot(void)
 {
     static jmp_buf jb;
@@ -846,16 +537,22 @@ int main(void)
     test_time();
     test_crc();
     test_csv();
-    test_student_db();
+    test_device_cfg();
+    test_settings_parser();
     test_record_buffer();
     test_log_store();
     test_usb_volume();
+    test_usb_settings();
+    test_usb_robustness();
+    test_sessions();
     test_dedup();
     test_battery();
     test_iso14443a();
     test_card_reader();
     test_button();
     test_fsm();
+    test_fsm_sessions();
+    test_cards();
     test_battery_boot();
 
     printf("\n%d checks, %d failures\n", g_run, g_fail);

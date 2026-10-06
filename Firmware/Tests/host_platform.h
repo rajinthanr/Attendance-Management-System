@@ -29,7 +29,14 @@ extern bool     host_nfc_powered_down;
 extern bool     host_nfc_collision;   /* REQA answers with a collision */
 extern bool     host_card_present;
 
+extern uint32_t host_flash_writes;
+extern uint32_t host_flash_erases;
+extern uint32_t host_corrupt_write;
+extern uint32_t host_rtc_sets;
+
 void host_flash_erase_all(void);
+void host_fail_writes_after(uint32_t n);
+void host_corrupt_write_after(uint32_t n);
 void host_set_time(const app_datetime_t *dt);
 void host_card_set(const uint8_t *uid, uint8_t len, uint8_t sak);
 

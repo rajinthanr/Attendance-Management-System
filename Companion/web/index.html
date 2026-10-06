@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Attendance Logger</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm2 4v2h10V7H7Zm0 4v2h10v-2H7Zm0 4v2h6v-2H7Z"/></svg>
+    <span>Attendance Logger</span>
+  </div>
+  <div id="device-pill" class="pill pill-wait" role="status" aria-live="polite"></div>
+</header>
+
+<nav class="tabs" id="tabs" role="tablist">
+  <button role="tab" data-tab="lecture"    aria-selected="true">Lecture</button>
+  <button role="tab" data-tab="attendance" aria-selected="false">Attendance</button>
+  <button role="tab" data-tab="students"   aria-selected="false">Students</button>
+  <button role="tab" data-tab="modules"    aria-selected="false">Modules</button>
+  <button role="tab" data-tab="reports"    aria-selected="false">Reports</button>
+</nav>
+
+<div id="banners"></div>
+
+<main id="main">
+  <section id="tab-lecture"    class="panel"></section>
+  <section id="tab-attendance" class="panel" hidden></section>
+  <section id="tab-students"   class="panel" hidden></section>
+  <section id="tab-modules"    class="panel" hidden></section>
+  <section id="tab-reports"    class="panel" hidden></section>
+</main>
+
+<footer class="foot">
+  <span id="foot-note"></span>
+  <button class="link" data-action="import-taps">Import an ATTEND.CSV…</button>
+  <button class="link" data-action="backup">Back up the database</button>
+  <button class="link" data-action="device-clock" id="clock-btn">Set the device clock</button>
+  <button class="link" data-action="quit" id="quit-btn">Quit app</button>
+  <input type="file" id="file-input" accept=".csv,.txt,text/csv,text/plain" hidden>
+</footer>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<dialog id="dlg"><div class="dialog" id="dlg-body"></div></dialog>
+
+<script src="app.js"></script>
+</body>
+</html>

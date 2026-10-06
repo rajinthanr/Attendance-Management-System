@@ -16,12 +16,14 @@ typedef enum {
     FB_NONE = 0,
     FB_ACCEPTED,    /**< Green LED + one short pulse. */
     FB_DUPLICATE,   /**< Two short green pulses with the motor. */
-    FB_UNKNOWN,     /**< Red LED + one long pulse. */
+    FB_UNKNOWN,     /**< Red LED + one long pulse: card not on the registered list (still recorded). */
     FB_LOW_BATTERY, /**< Red LED blinks. */
     FB_ERROR,       /**< Red blinks with the motor: log full, reader fault. */
     FB_STATUS_OK,   /**< Two green blinks: battery fine (button tap). */
     FB_POWER_ON,    /**< Green with a short pulse. */
-    FB_POWER_OFF    /**< Red with a long pulse. */
+    FB_POWER_OFF,   /**< Red with a long pulse. */
+    FB_SAVED,       /**< Green + two pulses: settings written to the device. */
+    FB_REJECTED     /**< Red + three pulses: settings file refused. */
 } fb_pattern_t;
 
 typedef struct {
