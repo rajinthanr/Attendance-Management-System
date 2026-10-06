@@ -124,3 +124,63 @@ void time_from_epoch(app_epoch_t epoch, app_datetime_t *out)
     out->minute = (uint8_t)((rem % SECS_PER_HOUR) / SECS_PER_MIN);
     out->second = (uint8_t)(rem % SECS_PER_MIN);
 }
+
+/** Parse exactly @p n decimal digits, letting a leading space stand for 0. */
+static bool parse_digits(const char *s, uint8_t n, uint16_t *out)
+{
+    uint16_t value = 0u;
+    uint8_t i;
+
+    for (i = 0u; i < n; i++) {
+        char c = s[i];
+
+        if (c == ' ' && i == 0u) {
+            continue;
+        }
+        if (c < '0' || c > '9') {
+            return false;
+        }
+        value = (uint16_t)((value * 10u) + (uint16_t)(c - '0'));
+    }
+    *out = value;
+    return true;
+}
+
+bool time_from_build(const char *date, const char *clock, app_datetime_t *out)
+{
+    static const char months[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
+    uint16_t day, year, hour, minute, second;
+    uint8_t m;
+
+    if (date == NULL || clock == NULL || out == NULL) {
+        return false;
+    }
+
+    /* __DATE__ is "Mmm dd yyyy" with the day space padded. */
+    for (m = 0u; m < 12u; m++) {
+        if (date[0] == months[m * 3u] && date[1] == months[(m * 3u) + 1u] &&
+            date[2] == months[(m * 3u) + 2u]) {
+            break;
+        }
+    }
+    if (m == 12u || date[3] != ' ' || date[6] != ' ' ||
+        !parse_digits(&date[4], 2u, &day) || !parse_digits(&date[7], 4u, &year)) {
+        return false;
+    }
+
+    /* __TIME__ is "hh:mm:ss". */
+    if (clock[2] != ':' || clock[5] != ':' ||
+        !parse_digits(&clock[0], 2u, &hour) ||
+        !parse_digits(&clock[3], 2u, &minute) ||
+        !parse_digits(&clock[6], 2u, &second)) {
+        return false;
+    }
+
+    out->year = year;
+    out->month = (uint8_t)(m + 1u);
+    out->day = (uint8_t)day;
+    out->hour = (uint8_t)hour;
+    out->minute = (uint8_t)minute;
+    out->second = (uint8_t)second;
+    return time_is_valid(out);
+}

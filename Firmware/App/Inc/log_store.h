@@ -40,7 +40,7 @@ uint32_t log_total(const log_store_t *ls);
 /** True when the log area cannot accept another page. */
 bool log_is_full(const log_store_t *ls);
 
-/** Free record slots remaining. */
+/** Record slots that can still be written. */
 uint32_t log_remaining(const log_store_t *ls);
 
 /**
@@ -59,7 +59,11 @@ uint16_t log_flush(log_store_t *ls, record_buffer_t *rb);
  */
 bool log_read(const log_store_t *ls, uint32_t index, app_record_t *out);
 
-/** Seal the open page. Called before Standby so no page is left unsealed. */
+/**
+ * Seal the open page early. Not needed before power-off: log_init() adopts an
+ * open page and keeps appending to it, and sealing a part-filled page leaves
+ * its remaining slots unusable until the log is erased.
+ */
 void log_seal(log_store_t *ls);
 
 /** Erase every log page and reset the index. */

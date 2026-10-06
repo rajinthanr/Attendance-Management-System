@@ -24,15 +24,16 @@ round, which is what lets `App/` build against a RAM-backed stub on the host.
 
 ### What that buys
 
-`Tests/` compiles every Level 2 module with a 140-line stub platform and runs
-about 730 assertions in under a second: EM4100 round trips at two data rates and
-with jitter, exhaustive calendar round trips from 2000 to 2099, the flash log's
+`Tests/` compiles every Level 2 module against a RAM-backed stub platform with
+a simulated ISO14443-A card, and runs about 780 assertions in under a second:
+card activation with 4-, 7- and 10-byte UIDs, presence tracking, button
+debouncing, exhaustive calendar round trips from 2000 to 2099, the flash log's
 recovery from a power loss mid-page, the FAT12 image a host has to accept, a
-simulated PC that copies and edits `SETTINGS.CSV` over that image, the card list's
-storage, CRC and known/unknown feedback, and the state
-machine driven end to end from card tap to unplug, lecture sessions and duplicate
-taps included.
-None of that needs hardware, a debugger, or a card.
+simulated PC that copies and edits `SETTINGS.CSV` over that image, the card
+list's storage, CRC and known/unknown feedback, and the whole state machine
+driven end to end on simulated time, from card tap to unplug, lecture sessions
+and duplicate taps included. None of that needs hardware, a debugger, or a
+card.
 
 ```
 make test          # Level 2, on the host
@@ -46,25 +47,30 @@ Level 1 never returns a cooked value:
 | Level 1 hands up | Level 2 turns it into |
 |---|---|
 | ADC counts + `VREFINT_CAL` | millivolts, then a battery verdict (`battery.c`) |
-| raw capture ticks | a bit period, then a tag ID (`em4100.c`) |
+| the bytes a card sent (FIFO contents) | a checked UID (`iso14443a.c`), then a card ID (`card_reader.c`) |
+| raw button and VBUS levels | debounced presses and attach/detach events (`button.c`, `app_fsm.c`) |
 | RTC calendar fields | seconds since epoch, and back (`timeutil.c`) |
 | a 512-byte sector request | a synthesised FAT12 / CSV sector (`usb_storage.c`) |
 
 Level 1 never makes a decision. There is no `plat_handle_card()`. The only
-Level 2 symbol Level 1 calls is `app_event_post()`, from interrupt context.
+Level 2 symbol Level 1 calls is `app_event_post()`, from interrupt context
+(today only the USB storage callback does).
 
-Two constants started in `app_config.h` and were moved to `bsp_board.h`
-during integration — the carrier frequency and the tank settling time. They
-are properties of the antenna, not of the application, and no Level 2 module
-referenced them. That is the test to apply when the boundary is unclear.
+The reader's supply mode is an example of where the line falls. Whether the
+ST25R3916 runs in its 3.3 V or 5 V mode depends on the battery voltage, so
+Level 2 decides (`nfc_supply_3v3_for()`, with hysteresis) and passes a bool to
+`plat_nfc_init()` / `plat_nfc_set_supply()`. The no-response timeout and the
+SPI prescaler are properties of the chip and the clock tree, so they live in
+`bsp_board.h`. That is the test to apply when the boundary is unclear.
 
 ## Layout
 
 ```
-App/Inc, App/Src      Level 2. app_fsm, em4100, log_store, device_cfg,
-                      record_buffer, dedup, feedback, battery, csv, fat12,
-                      settings_file, session, usb_storage, timeutil, crc, app_events
-Bsp/Inc, Bsp/Src      Level 1. bsp_clock/gpio/time/rf/flash/adc/power/usb,
+App/Inc, App/Src      Level 2. app_fsm, card_reader, iso14443a, button,
+                      log_store, device_cfg, record_buffer, dedup, feedback,
+                      battery, csv, fat12, settings_file, session,
+                      usb_storage, timeutil, crc, app_events, app_debug
+Bsp/Inc, Bsp/Src      Level 1. bsp_clock/gpio/time/nfc/flash/adc/power/usb,
                       bsp_isr, plus usbd_conf and usbd_desc
 Core/                 CubeMX output. main.c calls bsp_init() then app_init(),
                       inside USER CODE blocks, so regeneration is safe.
@@ -79,12 +85,12 @@ clobber them.
 
 ### The `.ioc`
 
-`Card Attendance System.ioc` carries the full pin map — every signal, label,
-pull and EXTI edge — so the CubeMX pinout view matches the board and a pin
-conflict is caught there rather than on the bench. The peripheral settings
-mirror what Level 1 programs: TIM1 at ARR 31 / CCR 16 for the 125 kHz carrier,
-TIM2 prescaled to 1 MHz capturing both edges of CH2 through DMA1_Channel7, the
-two LPTIM prescalers, the RTC predividers, and ADC1_IN12 at 640.5 cycles.
+`Card Attendance System.ioc` carries the full pin map — every signal, label
+and pull — so the CubeMX pinout view matches the board and a pin conflict is
+caught there rather than on the bench. It still declares the button, VBUS and
+reader IRQ as EXTI inputs, and TIM1/TIM2 from the 125 kHz design; the BSP
+de-initialises those pins and reconfigures them as plain inputs, and never
+starts the timers. Bring the `.ioc` in line when it is next regenerated.
 
 The interrupts the BSP owns are listed with code generation switched off, so a
 regeneration cannot emit a second copy of a handler that already lives in
@@ -123,46 +129,59 @@ fix it.
 
 ## Power design
 
-The flow chart's two sleep states map onto three STM32 modes, because the card
-read cannot use the deepest one:
+The firmware currently runs in **polling mode**, to make bring-up and
+debugging simple. Interrupts and Stop 2 come back once the hardware is proven.
 
 | Mode | Used when | Retained | Wakes on |
 |---|---|---|---|
-| Sleep | reading a card, USB attached | everything | any interrupt |
-| Stop 2 | idle, and between feedback steps | SRAM + registers | touch, VBUS, PVD, LPTIM1/2 |
-| Standby | 3 min idle, low battery, button | nothing | WKUP1 only, through reset |
+| Sleep | between main-loop passes, always | everything | SysTick (1 ms), USB |
+| Standby | 3 min idle, low battery, long press | RTC + backup registers | WKUP1 (button) only, through reset |
 
-Every timer the design needs in Stop 2 runs from the **LSE**: the RTC for
-timestamps, LPTIM1 for the three-minute inactivity window, LPTIM2 for the
-short one-shots. A `TIMx` on PCLK would stop with the core clock, which is
-why the flow chart's note about TIM1 matters.
+`app_task()` runs once per millisecond: it samples the button and VBUS, steps
+the feedback pattern, polls the reader, then sleeps in WFI until the next
+SysTick. Every timer is a timestamp compared against `plat_uptime_ms()`
+(`HAL_GetTick()`), so nothing blocks, not even the reader's 5 ms field guard.
+
+The reader polls every 100 ms. Each poll switches the field on, waits the
+ISO14443 guard time, runs REQA/anticollision/SELECT, and switches the field
+off again, so the field is on about 6 % of the time. The ST25R3916 stays in
+Ready mode (oscillator running) between polls and is put into power-down
+before Standby, since it runs straight off the cell.
 
 Consequences worth stating:
 
 - **Feedback never blocks.** Patterns are tables of (output mask, duration)
-  stepped by LPTIM2, so a 450 ms low-battery blink costs one wake per step
-  instead of 450 ms of the core spinning in `HAL_Delay`.
-- **Flash is written in batches.** A page erase is milliseconds and tens of
-  milliamps. Records stage in RAM and go to flash at 80 % occupancy, so that
-  cost is paid once per ~102 scans instead of once per scan.
-- **The ADC is powered down between samples**, and re-calibrated on each
-  power-up because it has to be.
-- **Spare pins are analog**, the lowest-leakage state on an L4, across
-  sixteen unused pins.
-- **The core runs at 4 MHz** while scanning, the slowest MSI range that still
-  works at zero flash wait states. USB sessions raise it to 24 MHz and drop
-  back on unplug.
+  stepped against the uptime. The reader pauses while one plays, so the motor
+  never runs with the field on, and a card held through the pattern is not
+  reported twice.
+- **Flash is written in batches, and soon.** Records stage in RAM and go to
+  flash at 80 % occupancy, or 5 s after the last scan, whichever is first.
+  Appending is a few double-word programs; erases happen once per 254 records.
+- **The ADC is powered down between samples** (every 10 s), and re-calibrated
+  on each power-up because it has to be.
+- **Spare pins are analog**, the lowest-leakage state on an L4.
+- **The core runs at 4 MHz** while scanning. USB sessions raise it to 24 MHz
+  and drop back on unplug.
 - **The button's pull-up is retained in Standby** via `PWR_PUCRA`. Without
-  that, PA0 floats and the unit wakes on noise.
+  that, PA0 floats and the unit wakes on noise. Standby is only entered once
+  the button is released, so the press that switched the unit off cannot
+  switch it straight back on.
 
-### The sleep race
+### Moving to interrupts
 
-`app_task()` checks its queue, finds it empty, and sleeps. An interrupt landing
-between those two steps would leave the device asleep with work outstanding.
-`plat_sleep_light()` / `plat_sleep_idle()` therefore take a predicate and
-re-test it with interrupts masked, immediately before the WFI. WFI still wakes
-on a pending-but-masked interrupt, so masking costs nothing and closes the
-window.
+The event queue (`app_events.c`) is already the seam. The polled sources post
+the same events an ISR would: `APP_EVT_BUTTON_*` from `poll_button()`,
+`APP_EVT_USB_*` from `poll_vbus()`, `APP_EVT_INACTIVITY` from `run_idle()`.
+The plan:
+
+1. Button and VBUS on EXTI, posting raw edges; keep the debounce in Level 2.
+2. LPTIM1/LPTIM2 on the LSE for the inactivity and pattern timers, so
+   `plat_uptime_ms()` no longer depends on SysTick.
+3. The ST25R3916 wake-up mode (amplitude/phase/capacitive measurement on its
+   own RC timer) in place of the 100 ms poll, waking the MCU on PB1.
+4. Then Stop 2 between events. `plat_sleep_idle()` already re-tests its
+   predicate with interrupts masked, which closes the race between "queue is
+   empty" and the WFI.
 
 ## Data formats
 
@@ -209,9 +228,11 @@ its CRC once (`cards_verify()`); one that fails is ignored.
 Each log page is self describing: a header double-word carrying a monotonic
 sequence number, 254 record slots, and a footer written at close carrying the
 count and a CRC-16. Logical order comes from the sequence number, not from
-physical position. An opened-but-unsealed page is unambiguously "power went
-away mid-write", and `log_init()` adopts it and continues appending — there
-is a test for exactly that.
+physical position. `log_init()` adopts an opened-but-unsealed page and
+continues appending, which covers both a power loss mid-write and an ordinary
+power-off. Pages are sealed only when they fill: sealing at every power-off
+or USB attach, as earlier firmware did, left the rest of the page unusable and
+filled the 55-page log after 55 power cycles. There are tests for both.
 
 When the log fills, the device **refuses further records and complains** rather
 than overwriting the oldest. Losing attendance history silently is worse than
@@ -403,9 +424,10 @@ flash erase. The session marker is written only if the import succeeded. A malfo
 or `#DEVICE` value is reported on `STATUS.TXT` and ignored; it does not fail the
 import.
 
-When the cable comes out after an edit the unit shows the result before it goes
-to Standby: green and two pulses for applied (`FB_SAVED`), red and three pulses
-for refused (`FB_REJECTED`). If the host changed nothing it powers down at once.
+When the cable comes out (`usb_leave()` in `app_fsm.c`, after the USB peripheral
+has stopped) the unit applies the edit, shows the result and carries on
+scanning: green and two pulses for applied (`FB_SAVED`), red and three pulses
+for refused (`FB_REJECTED`). If the host changed nothing there is no pattern.
 A new device ID is read back from flash before success is claimed; a mismatch
 shows red.
 
@@ -425,46 +447,88 @@ device (it shows red and is recorded), plug in, press Register in the app, press
 Send cards to device (or start the next lecture, which sends the list too) and
 unplug. From then on the card shows green.
 
-## EM4100 decoding
+## Card reading (ISO14443-A)
 
 ```
-edges -> intervals -> fitted half-bit clock -> half-bit symbols
-      -> Manchester bits -> header search -> parity check -> tag
+field on -> 5 ms guard -> REQA -> ATQA
+         -> per cascade level: anticollision (93/95/97 20) -> UID part + BCC
+                               SELECT (93/95/97 70 ...)   -> SAK + CRC_A
+         -> field off
 ```
 
-The bit clock is **fitted, not assumed** — a two-cluster 1-D k-means seeded
-from the shortest interval. The same code therefore reads RF/64, RF/32 and
-RF/16 tags and tolerates the antenna pulling the period around by several
-percent. Timestamps alone do not say whether the first edge was rising or
-falling, so a failed header search retries with the stream inverted.
+`iso14443a.c` runs the exchange over `plat_nfc_reqa()` and
+`plat_nfc_transceive()`, checks the BCC and the SAK's CRC_A itself, and
+follows the cascade tag (0x88) through 4-, 7- and 10-byte UIDs. A collision is
+reported rather than resolved: the reader expects one card at a time, and the
+next poll tries again.
 
-Two parity-clean frames must agree before an ID is accepted, as the flow chart
-requires. A single frame already carries fourteen parity bits; an error would
-have to survive them twice and land on the same wrong ID.
+`card_reader.c` turns polls into arrivals. A card held on the reader is seen
+by every poll but reported once; it counts as gone after three empty polls in
+a row, so a single missed poll does not log it twice. The logged ID is the UID
+as a big-endian 32-bit number (`0A F4 1A 9E` is `0x0AF41A9E`, `0183769758` in
+the CSV); longer UIDs keep their last four bytes, since the first is the
+manufacturer code.
 
-The decoder takes a caller-supplied workspace rather than owning static
-buffers, so its ~1.5 kB stays under the caller's control and the module has no
-hidden state to confuse a test.
+`bsp_nfc.c` drives the ST25R3916 at register level (DS12484 Rev 8). It waits
+on the IRQ *pin* rather than polling the status registers over SPI, because
+§4.3.3 forbids SPI traffic while a timed direct command runs, and it lets the
+chip's no-response timer (1 ms) end each exchange that gets no answer.
 
 ## Flow-chart coverage
 
 | Flow chart | Where |
 |---|---|
 | Start / battery OK? / load list | `app_init()` |
-| touch interrupt → power RF → capture | `start_read()`, `bsp_rf.c` |
-| valid ID? (parity, 2 frames) | `em4100_decode()` |
+| card present → power RF → read | `run_idle()`, `card_reader.c`, `iso14443a.c`, `bsp_nfc.c` |
+| valid ID? (BCC, CRC_A, cascade) | `iso14443a_select()` |
 | same ID within 10 s? / already signed in? | `dedup.c` (8-entry MRU table) and `sess_card_seen()`, see "Duplicate taps" |
-| Known card? | `cards_is_known()` in `handle_tag()`: registered gives `FB_ACCEPTED` (green), otherwise `FB_UNKNOWN` (red, long buzz). Either way the card is logged |
-| create record, RAM buffer | `handle_tag()`, `record_buffer.c` |
+| known card? | `student_allowed()` → `cards_is_known()` in `handle_card()`: registered gives `FB_ACCEPTED` (green), otherwise `FB_UNKNOWN` (red, long buzz). Either way the card is logged |
+| create record, RAM buffer | `handle_card()`, `record_buffer.c` |
 | RAM buffer ≥ 80 % | `rb_needs_flush()` → `log_flush()` |
-| 3-min inactivity → flush → Standby | `APP_EVT_INACTIVITY` → `shutdown()` |
+| 3-min inactivity → flush → Standby | `APP_EVT_INACTIVITY` → `begin_shutdown()` |
 | USB attach → enumerate → CSV | `usb_attach()`, `usb_storage.c`, `bsp_usb.c` |
-| PVD low battery → flush → Standby | `APP_EVT_LOW_BATTERY` |
+| low battery → flush → Standby | `sample_battery()` → `APP_EVT_LOW_BATTERY` |
+
+Two branches the flow chart does not have:
+
+- **No student list.** With `APP_ACCEPT_ALL_WHEN_NO_LIST` set, an unprovisioned
+  unit records every card instead of rejecting every card.
+- **A charger is not a host.** VBUS that does not enumerate within 5 s is
+  treated as a charger: USB is stopped again and scanning carries on.
 
 Duplicate suppression uses an eight-entry MRU table rather than the single
 last-seen slot the diagram implies. With one slot, two people tapping in
 alternation each clear the other's entry and both get logged twice; there is a
-test for that case.
+test for that case. Unknown cards are checked before duplicates, so an
+unknown card always gets the red pattern.
+
+## User interface
+
+| Event | LEDs | Motor |
+|---|---|---|
+| Power on | green 300 ms | 120 ms |
+| Card accepted | green 250 ms | 90 ms |
+| Duplicate (within 10 s) | green ×2 | ×2 short |
+| Unknown card | red 450 ms | 450 ms |
+| Log full, or reader failed at power-on | red ×4 | ×4 |
+| Button tap | green ×2 (battery OK) or red ×5 (low) | — |
+| Button held 2 s, or 3 min idle | red 700 ms, then off | 250 ms |
+| Idle | 30 ms green flash every 4 s; red if the battery is low or the reader failed | — |
+| USB session | green flash every second | — |
+
+## Live debugging
+
+The `dbg_*` globals for the STM32CubeIDE Live Expressions view are defined in
+`Core/Src/main.c` (the `USER CODE BEGIN PV` block, so CubeMX regeneration
+keeps them) and declared in `App/Inc/app_debug.h`: battery millivolts and raw
+counts, the last card's UID, ATQA, SAK and logged ID, the scan result, button
+state and press counts, reader status, counters and interrupt flags, record
+counts, and the RTC. The host build defines its own copies in
+`Tests/host_platform.c`.
+
+To set the clock from the debugger, fill in `dbg_set_time` and set
+`dbg_set_time_request` to 1. A unit whose RTC was never set starts from the
+firmware's build time.
 
 ## Companion app
 
@@ -491,17 +555,18 @@ describes use.
 
 ## Board notes for the hardware
 
-- **PC14/PC15 need a 32.768 kHz crystal.** Not optional: the RTC and both
-  LPTIMs depend on it, and without it nothing survives Stop 2.
+- **PC14/PC15 need a 32.768 kHz crystal.** Not optional: the RTC runs from
+  it, and the move to interrupts puts both LPTIMs on it too.
 - **PB7 (`PVD_IN`) must be tied to the battery divider node**, the same node
   as PA7. The PVD's levels 0–6 watch VDD, which a regulator holds steady until
   it drops out entirely — by which point it is too late to write flash. Level 7
   compares PVD_IN against VREFINT and so actually tracks the cell.
-- **The divider is 4.7 M / 2.7 M with 100 nF across the low leg.** It is
-  permanently connected because the PVD watches it, so it is sized for ~0.4 µA;
+- **The divider is 4.7 M over 2.7 M with 100 nF across the low leg.** It is
+  permanently connected because the PVD watches it, so it is sized for ~0.5 µA;
   the cap keeps the source impedance low enough for the ADC's 640.5-cycle
   sampling window.
-- **PA0 is the power button**, active low to ground; it is both WKUP1 and EXTI0.
+- **PA0 is the power button**, active low to ground; it is WKUP1, and is
+  polled while running.
 - USB is crystal-less: HSI48 trimmed by the CRS against the host's SOF.
 
 Full pin map: `Bsp/Inc/bsp_board.h`.
@@ -511,9 +576,8 @@ Full pin map: `Bsp/Inc/bsp_board.h`.
 Nothing needs provisioning for the device to log: it records every card it reads.
 Without a card list every card shows green; send the list (the app does this with
 every lecture start and clock set, or with Send cards to device) to get red for
-unregistered cards.
-Until a host sets the RTC the calendar starts at 2026-01-01, so set the clock
-once (the app does it when a lecture is started, or use `#TIME` in
-`SETTINGS.CSV`). The device ID is optional and set with `#DEVICE`. Students are
-entered in the PC app, which sends the device only their card numbers. `Tests/fs_check.sh` drives the whole
-USB path with real FAT tools.
+unregistered cards. Until the RTC is set it starts from the firmware's build
+time; set the clock once (the app does it when a lecture is started, or use
+`#TIME` in `SETTINGS.CSV`). The device ID is optional and set with `#DEVICE`.
+Students are entered in the PC app, which sends the device only their card
+numbers. `Tests/fs_check.sh` drives the whole USB path with real FAT tools.

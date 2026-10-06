@@ -47,3 +47,20 @@ uint32_t crc32_ieee(const void *data, uint32_t len)
 {
     return crc32_ieee_update(0xFFFFFFFFu, data, len) ^ 0xFFFFFFFFu;
 }
+
+uint16_t crc16_iso14443a(const void *data, uint32_t len)
+{
+    const uint8_t *p = (const uint8_t *)data;
+    uint16_t crc = 0x6363u;
+    uint32_t i;
+
+    while (len-- > 0u) {
+        crc ^= (uint16_t)*p++;
+        for (i = 0u; i < 8u; i++) {
+            /* Reflected 0x1021, LSB first as the card transmits it. */
+            crc = (crc & 1u) ? (uint16_t)((crc >> 1) ^ 0x8408u)
+                             : (uint16_t)(crc >> 1);
+        }
+    }
+    return crc;
+}

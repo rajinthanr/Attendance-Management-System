@@ -200,10 +200,16 @@ bool log_is_full(const log_store_t *ls)
 
 uint32_t log_remaining(const log_store_t *ls)
 {
-    if (ls->total >= NV_LOG_CAPACITY) {
-        return 0u;
+    /* Erased pages, plus whatever is left in the open one. A page sealed
+     * before it filled (older firmware sealed at every power-off) keeps its
+     * unused slots out of reach until the log is erased. */
+    uint32_t free_slots =
+        (uint32_t)(NV_LOG_PAGES - ls->n_used) * NV_LOG_RECS_PER_PAGE;
+
+    if (ls->open_page != PAGE_NONE && ls->open_slot <= NV_LOG_RECS_PER_PAGE) {
+        free_slots += (uint32_t)(NV_LOG_RECS_PER_PAGE - (ls->open_slot - 1u));
     }
-    return NV_LOG_CAPACITY - ls->total;
+    return free_slots;
 }
 
 /** Compute and program the footer of the currently open page. */

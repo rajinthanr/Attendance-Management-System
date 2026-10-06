@@ -5,6 +5,10 @@
  * app_event_post() is the single Level 2 symbol that Level 1 is allowed to
  * call. Every interrupt handler in Bsp/ does its acknowledge-and-post and
  * returns; all interpretation happens in the main loop.
+ *
+ * In polling mode most events are posted by the main loop itself, after it
+ * has sampled and debounced an input. Moving a source to an interrupt later
+ * means posting the same event from its ISR instead.
  */
 #ifndef APP_EVENTS_H
 #define APP_EVENTS_H
@@ -13,15 +17,13 @@
 
 typedef enum {
     APP_EVT_NONE = 0,
-    APP_EVT_TOUCH,        /**< Touch IC detected a card approaching. */
-    APP_EVT_TIMER,        /**< Short one-shot timer elapsed. */
-    APP_EVT_INACTIVITY,   /**< 3-minute inactivity timer elapsed. */
-    APP_EVT_USB_ATTACH,   /**< VBUS rising edge. */
-    APP_EVT_USB_DETACH,   /**< VBUS falling edge. */
-    APP_EVT_USB_ACTIVITY, /**< Host touched the emulated volume. */
-    APP_EVT_LOW_BATTERY,  /**< PVD tripped. */
-    APP_EVT_BUTTON,       /**< Power button pressed while running. */
-    APP_EVT_CAPTURE_FULL  /**< Edge capture buffer filled before the timeout. */
+    APP_EVT_BUTTON_SHORT, /**< Power button tapped. */
+    APP_EVT_BUTTON_LONG,  /**< Power button held past APP_BTN_LONG_MS. */
+    APP_EVT_INACTIVITY,   /**< No activity for APP_INACTIVITY_MS. */
+    APP_EVT_USB_ATTACH,   /**< VBUS appeared (debounced). */
+    APP_EVT_USB_DETACH,   /**< VBUS went away (debounced). */
+    APP_EVT_USB_ACTIVITY, /**< Host touched the emulated volume (USB ISR). */
+    APP_EVT_LOW_BATTERY   /**< Cell below cutoff on consecutive samples. */
 } app_event_t;
 
 /** Reset the queue to empty. Called once during start-up. */

@@ -8,11 +8,15 @@
  *
  * Rules enforced by this boundary:
  *   - Nothing below returns a cooked/engineering value. ADC counts stay counts,
- *     capture timestamps stay timer ticks, the RTC returns calendar fields.
- *     Every conversion is Level 2's job.
+ *     inputs are raw pin levels, the RTC returns calendar fields, the reader
+ *     returns the bytes the card sent. Every conversion is Level 2's job.
  *   - Nothing below makes a decision. There is no plat_handle_card(); Level 1
  *     only moves bytes and toggles pins.
  *   - Level 1 never calls into Level 2 except through app_event_post().
+ *
+ * The firmware currently runs in polling mode: Level 2 samples every input
+ * from the main loop and keeps time with plat_uptime_ms(). The only interrupts
+ * in use are SysTick (behind plat_uptime_ms) and the USB peripheral.
  */
 #ifndef PLATFORM_IF_H
 #define PLATFORM_IF_H
@@ -34,43 +38,41 @@
 void plat_out_write(uint32_t mask);
 
 /* ======================================================================== */
+/* Discrete inputs (polled, raw, not debounced)                             */
+/* ======================================================================== */
+
+/** True while the power button is held down. */
+bool plat_button_pressed(void);
+
+/** True while USB VBUS is present. */
+bool plat_usb_vbus_present(void);
+
+/* ======================================================================== */
 /* Power modes                                                              */
 /* ======================================================================== */
 
 /**
- * Predicate the sleep calls use to decide whether sleeping is still correct.
+ * Predicate the sleep call uses to decide whether sleeping is still correct.
  * Returns true while the caller has nothing to do.
  */
 typedef bool (*plat_idle_pred_t)(void);
 
 /**
- * Core halted, peripherals and clocks left running (STM32 Sleep mode).
- *
- * This is the only mode usable while a card is being captured: the capture
- * timer and its DMA must keep counting, and Stop 2 would gate their clock.
- * Costs more than Stop 2, but only for the 100 ms of a read.
+ * Core halted until the next interrupt (STM32 Sleep mode). SysTick fires every
+ * millisecond, so in polling mode this paces the main loop at 1 kHz. With a
+ * debugger attached it returns at once instead, so the debugger's reads of
+ * the dbg_* globals are never made while the core sleeps.
  *
  * @p still_idle is re-tested with interrupts masked, immediately before the
- * core is halted. Without that the caller would race its own interrupts: an
- * event posted between "is my queue empty?" and the sleep instruction would
- * leave the device asleep with work outstanding until some unrelated
- * interrupt happened to wake it. Passing NULL sleeps unconditionally.
+ * core is halted, so an event posted from an interrupt between the caller's
+ * check and the sleep instruction cannot be slept through. NULL sleeps
+ * unconditionally.
  */
 void plat_sleep_idle(plat_idle_pred_t still_idle);
 
 /**
- * "Light sleep" in the flow chart: STM32 Stop 2. RAM and register state are
- * retained; wake sources are the touch pad, USB VBUS, PVD and LPTIM1/LPTIM2.
- * Returns once an enabled wake source has fired and clocks are restored.
- *
- * Takes the same predicate, for the same reason, as plat_sleep_idle().
- */
-void plat_sleep_light(plat_idle_pred_t still_idle);
-
-/**
- * "Deep sleep" in the flow chart: STM32 Standby. RAM is lost and the only
- * wake source is the power button on the WKUP pin. Does not return; the part
- * resets into main() on wake.
+ * "Off": STM32 Standby. RAM is lost and the only wake source is the power
+ * button on the WKUP pin. Does not return; the part resets into main() on wake.
  */
 void plat_sleep_deep(void) __attribute__((noreturn));
 
@@ -82,69 +84,10 @@ void plat_critical_exit(void);
 app_boot_cause_t plat_boot_cause(void);
 
 /* ======================================================================== */
-/* RF front end (125 kHz reader)                                            */
+/* Time                                                                     */
 /* ======================================================================== */
 
-/** Gate the supply to the RF front end (load switch). */
-void plat_rf_power(bool on);
-
-/** Start/stop the carrier PWM into the antenna tank. */
-void plat_rf_carrier(bool on);
-
-/**
- * Begin capturing both edges of the demodulated tag envelope.
- *
- * @param buf   Caller-owned array that Level 1 fills with raw timer ticks.
- * @param cap   Capacity of @p buf in entries.
- *
- * Capture is DMA-driven and free-running; it stops on its own when @p cap is
- * reached. The tick rate is fixed and reported by plat_rf_capture_hz().
- */
-void plat_rf_capture_start(uint32_t *buf, uint16_t cap);
-
-/** Stop capture and return how many edge timestamps landed in the buffer. */
-uint16_t plat_rf_capture_stop(void);
-
-/** Capture timebase in Hz, so Level 2 can turn ticks into microseconds. */
-uint32_t plat_rf_capture_hz(void);
-
-/* ======================================================================== */
-/* Capacitive touch IC (card-presence wake source)                          */
-/* ======================================================================== */
-
-/** Gate the supply to the touch IC. */
-void plat_touch_power(bool on);
-
-/**
- * Arm/disarm the touch interrupt. Disarmed while the carrier runs: the
- * 125 kHz field couples straight into the pad.
- */
-void plat_touch_irq_enable(bool enable);
-
-/** Pulse the touch IC's reset so it re-runs its self-calibration. */
-void plat_touch_recalibrate(void);
-
-/* ======================================================================== */
-/* Timers                                                                   */
-/* ======================================================================== */
-
-/**
- * (Re)start the inactivity timer. Fires APP_EVT_INACTIVITY once after
- * @p ms with no further calls. Must survive Stop 2, so Level 1 implements
- * it on LPTIM1/LSE rather than a TIMx that stops with the core clock.
- */
-void plat_inactivity_restart(uint32_t ms);
-void plat_inactivity_stop(void);
-
-/**
- * One-shot short delay. Fires APP_EVT_TIMER once after @p ms. Used to step
- * the feedback sequencer and to bound the card read, so it too must run in
- * Stop 2 (LPTIM2/LSE).
- */
-void plat_timer_start(uint32_t ms);
-void plat_timer_stop(void);
-
-/** Free-running millisecond counter, monotonic across Stop 2. */
+/** Free-running millisecond counter. Wraps after 49 days; compare by subtraction. */
 uint32_t plat_uptime_ms(void);
 
 /* ======================================================================== */
@@ -156,6 +99,59 @@ void plat_rtc_set(const app_datetime_t *dt);
 
 /** True once the RTC has been set at least once (tracked in a backup register). */
 bool plat_rtc_is_valid(void);
+
+/* ======================================================================== */
+/* NFC reader (ST25R3916, ISO14443-A initiator at 106 kbit/s)                */
+/* ======================================================================== */
+
+typedef enum {
+    PLAT_NFC_OK = 0,
+    PLAT_NFC_TIMEOUT,     /**< No response before the no-response timer expired. */
+    PLAT_NFC_COLLISION,   /**< The receiver reported a bit collision. */
+    PLAT_NFC_RX_ERROR,    /**< CRC, parity or framing error, or a bad FIFO state. */
+    PLAT_NFC_IO_ERROR     /**< SPI failure or the reader did not answer. */
+} plat_nfc_status_t;
+
+/** plat_nfc_transceive() flags. */
+#define PLAT_NFC_TX_CRC          (1u << 0)  /**< Append CRC_A to the frame. */
+#define PLAT_NFC_ANTICOLLISION   (1u << 1)  /**< Bit-oriented anticollision frame. */
+
+/**
+ * Reset the reader and configure it as an ISO14443-A initiator, field off.
+ *
+ * @param supply_3v3  Select the reader's 3.3 V supply mode (VDD <= 3.6 V)
+ *                    instead of its 5 V mode. Level 2 decides from the battery.
+ * @param chip_id     Receives the raw IC identity register, also on failure.
+ * @return true when the chip answered and every step completed.
+ */
+bool plat_nfc_init(bool supply_3v3, uint8_t *chip_id);
+
+/** Change the supply mode and re-run the reader's regulator adjustment. */
+bool plat_nfc_set_supply(bool supply_3v3);
+
+/** Switch the 13.56 MHz field (and the receiver) on or off. */
+void plat_nfc_field(bool on);
+
+/** Send REQA and return the two ATQA bytes as received. Field must be on. */
+plat_nfc_status_t plat_nfc_reqa(uint8_t atqa[2]);
+
+/**
+ * Send @p tx and collect the response.
+ *
+ * @param flags   PLAT_NFC_TX_CRC and/or PLAT_NFC_ANTICOLLISION.
+ * @param rx      Receives the bytes exactly as the reader's FIFO holds them,
+ *                CRC bytes included when the card sent them.
+ * @param rx_len  Receives the number of bytes stored in @p rx.
+ */
+plat_nfc_status_t plat_nfc_transceive(const uint8_t *tx, uint8_t tx_len,
+                                      uint8_t flags, uint8_t *rx,
+                                      uint8_t rx_cap, uint8_t *rx_len);
+
+/** Raw A/D reading of the antenna amplitude (13.02 mVpp per count on RFI). */
+bool plat_nfc_measure_amplitude(uint8_t *raw);
+
+/** Put the reader into its power-down mode. plat_nfc_init() wakes it again. */
+void plat_nfc_power_down(void);
 
 /* ======================================================================== */
 /* Non-volatile storage (internal flash)                                    */
@@ -178,8 +174,8 @@ bool plat_flash_erase(uint32_t offset);
 /* ======================================================================== */
 
 /**
- * Take one battery + VREFINT sample pair. Blocking, a few hundred
- * microseconds. Returns raw counts only.
+ * Take one battery + VREFINT sample pair. Blocking, about a millisecond.
+ * Returns raw counts only.
  */
 bool plat_adc_sample(app_adc_sample_t *out);
 
@@ -187,12 +183,13 @@ bool plat_adc_sample(app_adc_sample_t *out);
 /* USB device                                                               */
 /* ======================================================================== */
 
-bool plat_usb_vbus_present(void);
-
 /** Bring up the USB peripheral and enumerate as a mass-storage device. */
 void plat_usb_start(void);
 
 /** Tear USB down and release its clocks. */
 void plat_usb_stop(void);
+
+/** True once a host has configured the device (as opposed to a bare charger). */
+bool plat_usb_configured(void);
 
 #endif /* PLATFORM_IF_H */

@@ -40,21 +40,17 @@ typedef struct {
  * granularity identical removes read-modify-write entirely from log_store.
  */
 typedef struct {
-    uint32_t student_id;  /**< 32-bit EM4100 unique ID. */
+    uint32_t student_id;  /**< 32-bit card ID, see card_id_from_uid(). */
     app_epoch_t stamp;    /**< Seconds since epoch. */
 } app_record_t;
 
-/** Decoded EM4100 tag contents. */
-typedef struct {
-    uint8_t  version;     /**< 8-bit customer/version field. */
-    uint32_t unique_id;   /**< 32-bit unique ID. */
-} app_tag_t;
-
 /** Outcome of presenting a card, used to pick the feedback pattern. */
 typedef enum {
-    APP_SCAN_ACCEPTED = 0,  /**< Recorded. */
+    APP_SCAN_NONE = 0,      /**< No card presented yet. */
+    APP_SCAN_ACCEPTED,      /**< Recorded. */
     APP_SCAN_DUPLICATE,     /**< Same ID inside the dedup window. */
-    APP_SCAN_NO_CARD        /**< Touch fired but nothing decodable. */
+    APP_SCAN_UNKNOWN,       /**< Valid card, not on the student list. */
+    APP_SCAN_STORAGE_FULL   /**< Valid card, but the log has no room left. */
 } app_scan_result_t;
 
 /** Why the MCU came out of reset. Level 1 maps the RCC reset flags onto this. */

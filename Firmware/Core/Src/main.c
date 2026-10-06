@@ -23,7 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include "bsp.h"
 #include "app_fsm.h"
-#include "bsp_nfc_probe.h"
+#include "app_debug.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -58,17 +58,63 @@ PCD_HandleTypeDef hpcd_USB_FS;
 
 /* USER CODE BEGIN PV */
 
-/* Global, volatile state for STM32CubeIDE Live Expressions. */
-volatile uint8_t nfc_debug_reference = 0u;
-volatile uint8_t nfc_debug_amplitude = 0u;
-volatile uint8_t nfc_debug_delta = 0u;
-volatile bool nfc_debug_reader_ready = false;
-volatile bool nfc_debug_reference_valid = false;
-volatile bool nfc_debug_sample_ok = false;
-volatile bool nfc_debug_card_near = false;
-volatile bool led_debug_red_on = false;
-volatile uint32_t led_debug_red_changed_ms = 0u;
-volatile uint32_t nfc_debug_last_sample_ms = 0u;
+/* Global, volatile state for STM32CubeIDE Live Expressions. Declared in
+ * App/Inc/app_debug.h, which documents each one; written by the application
+ * (and the reader driver) every pass of the main loop. */
+
+/* Battery */
+volatile uint32_t dbg_battery_mv = 0u;
+volatile uint8_t  dbg_battery_state = 0u;
+volatile uint16_t dbg_battery_counts = 0u;
+volatile uint32_t dbg_battery_samples = 0u;
+volatile uint8_t  dbg_battery_error = 0u;
+volatile uint32_t dbg_battery_raw_mv = 0u;
+volatile uint32_t dbg_vdda_mv = 0u;
+volatile uint16_t dbg_vrefint_counts = 0u;
+volatile uint16_t dbg_vrefint_cal = 0u;
+volatile uint8_t  dbg_adc_error = 0u;
+
+/* Last card */
+volatile uint32_t dbg_card_id = 0u;
+volatile uint8_t  dbg_card_uid[10] = { 0u };
+volatile uint8_t  dbg_card_uid_len = 0u;
+volatile uint8_t  dbg_card_atqa[2] = { 0u };
+volatile uint8_t  dbg_card_sak = 0u;
+volatile uint32_t dbg_card_count = 0u;
+volatile uint8_t  dbg_scan_result = 0u;
+
+/* Button */
+volatile bool     dbg_button_down = false;
+volatile uint32_t dbg_button_short_count = 0u;
+volatile uint32_t dbg_button_long_count = 0u;
+
+/* Reader */
+volatile bool     dbg_nfc_ready = false;
+volatile uint8_t  dbg_nfc_chip_id = 0u;
+volatile bool     dbg_nfc_supply_3v3 = false;
+volatile uint8_t  dbg_nfc_amplitude = 0u;
+volatile uint8_t  dbg_nfc_last_status = 0u;
+volatile uint32_t dbg_nfc_polls = 0u;
+volatile uint32_t dbg_nfc_errors = 0u;
+volatile uint32_t dbg_nfc_collisions = 0u;
+volatile uint32_t dbg_nfc_last_irq = 0u;
+volatile uint32_t dbg_nfc_irq_pin_misses = 0u;
+
+/* System */
+volatile uint8_t  dbg_state = 0u;
+volatile uint8_t  dbg_boot_cause = 0u;
+volatile uint32_t dbg_uptime_ms = 0u;
+volatile bool     dbg_vbus = false;
+volatile bool     dbg_usb_host = false;
+volatile uint32_t dbg_records_ram = 0u;
+volatile uint32_t dbg_records_flash = 0u;
+volatile uint32_t dbg_records_free = 0u;
+volatile uint32_t dbg_students = 0u;
+volatile app_datetime_t dbg_now = { 0u, 0u, 0u, 0u, 0u, 0u };
+
+/* Written from the debugger to set the RTC */
+volatile app_datetime_t dbg_set_time = { 0u, 0u, 0u, 0u, 0u, 0u };
+volatile bool     dbg_set_time_request = false;
 
 /* USER CODE END PV */
 
@@ -89,12 +135,6 @@ static void MX_TIM2_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-#define LED_BOOT_DEBUG 1
-#define LED_RED_HALF_PERIOD_MS 500u
-#define NFC_SAMPLE_PERIOD_MS 100u
-#define NFC_PRESENT_DELTA 12u
-#define NFC_ABSENT_DELTA 6u
 
 /* USER CODE END 0 */
 
@@ -137,80 +177,11 @@ int main(void)
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
-#if LED_BOOT_DEBUG
-  /* Keep the normal application stopped while testing the ST25R3916. */
-  uint8_t sample = 0u;
-  nfc_debug_reader_ready = bsp_nfc_probe_init();
-  nfc_debug_sample_ok = nfc_debug_reader_ready &&
-                        bsp_nfc_probe_amplitude(&sample);
-  if (nfc_debug_sample_ok)
-  {
-    nfc_debug_reference = sample;
-    nfc_debug_amplitude = sample;
-    nfc_debug_reference_valid =
-        sample > NFC_PRESENT_DELTA &&
-        sample < (uint8_t)(255u - NFC_PRESENT_DELTA);
-  }
-  nfc_debug_card_near = false;
-  led_debug_red_on = true;
-  led_debug_red_changed_ms = HAL_GetTick();
-  nfc_debug_last_sample_ms = led_debug_red_changed_ms;
-
-  HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_RESET);
-  HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_RED_Pin, GPIO_PIN_SET);
-  while (1)
-  {
-    uint32_t now = HAL_GetTick();
-    if ((uint32_t)(now - led_debug_red_changed_ms) >= LED_RED_HALF_PERIOD_MS)
-    {
-      led_debug_red_changed_ms = now;
-      led_debug_red_on = !led_debug_red_on;
-      HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_RED_Pin,
-                        led_debug_red_on ? GPIO_PIN_SET : GPIO_PIN_RESET);
-    }
-
-    if ((uint32_t)(now - nfc_debug_last_sample_ms) >= NFC_SAMPLE_PERIOD_MS)
-    {
-      nfc_debug_last_sample_ms = now;
-      nfc_debug_sample_ok = nfc_debug_reference_valid &&
-                            bsp_nfc_probe_amplitude(&sample);
-      if (nfc_debug_sample_ok)
-      {
-        nfc_debug_amplitude = sample;
-        nfc_debug_delta = (sample > nfc_debug_reference)
-                          ? (uint8_t)(sample - nfc_debug_reference)
-                          : (uint8_t)(nfc_debug_reference - sample);
-        if (nfc_debug_card_near)
-        {
-          nfc_debug_card_near = (nfc_debug_delta > NFC_ABSENT_DELTA);
-        }
-        else
-        {
-          nfc_debug_card_near = (nfc_debug_delta >= NFC_PRESENT_DELTA);
-          if (!nfc_debug_card_near)
-          {
-            /* Track slow temperature and supply drift while the coil is clear. */
-            nfc_debug_reference =
-                (uint8_t)(((uint16_t)nfc_debug_reference * 15u + sample) / 16u);
-          }
-        }
-      }
-      else
-      {
-        nfc_debug_card_near = false;
-      }
-      HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin,
-                        nfc_debug_card_near ? GPIO_PIN_SET : GPIO_PIN_RESET);
-    }
-    HAL_Delay(5);
-  }
-#endif
-
-  /* Level 1: clocks, pins, RTC, timers, ADC, PVD. Nothing is armed yet that
-   * could post an event, so the application decides when to start listening. */
+  /* Level 1: clocks, pins, RTC, ADC, power. Everything is polled from the
+   * main loop; only SysTick and USB interrupt. */
   bsp_init();
 
-  /* Level 2: the flow chart's "Start" through to the first sleep. */
+  /* Level 2: the flow chart's "Start" through to the first card poll. */
   app_init();
 
   /* USER CODE END 2 */
@@ -223,8 +194,8 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-    /* One pass: handle the next event, or sleep until one arrives. The part
-     * spends almost all of its life inside this call, in Stop 2. */
+    /* One pass: sample the inputs, poll the reader, run the timers and the
+     * feedback pattern, then sleep until the next SysTick. */
     app_task();
   }
   /* USER CODE END 3 */
@@ -447,6 +418,13 @@ static void MX_RTC_Init(void)
   }
 
   /* USER CODE BEGIN Check_RTC_BKUP */
+
+  /* The calendar runs on through Standby and resets. Once it has been set,
+   * the code below would put it back to 2000-01-01 on every boot. */
+  if (HAL_RTCEx_BKUPRead(&hrtc, BSP_BKP_RTC_VALID) == BSP_BKP_RTC_MAGIC)
+  {
+    return;
+  }
 
   /* USER CODE END Check_RTC_BKUP */
 

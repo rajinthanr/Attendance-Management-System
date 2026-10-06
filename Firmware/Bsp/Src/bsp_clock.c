@@ -2,13 +2,13 @@
  * @file    bsp_clock.c
  * @brief   Level 1 (HAL) — clock tree.
  *
- * Two operating points. Scanning runs the core from MSI at 4 MHz, the slowest
- * setting that still keeps flash latency at zero and decodes a capture between
- * frames. USB needs more, so the session brings the core to 24 MHz and drops
- * back on unplug.
+ * Two operating points. Scanning runs the core from MSI at 4 MHz, which keeps
+ * flash latency at zero. USB needs more, so the session brings the core to
+ * 24 MHz and drops back on unplug. HAL_RCC_ClockConfig() re-derives SysTick
+ * on each change, so the millisecond uptime is unaffected.
  *
- * The LSE runs continuously and clocks the RTC and both LPTIMs, which is what
- * lets every timer in the design survive Stop 2.
+ * The LSE runs continuously and clocks the RTC, which keeps the calendar
+ * going while the unit is in Standby.
  */
 #include "bsp.h"
 
@@ -129,29 +129,11 @@ void bsp_clock_set_usb_speed(bool fast)
         clock_config(BSP_MSI_RANGE_RUN, FLASH_LATENCY_0);
         periph_clock_config(false);
 
-        /* The carrier period and the capture prescaler were both derived from
-         * BSP_SYSCLK_RUN_HZ. Re-deriving them here keeps the reader correct
-         * for any path that resumes scanning after a USB session, rather than
-         * relying on the fact that today's only such path goes via Standby
-         * and therefore a reset. */
-        bsp_rf_init();
-
         /* HSI48 is the largest consumer left once the host is gone. */
         RCC_OscInitTypeDef osc = { 0 };
         osc.OscillatorType = RCC_OSCILLATORTYPE_HSI48;
         osc.HSI48State = RCC_HSI48_OFF;
         osc.PLL.PLLState = RCC_PLL_NONE;
         (void)HAL_RCC_OscConfig(&osc);
-    }
-}
-
-void bsp_clock_restore(void)
-{
-    /* Stop 2 always exits on MSI at its pre-Stop range, and the RCC config
-     * registers survive, so the tree only needs re-selecting if something
-     * other than MSI was driving SYSCLK. With MSI as the only source that is
-     * never the case, and this reduces to confirming the range. */
-    if (__HAL_RCC_GET_SYSCLK_SOURCE() != RCC_SYSCLKSOURCE_STATUS_MSI) {
-        clock_config(BSP_MSI_RANGE_RUN, FLASH_LATENCY_0);
     }
 }

@@ -2,13 +2,19 @@
  * @file    test_main.c
  * @brief   Host tests for the Level 2 logic.
  *
- * Covers the parts where a bug is expensive to find on hardware: the decoder,
- * the flash log format and its power-loss recovery, and the FAT image the host
- * has to accept without complaint.
+ * Covers the parts where a bug is expensive to find on hardware: the card
+ * protocol against a simulated card, the flash log format and its power-loss
+ * recovery, the FAT image the host has to accept without complaint, and the
+ * state machine driven end to end on simulated time.
  */
-#include "test_util.h"
+#include <stdio.h>
+#include <string.h>
 
-#include "em4100.h"
+#include "app_fsm.h"
+#include "app_debug.h"
+#include "iso14443a.h"
+#include "card_reader.h"
+#include "button.h"
 #include "timeutil.h"
 #include "crc.h"
 #include "csv.h"
@@ -20,137 +26,12 @@
 #include "battery.h"
 #include "nv_layout.h"
 #include "platform_if.h"
+#include "host_platform.h"
+#include "test_util.h"
 
 int g_fail;
 int g_run;
 
-/* ===================================================================== */
-/* EM4100: build a reference encoder so decode can be checked end to end  */
-/* ===================================================================== */
-
-/** Encode version+id into the 64 bits an EM4100 tag actually transmits. */
-static void em4100_encode(uint8_t version, uint32_t id, uint8_t bits[64])
-{
-    uint8_t nibble[10];
-    int i, b;
-
-    nibble[0] = (uint8_t)(version >> 4);
-    nibble[1] = (uint8_t)(version & 0x0Fu);
-    for (i = 0; i < 8; i++) {
-        nibble[2 + i] = (uint8_t)((id >> (28 - (4 * i))) & 0x0Fu);
-    }
-
-    for (i = 0; i < 9; i++) { bits[i] = 1u; }
-
-    uint8_t col[4] = { 0, 0, 0, 0 };
-    for (i = 0; i < 10; i++) {
-        uint8_t parity = 0u;
-        for (b = 0; b < 4; b++) {
-            uint8_t v = (uint8_t)((nibble[i] >> (3 - b)) & 1u);
-            bits[9 + (i * 5) + b] = v;
-            parity ^= v;
-            col[b] ^= v;
-        }
-        bits[9 + (i * 5) + 4] = parity;
-    }
-    for (i = 0; i < 4; i++) { bits[59 + i] = col[i]; }
-    bits[63] = 0u;
-}
-
-/**
- * Turn a repeating bit stream into the edge timestamps the capture unit
- * would produce, at a given half-bit period and with optional jitter.
- */
-static uint16_t make_edges(const uint8_t bits[64], int repeats,
-                           uint32_t half_us, int jitter_us,
-                           uint32_t *edges, uint16_t cap)
-{
-    uint32_t t = 1000u;
-    uint16_t n = 0u;
-    int level = -1;
-    int r, i, h;
-    int seed = 12345;
-
-    for (r = 0; r < repeats; r++) {
-        for (i = 0; i < 64; i++) {
-            /* Manchester: a '1' is high then low, a '0' is low then high,
-             * matching the '10' -> 1 convention the decoder uses. */
-            int halves[2];
-            halves[0] = bits[i] ? 1 : 0;
-            halves[1] = bits[i] ? 0 : 1;
-
-            for (h = 0; h < 2; h++) {
-                if (halves[h] != level) {
-                    if (n >= cap) { return n; }
-                    uint32_t j = 0u;
-                    if (jitter_us > 0) {
-                        seed = (int)(((uint32_t)seed * 1103515245u) + 12345u);   /* unsigned: wraps by definition */
-                        j = (uint32_t)(((seed >> 16) & 0x7FFF) % (2 * jitter_us));
-                        j = j - (uint32_t)jitter_us;
-                    }
-                    edges[n++] = t + j;
-                    level = halves[h];
-                }
-                t += half_us;
-            }
-        }
-    }
-    return n;
-}
-
-void present_card(uint32_t id)
-{
-    uint8_t bits[64];
-
-    em4100_encode(0x2Au, id, bits);
-    host_cap_n = make_edges(bits, 4, 256u, 0, host_cap_buf, EM4100_MAX_EDGES);
-}
-
-static void test_em4100(void)
-{
-    static uint32_t edges[EM4100_MAX_EDGES];
-    static em4100_ws_t ws;
-    uint8_t bits[64];
-    app_tag_t tag;
-
-    printf("em4100\n");
-
-    /* Round trip at RF/64 (half-bit 256 us), the common case. */
-    em4100_encode(0x2Au, 0x0012D687u, bits);
-    uint16_t n = make_edges(bits, 4, 256u, 0, edges, EM4100_MAX_EDGES);
-    CHECK(em4100_decode(edges, n, 1000000u, &ws, &tag) == EM4100_OK, "RF/64 decode");
-    CHECK(tag.unique_id == 0x0012D687u, "id got 0x%08X", tag.unique_id);
-    CHECK(tag.version == 0x2Au, "version got 0x%02X", tag.version);
-
-    /* RF/32: the clock fit has to follow, not assume. */
-    em4100_encode(0x01u, 0xDEADBEEFu, bits);
-    n = make_edges(bits, 6, 128u, 0, edges, EM4100_MAX_EDGES);
-    CHECK(em4100_decode(edges, n, 1000000u, &ws, &tag) == EM4100_OK, "RF/32 decode");
-    CHECK(tag.unique_id == 0xDEADBEEFu, "RF/32 id got 0x%08X", tag.unique_id);
-
-    /* +/-20 us of jitter on a 256 us half-bit, about 8 %. */
-    em4100_encode(0x77u, 0x00ABCDEFu, bits);
-    n = make_edges(bits, 4, 256u, 20, edges, EM4100_MAX_EDGES);
-    CHECK(em4100_decode(edges, n, 1000000u, &ws, &tag) == EM4100_OK, "jittered decode");
-    CHECK(tag.unique_id == 0x00ABCDEFu, "jitter id got 0x%08X", tag.unique_id);
-
-    /* Noise must not produce a tag. */
-    uint16_t i;
-    for (i = 0u; i < 400u; i++) {
-        edges[i] = (uint32_t)i * (200u + (i % 37u));
-    }
-    CHECK(em4100_decode(edges, 400u, 1000000u, &ws, &tag) != EM4100_OK, "noise rejected");
-
-    /* One frame only: the flow chart requires two that agree. */
-    em4100_encode(0x11u, 0x00000042u, bits);
-    n = make_edges(bits, 1, 256u, 0, edges, EM4100_MAX_EDGES);
-    CHECK(em4100_decode(edges, n, 1000000u, &ws, &tag) != EM4100_OK, "single frame rejected");
-
-    /* A corrupted parity bit must fail the frame check. */
-    em4100_encode(0x2Au, 0x0012D687u, bits);
-    bits[13] ^= 1u;
-    CHECK(!em4100_check_frame(bits, &tag), "parity error caught");
-}
 
 /* ===================================================================== */
 static void test_time(void)
@@ -190,6 +71,13 @@ static void test_time(void)
 
     app_datetime_t bad_dt = { 2026u, 2u, 30u, 0u, 0u, 0u };
     CHECK(!time_is_valid(&bad_dt), "30 Feb rejected");
+
+    CHECK(time_from_build("Oct  6 2026", "16:41:09", &dt) &&
+          dt.year == 2026u && dt.month == 10u && dt.day == 6u &&
+          dt.hour == 16u && dt.minute == 41u && dt.second == 9u, "build time");
+    CHECK(time_from_build("Feb 29 2028", "00:00:00", &dt), "leap day");
+    CHECK(!time_from_build("Feb 30 2027", "00:00:00", &dt), "invalid day");
+    CHECK(!time_from_build("Foo  1 2026", "00:00:00", &dt), "bad month");
 }
 
 /* ===================================================================== */
@@ -315,6 +203,18 @@ static void test_log_store(void)
     CHECK(rb_count(&rb) > 0u, "overflow stays in RAM");
 
     CHECK(log_erase_all(&ls) && log_total(&ls) == 0u, "erase all");
+
+    /* Power cycles without sealing keep filling the same page. */
+    for (i = 0u; i < 3u; i++) {
+        rb_init(&rb);
+        rec.student_id = i;
+        rb_push(&rb, &rec);
+        log_flush(&ls, &rb);
+        log_init(&ls);
+    }
+    CHECK(log_total(&ls) == 3u && ls.n_used == 1u, "one page for three boots");
+    CHECK(log_remaining(&ls) == NV_LOG_CAPACITY - 3u, "remaining %u",
+          log_remaining(&ls));
 }
 
 /* ===================================================================== */
@@ -344,11 +244,11 @@ static void test_battery(void)
     printf("battery\n");
 
     /* VREFINT_CAL 1655 measured at 3.0 V; reading 1500 implies VDDA = 3310 mV.
-     * The divider is 4.7 M over 2.7 M (x2.74), so a node reading of
-     * 1750/4095 is 1414 mV, which puts the cell at about 3880 mV. */
+     * 1751/4095 puts the node at 1415 mV, and the 4.7 M / 2.7 M divider makes
+     * the cell 1415 * 7400 / 2700 = 3878 mV. */
     s.vrefint_cal = 1655u;
     s.vrefint_counts = 1500u;
-    s.vbat_counts = 1750u;
+    s.vbat_counts = 1751u;
     uint32_t mv = batt_millivolts(&s);
     CHECK(mv > 3800u && mv < 3960u, "computed %u mV", mv);
     CHECK(batt_classify(mv) == BATT_OK, "healthy cell");
@@ -356,9 +256,277 @@ static void test_battery(void)
     CHECK(batt_classify(3400u) == BATT_WARN, "warn band");
     CHECK(batt_classify(3200u) == BATT_CRITICAL, "critical band");
 
+    /* Divider ratio against the schematic: 4.2 V full and 3.3 V cutoff. */
+    s.vbat_counts = 1895u;   /* 4.2 V * 2.7 / 7.4 = 1532 mV at the node */
+    mv = batt_millivolts(&s);
+    CHECK(mv > 4190u && mv < 4210u, "full cell %u mV", mv);
+    s.vbat_counts = 1444u;   /* 3.2 V */
+    mv = batt_millivolts(&s);
+    CHECK(mv > 3190u && mv < 3210u, "flat cell %u mV", mv);
+    CHECK(batt_classify(mv) == BATT_CRITICAL, "flat cell is critical");
+
+    /* A sagging VDDA (LDO in dropout) must not change the answer. VDDA
+     * 3100 mV: VREFINT reads 1602 and the same 1532 mV node reads 2024. */
+    s.vrefint_counts = 1602u;
+    s.vbat_counts = 2024u;
+    mv = batt_millivolts(&s);
+    CHECK(mv > 4180u && mv < 4220u, "low VDDA, full cell %u mV", mv);
+
     s.vrefint_counts = 0u;
     CHECK(batt_millivolts(&s) == 0u, "bad sample yields 0");
     CHECK(batt_classify(0u) == BATT_OK, "bad sample must not shut the unit down");
+
+    s.vrefint_counts = 3u;   /* implies VDDA of 1.6 kV: a glitch, not a supply */
+    s.vbat_counts = 1751u;
+    CHECK(batt_millivolts(&s) == 0u, "impossible VDDA rejected");
+
+    {
+        batt_reading_t r;
+        batt_evaluate(&s, &r);
+        CHECK(r.status == BATT_SAMPLE_BAD_VDDA && r.vdda_mv > 3600u,
+              "reason reported: %u", (unsigned)r.status);
+
+        s.vrefint_counts = 1500u;
+        s.vbat_counts = 2200u;
+        batt_evaluate(&s, &r);
+        CHECK(r.status == BATT_SAMPLE_TOO_HIGH && r.vbat_mv > 4500u,
+              "rejected voltage still shown: %u mV", r.vbat_mv);
+    }
+
+    s.vrefint_counts = 1500u;
+    s.vbat_counts = 4095u;   /* saturated: R8 open or the node shorted to BAT+ */
+    CHECK(batt_millivolts(&s) == 0u, "saturated input rejected");
+    s.vbat_counts = 2200u;   /* 4.89 V: no single cell reads that */
+    CHECK(batt_millivolts(&s) == 0u, "impossible cell voltage rejected");
+}
+
+/* ===================================================================== */
+static const uint8_t k_uid4[4] = { 0x0Au, 0xF4u, 0x1Au, 0x9Eu };
+static const uint8_t k_uid7[7] = { 0x04u, 0x11u, 0x22u, 0x33u, 0x44u, 0x55u, 0x66u };
+static const uint8_t k_uid10[10] = { 0x04u, 1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u };
+
+static void test_iso14443a(void)
+{
+    iso14443a_card_t card;
+    printf("iso14443a\n");
+
+    host_nfc_field = true;
+    host_nfc_collision = false;
+
+    host_card_present = false;
+    CHECK(iso14443a_select(&card) == ISO14443A_NO_CARD, "empty field");
+
+    /* The MIFARE Classic 1K from the bench: ATQA 0004, SAK 08. */
+    host_card_set(k_uid4, 4u, 0x08u);
+    CHECK(iso14443a_select(&card) == ISO14443A_OK, "single size UID");
+    CHECK(card.uid_len == 4u && memcmp(card.uid, k_uid4, 4u) == 0, "4-byte UID bytes");
+    CHECK(card.sak == 0x08u, "sak %02X", card.sak);
+    CHECK(card.atqa[0] == 0x04u && card.atqa[1] == 0x00u, "atqa");
+
+    host_card_set(k_uid7, 7u, 0x00u);
+    CHECK(iso14443a_select(&card) == ISO14443A_OK, "double size UID");
+    CHECK(card.uid_len == 7u && memcmp(card.uid, k_uid7, 7u) == 0, "7-byte UID bytes");
+    CHECK(card.sak == 0x00u, "final SAK, not the cascade one");
+
+    host_card_set(k_uid10, 10u, 0x20u);
+    CHECK(iso14443a_select(&card) == ISO14443A_OK, "triple size UID");
+    CHECK(card.uid_len == 10u && memcmp(card.uid, k_uid10, 10u) == 0, "10-byte UID bytes");
+
+    host_nfc_collision = true;
+    CHECK(iso14443a_select(&card) == ISO14443A_COLLISION, "two cards");
+    host_nfc_collision = false;
+
+    host_nfc_field = false;
+    CHECK(iso14443a_select(&card) == ISO14443A_NO_CARD, "no field, no answer");
+
+    CHECK(card_id_from_uid(k_uid4, 4u) == 0x0AF41A9Eu, "4-byte ID");
+    CHECK(card_id_from_uid(k_uid7, 7u) == 0x33445566u, "7-byte ID keeps the tail");
+
+    /* CRC_A reference value from ISO/IEC 14443-3 Annex B: 00 00 -> A0 1E. */
+    const uint8_t zeros[2] = { 0u, 0u };
+    CHECK(crc16_iso14443a(zeros, 2u) == 0x1EA0u, "crc_a %04X", crc16_iso14443a(zeros, 2u));
+}
+
+/* ===================================================================== */
+/** Run the reader until the poll scheduled at or after @p t has finished. */
+static bool reader_poll(card_reader_t *cr, uint32_t *t, iso14443a_card_t *card)
+{
+    bool found = false;
+    uint32_t end = *t + APP_NFC_POLL_MS;
+
+    for (; *t < end; (*t)++) {
+        if (cr_task(cr, *t, card)) {
+            found = true;
+        }
+    }
+    return found;
+}
+
+static void test_card_reader(void)
+{
+    static card_reader_t cr;
+    iso14443a_card_t card;
+    uint32_t t = 1000u;
+    uint8_t i;
+
+    printf("card reader\n");
+    host_card_present = false;
+    cr_init(&cr);
+    cr_enable(&cr, true, t);
+
+    CHECK(!cr_task(&cr, t, &card) && host_nfc_field, "field on first");
+    CHECK(!cr_task(&cr, t + APP_NFC_FIELD_GUARD_MS - 1u, &card) && host_nfc_field,
+          "guard time respected");
+    t++;
+    CHECK(!reader_poll(&cr, &t, &card), "nothing there");
+    CHECK(!host_nfc_field, "field off between polls");
+
+    host_card_set(k_uid4, 4u, 0x08u);
+    CHECK(reader_poll(&cr, &t, &card) && card.uid_len == 4u, "card reported");
+
+    bool again = false;
+    for (i = 0u; i < 20u; i++) {
+        again = again || reader_poll(&cr, &t, &card);
+    }
+    CHECK(!again, "a held card is reported once");
+
+    /* One missed poll is noise, not a removal. */
+    host_card_present = false;
+    (void)reader_poll(&cr, &t, &card);
+    host_card_present = true;
+    CHECK(!reader_poll(&cr, &t, &card), "brief dropout is not a new tap");
+
+    host_card_present = false;
+    for (i = 0u; i < APP_NFC_REMOVE_MISSES; i++) {
+        (void)reader_poll(&cr, &t, &card);
+    }
+    host_card_present = true;
+    CHECK(reader_poll(&cr, &t, &card), "taken away and back is a new tap");
+
+    /* A different card replaces the held one at once. */
+    host_card_set(k_uid7, 7u, 0x00u);
+    CHECK(reader_poll(&cr, &t, &card) && card.uid_len == 7u, "card swapped");
+
+    /* Pausing keeps the memory of the held card. */
+    cr_enable(&cr, false, t);
+    CHECK(!host_nfc_field, "pause turns the field off");
+    t += 500u;
+    cr_enable(&cr, true, t);
+    CHECK(!reader_poll(&cr, &t, &card), "held through a pause, not repeated");
+    host_card_present = false;
+}
+
+/* ===================================================================== */
+static void test_button(void)
+{
+    static button_t b;
+    uint32_t t;
+    int shorts = 0, longs = 0;
+
+    printf("button\n");
+
+    btn_init(&b, false, 0u);
+    for (t = 0u; t < 100u; t++) { (void)btn_update(&b, t < 10u, t); }
+    CHECK(!btn_is_down(&b), "10 ms glitch is debounced away");
+
+    for (t = 100u; t < 400u; t++) {
+        button_event_t e = btn_update(&b, t < 300u, t);
+        shorts += (e == BTN_SHORT); longs += (e == BTN_LONG);
+    }
+    CHECK(shorts == 1 && longs == 0, "tap: %d short, %d long", shorts, longs);
+
+    shorts = longs = 0;
+    for (t = 1000u; t < 4000u; t++) {
+        button_event_t e = btn_update(&b, t < 3500u, t);
+        shorts += (e == BTN_SHORT); longs += (e == BTN_LONG);
+        if (e == BTN_LONG) {
+            CHECK(t >= 1000u + APP_BTN_LONG_MS, "long fires at the threshold");
+            CHECK(t < 3500u, "long fires while still held");
+        }
+    }
+    CHECK(shorts == 0 && longs == 1, "hold: %d short, %d long", shorts, longs);
+
+    /* The press that woke the unit is ignored. */
+    btn_init(&b, true, 0u);
+    shorts = longs = 0;
+    for (t = 0u; t < 5000u; t++) {
+        button_event_t e = btn_update(&b, t < 4000u, t);
+        shorts += (e == BTN_SHORT); longs += (e == BTN_LONG);
+    }
+    CHECK(shorts == 0 && longs == 0, "wake press ignored: %d, %d", shorts, longs);
+}
+
+/* ===================================================================== */
+static void test_battery_boot(void)
+{
+    static jmp_buf jb;
+    volatile int powered_off;
+
+    printf("battery at boot\n");
+
+    host_flash_erase_all();
+    host_card_present = false;
+    host_button = false;
+    host_vbus = false;
+    host_deep_sleep_jmp = &jb;
+
+    /* A flat cell found after the divider has settled: straight back off. */
+    host_ms = 5000u;
+    host_adc_vbat_counts = 1444u;   /* 3.2 V */
+    powered_off = 0;
+    if (setjmp(jb) == 0) {
+        app_init();
+        CHECK(app_state() == ST_SHUTDOWN, "flat at boot: shutting down");
+        run_ms(3000u);
+    } else {
+        powered_off = 1;
+    }
+    CHECK(powered_off == 1, "flat at boot: off");
+
+    /* A fresh battery, read before C3 has charged: looks flat, is not. */
+    host_ms = 0u;
+    host_adc_vbat_counts = 1300u;   /* 2.9 V, C3 still charging */
+    powered_off = 0;
+    if (setjmp(jb) == 0) {
+        app_init();
+        CHECK(app_state() == ST_IDLE, "early low reading is not trusted");
+        host_adc_vbat_counts = 1751u;   /* settled: 3.88 V */
+        run_ms(APP_BATT_SETTLE_MS + 3000u);
+        CHECK(app_state() == ST_IDLE && dbg_battery_mv > 3800u,
+              "settled reading keeps it on");
+    } else {
+        powered_off = 1;
+    }
+    CHECK(powered_off == 0, "fresh battery: stays on");
+
+    /* Early and still flat once settled: off, without three 10 s samples. */
+    host_ms = 0u;
+    host_adc_vbat_counts = 1444u;
+    powered_off = 0;
+    if (setjmp(jb) == 0) {
+        app_init();
+        run_ms(APP_BATT_SETTLE_MS + 3000u);
+    } else {
+        powered_off = 1;
+    }
+    CHECK(powered_off == 1 && host_ms < APP_BATT_SETTLE_MS + 3000u,
+          "flat once settled: off at %u ms", (unsigned)host_ms);
+
+    /* On USB power a flat cell is charging: stay on. */
+    host_ms = 0u;
+    host_vbus = true;
+    powered_off = 0;
+    if (setjmp(jb) == 0) {
+        app_init();
+        run_ms(APP_BATT_SETTLE_MS + 1000u);
+    } else {
+        powered_off = 1;
+    }
+    CHECK(powered_off == 0, "charging: stays on");
+
+    host_vbus = false;
+    host_adc_vbat_counts = 1751u;
+    host_deep_sleep_jmp = NULL;
 }
 
 /* ===================================================================== */
@@ -366,7 +534,6 @@ int main(void)
 {
     printf("Level 2 logic tests (no HAL linked)\n\n");
 
-    test_em4100();
     test_time();
     test_crc();
     test_csv();
@@ -378,11 +545,15 @@ int main(void)
     test_usb_settings();
     test_usb_robustness();
     test_sessions();
+    test_dedup();
+    test_battery();
+    test_iso14443a();
+    test_card_reader();
+    test_button();
     test_fsm();
     test_fsm_sessions();
     test_cards();
-    test_dedup();
-    test_battery();
+    test_battery_boot();
 
     printf("\n%d checks, %d failures\n", g_run, g_fail);
     return (g_fail == 0) ? 0 : 1;

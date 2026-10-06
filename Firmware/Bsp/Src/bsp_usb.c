@@ -13,8 +13,6 @@
 #include "usb_storage.h"
 #include "app_events.h"
 
-extern PCD_HandleTypeDef hbsp_pcd;
-
 static USBD_HandleTypeDef s_usbd;
 static bool s_started;
 
@@ -144,6 +142,11 @@ void plat_usb_stop(void)
 
     bsp_clock_set_usb_speed(false);
     s_started = false;
+}
+
+bool plat_usb_configured(void)
+{
+    return s_started && (s_usbd.dev_state == USBD_STATE_CONFIGURED);
 }
 
 /* ------------------------------------------------------------------------ */

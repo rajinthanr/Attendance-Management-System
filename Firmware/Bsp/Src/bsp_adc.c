@@ -10,6 +10,7 @@
  * asleep almost all the time.
  */
 #include "bsp.h"
+#include "app_debug.h"
 
 ADC_HandleTypeDef hbsp_adc;
 
@@ -55,8 +56,8 @@ static bool adc_read_channel(uint32_t channel, uint16_t *out)
 
     c.Channel = channel;
     c.Rank = ADC_REGULAR_RANK_1;
-    /* 640.5 cycles: the battery divider is 2.35 MOhm of source impedance and
-     * VREFINT needs a long window of its own. */
+    /* 640.5 cycles (640 us at the 1 MHz ADC clock): the battery node is
+     * 1.7 MOhm behind C3, and VREFINT needs a long window of its own. */
     c.SamplingTime = ADC_SAMPLETIME_640CYCLES_5;
     c.SingleDiff = ADC_SINGLE_ENDED;
     c.OffsetNumber = ADC_OFFSET_NONE;
@@ -86,13 +87,22 @@ bool plat_adc_sample(app_adc_sample_t *out)
         return false;
     }
 
+    out->vbat_counts = 0u;
+    out->vrefint_counts = 0u;
+
     if (!adc_start()) {
+        dbg_adc_error = 1u;
         __HAL_RCC_ADC_CLK_DISABLE();
         return false;
     }
 
-    ok = adc_read_channel(BSP_BATT_ADC_CHANNEL, &out->vbat_counts) &&
-         adc_read_channel(ADC_CHANNEL_VREFINT, &out->vrefint_counts);
+    ok = adc_read_channel(BSP_BATT_ADC_CHANNEL, &out->vbat_counts);
+    if (!ok) {
+        dbg_adc_error = 2u;
+    } else {
+        ok = adc_read_channel(ADC_CHANNEL_VREFINT, &out->vrefint_counts);
+        dbg_adc_error = ok ? 0u : 3u;
+    }
 
     /* Measured at 3.0 V during production test and burned into system memory;
      * battery.c uses it to back out the actual supply. */

@@ -4,8 +4,7 @@
  *          show green (known) or red (unknown). The CSV never carries a name;
  *          every tap is recorded whichever colour it gets.
  */
-#include "test_util.h"
-#include "test_hostfs.h"
+#include "test_fsm_util.h"
 
 #include "app_fsm.h"
 #include "app_events.h"
@@ -16,9 +15,6 @@
 #include "usb_storage.h"
 #include "platform_if.h"
 #include "crc.h"
-
-#define OK_FB    (PLAT_OUT_LED_GREEN | PLAT_OUT_VIBRATION)
-#define UNK_FB   (PLAT_OUT_LED_RED | PLAT_OUT_VIBRATION)
 
 /* ---- helpers ------------------------------------------------------------ */
 
@@ -479,37 +475,6 @@ static void test_cards_usb(void)
 /* The tap                                                                */
 /* ===================================================================== */
 
-static app_datetime_t at(uint32_t s)
-{
-    app_datetime_t dt = { 2026u, 9u, 10u, 13u, 0u, 0u };
-
-    dt.hour = (uint8_t)(13u + (s / 3600u));
-    dt.minute = (uint8_t)((s % 3600u) / 60u);
-    dt.second = (uint8_t)(s % 60u);
-    return dt;
-}
-
-static void pump(void)
-{
-    int i;
-
-    for (i = 0; i < 40 && app_state() == ST_FEEDBACK; i++) { app_dispatch(APP_EVT_TIMER); }
-}
-
-static uint32_t tap(uint32_t id, uint32_t t)
-{
-    app_datetime_t dt = at(t);
-    uint32_t fb;
-
-    host_set_time(&dt);
-    app_dispatch(APP_EVT_TOUCH);
-    present_card(id);
-    app_dispatch(APP_EVT_CAPTURE_FULL);
-    fb = host_out_mask;
-    pump();
-    return fb;
-}
-
 static void test_cards_tap(void)
 {
     static hostfs_t h;
@@ -517,45 +482,33 @@ static void test_cards_tap(void)
     static char text[1024];
     static const uint32_t cards[] = { 1000u, 1007u, 2000u };
     uint32_t n, i, fb;
-    int32_t rn;
 
     printf("cards: the tap\n");
 
-    host_flash_erase_all();
-    app_init();
-    CHECK(tap(555u, 10u) == OK_FB, "no list yet: every card shows green");
+    boot_fresh();
+    CHECK(tap(555u, 10u) == APP_SCAN_ACCEPTED && (g_fb & FB_RED_BIT) == 0u, "no list yet: every card shows green");
 
     /* The host registers three cards and starts a lecture. */
-    app_dispatch(APP_EVT_USB_ATTACH);
+    plug();
     hf_mount(&h);
     n = (uint32_t)snprintf(text, sizeof(text), "#MODULE,EN2090\r\n#LECTURE,Lecture 1\r\n");
     n += make_text(&text[n], sizeof(text) - n, cards, 3u, 3u);
     CHECK(hf_create(&h, HF_SETTINGS, text, n), "the app sends the list");
-    host_deep_sleeps = 0u;
-    host_deep_sleep_armed = true;
-    fb = 0u;
-    if (setjmp(host_deep_sleep_jmp) == 0) {
-        app_dispatch(APP_EVT_USB_DETACH);
-        fb = host_out_mask;
-        pump();
-        CHECK(0, "should reach Standby");
-    }
-    host_deep_sleep_armed = false;
-    CHECK((fb & PLAT_OUT_LED_GREEN) != 0u && (fb & PLAT_OUT_LED_RED) == 0u, "applied: green");
+    fb = unplug();
+    CHECK((fb & FB_GREEN_BIT) != 0u && (fb & FB_RED_BIT) == 0u, "applied: green");
 
-    app_init();
-    CHECK(tap(1000u, 100u) == OK_FB, "a registered card: green and a buzz");
-    CHECK(tap(2000u, 110u) == OK_FB, "another one");
-    CHECK(tap(999u, 120u) == UNK_FB, "a stranger: red and a long buzz");
-    CHECK(tap(1000u, 130u) == PLAT_OUT_VIBRATION, "a registered card again is still a duplicate");
-    CHECK(tap(999u, 140u) == PLAT_OUT_VIBRATION, "so is a stranger again: recorded once per lecture");
-    CHECK(tap(3000u, 150u) == UNK_FB, "a second stranger");
+    CHECK(tap(1000u, 100u) == APP_SCAN_ACCEPTED && (g_fb & FB_GREEN_BIT) != 0u && (g_fb & FB_RED_BIT) == 0u,
+          "a registered card: green and a buzz");
+    CHECK(tap(2000u, 110u) == APP_SCAN_ACCEPTED, "another one");
+    CHECK(tap(999u, 120u) == APP_SCAN_UNKNOWN && (g_fb & FB_RED_BIT) != 0u && (g_fb & FB_GREEN_BIT) == 0u,
+          "a stranger: red and a long buzz");
+    CHECK(tap(1000u, 130u) == APP_SCAN_DUPLICATE, "a registered card again is still a duplicate");
+    CHECK(tap(999u, 140u) == APP_SCAN_DUPLICATE, "so is a stranger again: recorded once per lecture");
+    CHECK(tap(3000u, 150u) == APP_SCAN_UNKNOWN, "a second stranger");
 
     /* Everything was recorded: the CSV is time and number, nothing else. */
-    app_dispatch(APP_EVT_USB_ATTACH);
-    hf_mount(&h);
-    rn = hf_read(&h, HF_ATTEND, (uint8_t *)csv, sizeof(csv) - 1u);
-    csv[rn < 0 ? 0 : rn] = '\0';
+    plug();
+    read_attend(&h, csv, sizeof(csv));
     CHECK(strncmp(csv, "DATE,TIME,CARD_ID ", 18u) == 0, "header");
     CHECK(strstr(csv, "2026-09-10,13:01:40,0000001000\r\n") != NULL, "known card logged");
     CHECK(strstr(csv, "2026-09-10,13:02:00,0000000999\r\n") != NULL, "unknown card logged too");
@@ -568,25 +521,17 @@ static void test_cards_tap(void)
         CHECK(rows == 1u + 5u, "five rows and a header (%u lines)", rows);
     }
     CHECK(usbs_file_size() == 6u * CSV_ROW_BYTES, "file size");
+    (void)unplug();
 
-    /* The list survives Standby and is checked again: damage turns it off. */
-    host_deep_sleeps = 0u;
-    host_deep_sleep_armed = true;
-    if (setjmp(host_deep_sleep_jmp) == 0) {
-        app_dispatch(APP_EVT_USB_DETACH);
-        pump();
-        CHECK(0, "should reach Standby");
-    }
-    host_deep_sleep_armed = false;
-    app_init();
-    CHECK(tap(5000u, 200u) == UNK_FB, "after a reboot the list is still in force");
-    CHECK(tap(1007u, 210u) == OK_FB, "and still knows its cards");
+    /* The list survives power-off and is checked again: damage turns it off. */
+    power_cycle();
+    CHECK(tap(5000u, 200u) == APP_SCAN_UNKNOWN, "after a power cycle the list is still in force");
+    CHECK(tap(1007u, 210u) == APP_SCAN_ACCEPTED, "and still knows its cards");
 
     host_flash[NV_CARDS_OFFSET] ^= 0x10u;
-    app_init();
-    CHECK(tap(5001u, 300u) == OK_FB && tap(1007u, 310u) == OK_FB,
+    reboot();
+    CHECK(tap(5001u, 300u) == APP_SCAN_ACCEPTED && (g_fb & FB_RED_BIT) == 0u,
           "a list that fails its CRC is ignored: every card shows green");
-
 }
 
 void test_cards(void)

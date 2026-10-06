@@ -1,559 +1,779 @@
 /**
  * @file    app_fsm.c
- * @brief   Level 2 (logic) — application state machine.
+ * @brief   Level 2 (logic) — application state machine, polling mode.
  *
  * Structure
  * ---------
- * app_task() is one turn of a pump: take an event, act on it, and when the
- * queue empties go to sleep. main() calls it in a loop. Nothing here polls and
- * nothing here blocks, which is what makes the duty cycle so low: outside of a
- * 100 ms read the part is in Stop 2, and even the vibration patterns are
- * stepped from a low-power timer.
+ * app_task() is one pass of a super-loop, run about once a millisecond:
  *
- * The one deliberate exception is the read phase, which uses Sleep instead of
- * Stop 2 because the capture timer has to keep running.
+ *   sample button and VBUS     debounced here, posted as events
+ *   step the feedback pattern  LEDs and motor, timed against the uptime
+ *   run the current state      poll the reader, sample the battery, flush
+ *   handle queued events       button, USB, inactivity, low battery
+ *   drive the idle indicator   only while no pattern is playing
+ *   publish dbg_* globals      for Live Expressions
+ *   sleep until next SysTick
+ *
+ * Nothing blocks. The reader's 5 ms field guard is a timestamp, not a delay,
+ * so the button and USB stay responsive while a poll is in progress.
+ *
+ * Moving to interrupts later means posting the same events from ISRs and
+ * replacing the reader poll with the ST25R3916 wake-up interrupt; the
+ * handlers below stay as they are.
  */
-#include "app_fsm.h"
+#include <string.h>
+
 #include "app_config.h"
-#include "platform_if.h"
-#include "em4100.h"
-#include "device_cfg.h"
-#include "record_buffer.h"
-#include "log_store.h"
-#include "dedup.h"
-#include "feedback.h"
+#include "app_debug.h"
+#include "app_fsm.h"
 #include "battery.h"
+#include "button.h"
+#include "card_reader.h"
+#include "dedup.h"
+#include "device_cfg.h"
+#include "feedback.h"
+#include "log_store.h"
+#include "platform_if.h"
+#include "record_buffer.h"
+#include "session.h"
 #include "timeutil.h"
 #include "usb_storage.h"
+
+/** Forces the next indicator write after a pattern has driven the outputs. */
+#define OUTPUTS_UNKNOWN 0xFFFFFFFFu
 
 /* ------------------------------------------------------------------------ */
 /* Context                                                                  */
 /* ------------------------------------------------------------------------ */
 
 static struct {
-    app_state_t state;
+  app_state_t state;
 
-    record_buffer_t rb;
-    log_store_t     log;
-    device_cfg_t    cfg;
-    dedup_t         dedup;
-    feedback_t      fb;
-    app_stats_t     stats;
+  record_buffer_t rb;
+  log_store_t log;
+  device_cfg_t cfg; /**< Device ID and the registered card list. */
+  dedup_t dedup;
+  feedback_t fb;
+  button_t btn;
+  card_reader_t reader;
+  app_stats_t stats;
 
-    /* Capture working set. Static rather than on the stack: together these
-     * are about 3.5 kB, which is more than the interrupt stack should carry. */
-    uint32_t    edges[EM4100_MAX_EDGES];
-    em4100_ws_t ws;
+  uint32_t now;         /**< plat_uptime_ms(), sampled once per pass. */
+  uint32_t fb_deadline; /**< When the current pattern step ends. */
+  uint32_t outputs;     /**< Last indicator mask written. */
+  uint32_t last_activity;
+  uint32_t last_record;
+  uint32_t next_battery;
+  uint32_t next_nfc_retry;
+  uint32_t next_clock;
+  uint32_t shutdown_since;
+  uint32_t vbus_changed;
+  uint32_t usb_since;
 
-    uint16_t consecutive_false_wakes;
-    bool     shutdown_after_feedback;
-    bool     battery_low;
+  batt_state_t batt;
+  uint8_t batt_critical;
+  bool nfc_ready;
+  bool nfc_3v3;
+  bool vbus_raw;
+  bool vbus;         /**< Debounced. */
+  bool usb_host;     /**< A host enumerated this session. */
+  bool charger_only; /**< VBUS without a host; keep scanning. */
 } g;
 
 /* ------------------------------------------------------------------------ */
 /* Small helpers                                                            */
 /* ------------------------------------------------------------------------ */
 
-static bool queue_still_empty(void);
+/** True once @p deadline has been reached. Wrap safe. */
+static bool due(uint32_t deadline) { return (int32_t)(g.now - deadline) >= 0; }
 
-static app_epoch_t now_epoch(void)
-{
-    app_datetime_t dt;
-
-    plat_rtc_get(&dt);
-    return time_to_epoch(&dt);
+/** True once @p ms have passed since @p start. Wrap safe. */
+static bool elapsed(uint32_t start, uint32_t ms) {
+  return (uint32_t)(g.now - start) >= ms;
 }
 
-/**
- * Return to the idle state, re-arming the card detector.
- *
- * Touch is re-armed here and nowhere else on the scan path, because here is
- * the only point at which both the carrier and the vibration motor are
- * guaranteed to be off. Arming it any earlier would let the motor's own
- * noise couple into the pad and trigger an immediate false wake.
- */
-static void go_idle(void)
-{
-    plat_touch_irq_enable(true);
-    g.state = ST_IDLE;
+static app_epoch_t now_epoch(void) {
+  app_datetime_t dt;
+
+  plat_rtc_get(&dt);
+  return time_to_epoch(&dt);
 }
 
-/** Start a feedback pattern and arm the timer that steps it. */
-static void begin_feedback(fb_pattern_t pattern)
-{
-    uint16_t ms = fb_start(&g.fb, pattern);
+static void touch_activity(void) { g.last_activity = g.now; }
 
-    if (ms == 0u) {
-        go_idle();
-        return;
+static bool queue_still_empty(void) { return !app_event_pending(); }
+
+/* ------------------------------------------------------------------------ */
+/* Feedback and indicator                                                   */
+/* ------------------------------------------------------------------------ */
+
+static void begin_feedback(fb_pattern_t pattern) {
+  uint16_t ms = fb_start(&g.fb, pattern);
+
+  g.fb_deadline = g.now + ms;
+  g.outputs = OUTPUTS_UNKNOWN;
+}
+
+static void step_feedback(void) {
+  if (fb_is_active(&g.fb) && due(g.fb_deadline)) {
+    uint16_t ms = fb_advance(&g.fb);
+    g.fb_deadline = g.now + ms;
+  }
+}
+
+/** What the LEDs show when no pattern is playing. */
+static uint32_t indicator_mask(void) {
+  switch (g.state) {
+  case ST_USB:
+    return ((g.now % APP_IND_USB_PERIOD_MS) < APP_IND_USB_ON_MS)
+               ? PLAT_OUT_LED_GREEN
+               : 0u;
+
+  case ST_IDLE:
+    if ((g.now % APP_IND_IDLE_PERIOD_MS) < APP_IND_IDLE_ON_MS) {
+      /* Red heartbeat: low cell, or a reader that will not start. */
+      return (g.batt != BATT_OK || !g.nfc_ready) ? PLAT_OUT_LED_RED
+                                                 : PLAT_OUT_LED_GREEN;
     }
-    g.state = ST_FEEDBACK;
-    plat_timer_start(ms);
+    return 0u;
+
+  case ST_SHUTDOWN:
+  default:
+    return 0u;
+  }
 }
+
+static void drive_indicator(void) {
+  if (fb_is_active(&g.fb)) {
+    return;
+  }
+
+  uint32_t mask = indicator_mask();
+  if (mask != g.outputs) {
+    plat_out_write(mask);
+    g.outputs = mask;
+  }
+}
+
+/* ------------------------------------------------------------------------ */
+/* Storage                                                                  */
+/* ------------------------------------------------------------------------ */
 
 /** Push the RAM buffer into flash, counting a failure if anything is left. */
-static void flush_to_flash(void)
-{
-    uint16_t pending = rb_count(&g.rb);
+static void flush_to_flash(void) {
+  uint16_t pending = rb_count(&g.rb);
 
-    if (pending == 0u) {
-        return;
-    }
-    if (log_flush(&g.log, &g.rb) < pending) {
-        g.stats.flush_failures++;
-    }
-}
-
-/**
- * Everything the flow chart's "3-min inactivity" and low-battery branches have
- * in common before Standby: get the data safe, then hand off to Level 1 which
- * powers the peripherals down and arms the wake pin.
- */
-static void shutdown(void) __attribute__((noreturn));
-static void shutdown(void)
-{
-    g.state = ST_SHUTDOWN;
-
-    plat_inactivity_stop();
-    plat_timer_stop();
-    plat_touch_irq_enable(false);
-
-    flush_to_flash();
-    log_seal(&g.log);
-
-    plat_rf_carrier(false);
-    plat_rf_power(false);
-    plat_touch_power(false);
-    plat_out_write(0u);
-
-    plat_sleep_deep();
+  if (pending == 0u) {
+    return;
+  }
+  if (log_flush(&g.log, &g.rb) < pending) {
+    g.stats.flush_failures++;
+  }
 }
 
 /* ------------------------------------------------------------------------ */
-/* Card read                                                                */
+/* Reader and battery                                                       */
+/* ------------------------------------------------------------------------ */
+
+/** Reader supply mode for @p mv, with hysteresis around the 3.6 V limit. */
+static bool nfc_supply_3v3_for(uint32_t mv, bool current) {
+  if (mv == 0u) {
+    return current;
+  }
+  if (mv < APP_NFC_SUPPLY_3V3_BELOW_MV) {
+    return true;
+  }
+  if (mv > APP_NFC_SUPPLY_5V_ABOVE_MV) {
+    return false;
+  }
+  return current;
+}
+
+static void start_reader(void) {
+  uint8_t chip_id = 0u;
+
+  g.nfc_ready = plat_nfc_init(g.nfc_3v3, &chip_id);
+  dbg_nfc_chip_id = chip_id;
+  dbg_nfc_ready = g.nfc_ready;
+
+  if (g.nfc_ready) {
+    uint8_t amplitude = 0u;
+    if (plat_nfc_measure_amplitude(&amplitude)) {
+      dbg_nfc_amplitude = amplitude;
+    }
+  } else {
+    g.stats.nfc_init_failures++;
+    g.next_nfc_retry = g.now + APP_NFC_RETRY_MS;
+  }
+}
+
+/** Flow chart: "Battery OK?", repeated every APP_BATT_SAMPLE_MS. */
+static void sample_battery(void) {
+  app_adc_sample_t sample;
+
+  batt_reading_t reading;
+
+  g.next_battery = g.now + APP_BATT_SAMPLE_MS;
+  dbg_battery_samples++;
+
+  if (!plat_adc_sample(&sample)) {
+    dbg_battery_error = 1u; /* see dbg_adc_error for the step that failed */
+    return;
+  }
+
+  /* The raw material is published on every attempt, accepted or not. */
+  batt_evaluate(&sample, &reading);
+  dbg_battery_counts = sample.vbat_counts;
+  dbg_vrefint_counts = sample.vrefint_counts;
+  dbg_vrefint_cal = sample.vrefint_cal;
+  dbg_vdda_mv = reading.vdda_mv;
+  dbg_battery_raw_mv = reading.vbat_mv;
+  dbg_battery_error = (reading.status == BATT_SAMPLE_OK)
+                          ? 0u
+                          : (uint8_t)(1u + (uint8_t)reading.status);
+
+  if (reading.status != BATT_SAMPLE_OK) {
+    return; /* an unusable sample is not evidence of a flat battery */
+  }
+  uint32_t mv = reading.vbat_mv;
+
+  g.batt = batt_classify(mv);
+  dbg_battery_mv = mv;
+  dbg_battery_state = (uint8_t)g.batt;
+
+  bool want_3v3 = nfc_supply_3v3_for(mv, g.nfc_3v3);
+  if (want_3v3 != g.nfc_3v3) {
+    g.nfc_3v3 = want_3v3;
+    if (g.nfc_ready && !plat_nfc_set_supply(want_3v3)) {
+      g.nfc_ready = false; /* retried by run_idle() */
+      g.next_nfc_retry = g.now;
+    }
+  }
+  dbg_nfc_supply_3v3 = g.nfc_3v3;
+
+#if APP_ENABLE_BATTERY_PROTECTION
+  /* A cell on charge is not about to brown out. */
+  if (g.batt == BATT_CRITICAL && !g.vbus) {
+    g.batt_critical++;
+    if (g.batt_critical >= APP_BATT_CRITICAL_SAMPLES) {
+      g.batt_critical = 0u;
+      app_event_post(APP_EVT_LOW_BATTERY);
+    }
+  } else {
+    g.batt_critical = 0u;
+  }
+#endif
+}
+
+/* ------------------------------------------------------------------------ */
+/* Card handling                                                            */
 /* ------------------------------------------------------------------------ */
 
 /**
- * Flow chart: "Wake MCU, restore clocks / Restart 3-min timer / Power RF
- * reader / Capture card".
- *
- * Touch is disarmed first: the pad sits next to the antenna and the 125 kHz
- * field would otherwise retrigger it continuously for the whole read.
+ * Flow chart: "ID in student list?" The list holds card numbers only; who a
+ * card belongs to is the PC's business. A card that is not on it is still
+ * recorded (the PC learns of new cards that way) but gets the red pattern.
  */
-static void start_read(void)
-{
-    plat_inactivity_restart(APP_INACTIVITY_MS);
-    plat_touch_irq_enable(false);
-
-    plat_rf_power(true);
-    plat_rf_carrier(true);
-    plat_rf_capture_start(g.edges, EM4100_MAX_EDGES);
-
-    g.state = ST_READING;
-    plat_timer_start(APP_CARD_READ_TIMEOUT_MS);
+static bool student_allowed(uint32_t id) {
+  if (g.cfg.card_count == 0u) {
+    return APP_ACCEPT_ALL_WHEN_NO_LIST != 0u;
+  }
+  return cards_is_known(&g.cfg, id);
 }
 
-/** Tear the RF front end down. Ordered so the carrier stops before the rail. */
-static void stop_read(void)
-{
-    plat_timer_stop();
-    plat_rf_carrier(false);
-    plat_rf_power(false);
+/** "Load config from flash": the device ID and the registered cards. */
+static void load_config(void) {
+  devcfg_load(&g.cfg);
+
+  /* A list that fails its CRC is no list: better that every card shows green
+   * than that every card shows red because a page was damaged. */
+  if (g.cfg.card_count > 0u && !cards_verify(&g.cfg)) {
+    g.cfg.card_count = 0u;
+  }
 }
 
-/** Flow chart: "No card (false wake) / Carrier off, count false wakes". */
-static void handle_no_card(void)
-{
-    g.stats.false_wakes++;
-    g.consecutive_false_wakes++;
+static void publish_card(const iso14443a_card_t *card, uint32_t id) {
+  uint8_t i;
 
-    /* A pad that keeps firing with nothing near it has drifted. Ask the touch
-     * IC to re-run its self-calibration rather than let it burn battery
-     * waking the MCU a few hundred times an hour. */
-    if (g.consecutive_false_wakes >= APP_FALSE_WAKE_RECAL_LIMIT) {
-        g.consecutive_false_wakes = 0u;
-        plat_touch_recalibrate();
-    }
-
-    go_idle();
+  for (i = 0u; i < sizeof(dbg_card_uid); i++) {
+    dbg_card_uid[i] = (i < card->uid_len) ? card->uid[i] : 0u;
+  }
+  dbg_card_uid_len = card->uid_len;
+  dbg_card_atqa[0] = card->atqa[0];
+  dbg_card_atqa[1] = card->atqa[1];
+  dbg_card_sak = card->sak;
+  dbg_card_id = id;
+  dbg_card_count++;
 }
 
-/**
- * Flow chart: the decision chain from "Valid ID?" down to "RAM buffer >= 80 %".
- */
-static void handle_tag(const app_tag_t *tag)
-{
-    app_epoch_t now = now_epoch();
+/** Flow chart: the decision chain from "Valid ID?" to "RAM buffer >= 80 %". */
+static void handle_card(const iso14443a_card_t *card) {
+  uint32_t id = card_id_from_uid(card->uid, card->uid_len);
+  app_epoch_t stamp = now_epoch();
+  app_scan_result_t result;
 
-    g.consecutive_false_wakes = 0u;
+  touch_activity();
+  publish_card(card, id);
 
+  if (dedup_check_and_mark(&g.dedup, id, stamp)) {
     /* "Same ID read within last 10 s?" */
-    if (dedup_check_and_mark(&g.dedup, tag->unique_id, now)) {
-        g.stats.scans_duplicate++;
-        begin_feedback(FB_DUPLICATE);
-        return;
-    }
-
-    /* Already signed in to this lecture? The 10 s window above only covers a
+    g.stats.scans_duplicate++;
+    result = APP_SCAN_DUPLICATE;
+    begin_feedback(FB_DUPLICATE);
+  } else if (sess_card_seen(&g.log, &g.rb, id, stamp, APP_SESSION_MAX_AGE_S,
+                            APP_SESSION_SCAN_MAX)) {
+    /* Already signed in to this lecture. The 10 s window above only covers a
      * card held on the reader; this covers a student coming back later, even
-     * after the unit has slept in between, because it reads the flash log. */
-    if (sess_card_seen(&g.log, &g.rb, tag->unique_id, now,
-                       APP_SESSION_MAX_AGE_S, APP_SESSION_SCAN_MAX)) {
-        g.stats.scans_duplicate++;
-        begin_feedback(FB_DUPLICATE);
-        return;
-    }
-
-    /* "Create record / Store data in RAM buffer". Every card is recorded,
-     * known or not: the PC finds out who it belongs to from the number, and an
-     * unknown card is how it learns there is someone new to register. */
+     * after the unit has been off, because it reads the flash log. */
+    g.stats.scans_duplicate++;
+    result = APP_SCAN_DUPLICATE;
+    begin_feedback(FB_DUPLICATE);
+  } else if (log_remaining(&g.log) <= rb_count(&g.rb)) {
+    /* Nowhere left to put it. Say so on every scan, rather than accept a
+     * record that can never be exported. */
+    g.stats.scans_rejected_full++;
+    result = APP_SCAN_STORAGE_FULL;
+    begin_feedback(FB_ERROR);
+  } else {
     app_record_t rec;
-    rec.student_id = tag->unique_id;
-    rec.stamp = now;
+    rec.student_id = id;
+    rec.stamp = stamp;
 
     if (rb_push(&g.rb, &rec)) {
+      g.last_record = g.now;
+      if (student_allowed(id)) {
         g.stats.scans_accepted++;
+        result = APP_SCAN_ACCEPTED;
+        begin_feedback(FB_ACCEPTED);
+      } else {
+        /* Recorded all the same, so the PC can offer to register the card. */
+        g.stats.scans_unknown++;
+        result = APP_SCAN_UNKNOWN;
+        begin_feedback(FB_UNKNOWN);
+      }
     } else {
-        g.stats.records_dropped++;
+      g.stats.records_dropped++;
+      result = APP_SCAN_STORAGE_FULL;
+      begin_feedback(FB_ERROR);
     }
 
-    /* Feedback first, flush second. The user gets their confirmation inside a
-     * few milliseconds instead of waiting out a page erase, and the erase then
-     * overlaps the tail of the vibration pattern. */
-    begin_feedback(g.battery_low ? FB_LOW_BATTERY :
-                   (cards_is_known(&g.cfg, tag->unique_id) ? FB_ACCEPTED : FB_UNKNOWN));
-
-    /* "RAM buffer >= 80 % full?" */
+    /* Feedback first, flush second: the user's confirmation starts before
+     * any flash programming does. */
     if (rb_needs_flush(&g.rb)) {
-        flush_to_flash();
+      flush_to_flash();
     }
+  }
+
+  dbg_scan_result = (uint8_t)result;
 }
 
-/** Capture finished, either full or timed out. Decode and act. */
-static void finish_read(void)
-{
-    uint16_t n = plat_rf_capture_stop();
+/* ------------------------------------------------------------------------ */
+/* Power off                                                                */
+/* ------------------------------------------------------------------------ */
 
-    stop_read();
+/**
+ * Everything the "3-min inactivity", low-battery and button branches have in
+ * common: stop the reader, get the data safe, then play @p pattern. Standby
+ * follows once it has finished and the button is up (run_shutdown()).
+ */
+static void begin_shutdown(fb_pattern_t pattern) {
+  cr_enable(&g.reader, false, g.now);
+  if (g.state == ST_USB) {
+    plat_usb_stop();
+  }
+  flush_to_flash();
 
-    app_tag_t tag;
-    em4100_status_t st = em4100_decode(g.edges, n, plat_rf_capture_hz(),
-                                       &g.ws, &tag);
+  g.state = ST_SHUTDOWN;
+  g.shutdown_since = g.now;
+  begin_feedback(pattern);
+}
 
-    if (st == EM4100_OK) {
-        handle_tag(&tag);
-    } else {
-        handle_no_card();
-    }
+static void power_off(void) __attribute__((noreturn));
+static void power_off(void) {
+  flush_to_flash();
+  plat_out_write(0u);
+  plat_nfc_power_down();
+  plat_sleep_deep();
+}
+
+static void run_shutdown(void) {
+  if (fb_is_active(&g.fb)) {
+    return;
+  }
+  /* Standby wakes on the button. Entering it with the button still held
+   * would make the release of this very press look like a new one. */
+  if (btn_is_down(&g.btn) &&
+      !elapsed(g.shutdown_since, APP_BTN_RELEASE_TIMEOUT_MS)) {
+    return;
+  }
+  power_off();
 }
 
 /* ------------------------------------------------------------------------ */
 /* USB                                                                      */
 /* ------------------------------------------------------------------------ */
 
+/** Flow chart: "Wake MCU, enable USB clock / Pause timer / Flush / Enumerate".
+ */
+static void usb_attach(void) {
+  app_datetime_t dt;
+
+  if (g.state != ST_IDLE || g.charger_only) {
+    return;
+  }
+
+  cr_enable(&g.reader, false, g.now);
+  fb_cancel(&g.fb);
+  g.outputs = OUTPUTS_UNKNOWN;
+
+  /* The exported file is a snapshot of flash, so RAM has to be there first. */
+  flush_to_flash();
+
+  plat_rtc_get(&dt);
+  usbs_begin(&g.log, &g.cfg, &dt);
+  plat_usb_start();
+
+  g.state = ST_USB;
+  g.usb_since = g.now;
+  g.usb_host = false;
+}
+
 /**
  * Write a lecture marker into the log: everything tapped from here on belongs
  * to @p module / @p lecture. Flushes first so the marker's few records always
  * fit in the RAM buffer, and last so the lecture is in flash straight away.
  */
-static void start_session(const char *module, const char *lecture)
-{
-    app_record_t recs[SESS_MAX_RECORDS];
-    uint16_t n, i;
+static void start_session(const char *module, const char *lecture) {
+  app_record_t recs[SESS_MAX_RECORDS];
+  uint16_t n, i;
 
-    flush_to_flash();
-    n = sess_encode(recs, SESS_MAX_RECORDS, now_epoch(), module, lecture);
-    for (i = 0u; i < n; i++) {
-        (void)rb_push(&g.rb, &recs[i]);
+  flush_to_flash();
+  n = sess_encode(recs, SESS_MAX_RECORDS, now_epoch(), module, lecture);
+  for (i = 0u; i < n; i++) {
+    (void)rb_push(&g.rb, &recs[i]);
+  }
+  flush_to_flash();
+}
+
+/**
+ * Back to scanning, after a host session or on finding only a charger.
+ *
+ * The host may have edited SETTINGS.CSV. That is applied only now, with USB
+ * stopped, because storing a new device ID or card list erases flash pages and
+ * the core stalls while it does. Green says it was applied, red that it was
+ * refused (and nothing changed).
+ */
+static void usb_leave(void) {
+  usbs_result_t res;
+
+  plat_usb_stop();
+  usbs_end(&res);
+
+  g.state = ST_IDLE;
+  g.outputs = OUTPUTS_UNKNOWN;
+  touch_activity();
+
+  if (res.outcome == USBS_IMPORT_OK && res.device_set) {
+    /* Read it back before claiming success: this proves what the next boot
+     * will load. A mismatch shows red, the same as a refusal. */
+    load_config();
+    if (!g.cfg.valid || g.cfg.device_id != res.device_id ||
+        (res.cards_set && g.cfg.card_count != res.card_count)) {
+      res.outcome = USBS_IMPORT_FAILED;
     }
-    flush_to_flash();
+  }
+  if (res.outcome == USBS_IMPORT_OK && res.session_start) {
+    start_session(res.module, res.lecture);
+  }
+  if (res.outcome != USBS_IMPORT_NONE) {
+    begin_feedback((res.outcome == USBS_IMPORT_OK) ? FB_SAVED : FB_REJECTED);
+  }
 }
 
-/** "Load config from flash": the device ID and the registered cards. */
-static void load_config(void)
-{
-    devcfg_load(&g.cfg);
+static void run_usb(void) {
+  touch_activity();
 
-    /* A list that fails its CRC is no list: better that every card shows green
-     * than that every card shows red because a page was damaged. */
-    if (g.cfg.card_count > 0u && !cards_verify(&g.cfg)) {
-        g.cfg.card_count = 0u;
-    }
+  if (plat_usb_configured()) {
+    g.usb_host = true;
+  } else if (!g.usb_host && elapsed(g.usb_since, APP_USB_ENUM_TIMEOUT_MS)) {
+    /* Power without a host: a charger. Charge and keep scanning. */
+    g.charger_only = true;
+    usb_leave();
+    return;
+  }
+
+  if (due(g.next_battery)) {
+    sample_battery();
+  }
 }
 
-/** Flow chart: "Wake MCU, enable USB clock / Pause timer / Flush / Enumerate". */
-static void usb_attach(void)
-{
-    plat_inactivity_stop();
-    plat_touch_irq_enable(false);
-    fb_cancel(&g.fb);
-    plat_timer_stop();
+/* ------------------------------------------------------------------------ */
+/* Idle: scanning                                                           */
+/* ------------------------------------------------------------------------ */
 
-    /* The exported file is a snapshot, so everything in RAM has to be in
-     * flash before the size is latched. */
-    flush_to_flash();
-    log_seal(&g.log);
+static void run_idle(void) {
+  iso14443a_card_t card;
 
-    app_datetime_t dt;
-    plat_rtc_get(&dt);
-    usbs_begin(&g.log, &g.cfg, &dt);
+  if (!g.nfc_ready && due(g.next_nfc_retry)) {
+    start_reader();
+  }
 
-    plat_usb_start();
-    g.state = ST_USB;
-}
+  /* The reader pauses while a pattern plays: the motor is noisy, and a card
+   * held through the pattern is remembered, not reported twice. */
+  cr_enable(&g.reader, g.nfc_ready && !fb_is_active(&g.fb), g.now);
+  if (cr_task(&g.reader, g.now, &card)) {
+    handle_card(&card);
+  }
 
-/** Flow chart: "Power Down / De initialize USB / Switch off Clock". */
-static void usb_detach(void)
-{
-    usbs_result_t res;
-
-    plat_usb_stop();
-
-    /* The host may have edited SETTINGS.CSV. This runs only now, with USB
-     * stopped, because storing a new device ID erases a flash page and the
-     * core stalls while it does. */
-    usbs_end(&res);
-
-    if (res.outcome == USBS_IMPORT_OK && res.device_set) {
-        /* Read the ID back before claiming success. The write path checks it
-         * too, but this proves what the next boot will load. A mismatch shows
-         * red, the same as a refusal. */
-        load_config();
-        if (!g.cfg.valid || g.cfg.device_id != res.device_id ||
-            (res.cards_set && g.cfg.card_count != res.card_count)) {
-            res.outcome = USBS_IMPORT_FAILED;
+  /* Measurements and flash work only between polls, with the field off.
+   * The battery also waits out any pattern, so the motor's current is not
+   * pulling the cell down while it is measured. */
+  if (!cr_busy(&g.reader)) {
+    if (due(g.next_battery) && !fb_is_active(&g.fb)) {
+      sample_battery();
+      if (g.nfc_ready) {
+        uint8_t amplitude = 0u;
+        if (plat_nfc_measure_amplitude(&amplitude)) {
+          dbg_nfc_amplitude = amplitude;
         }
+      }
     }
-    if (res.outcome == USBS_IMPORT_OK && res.session_start) {
-        start_session(res.module, res.lecture);
+    if (rb_count(&g.rb) > 0u && elapsed(g.last_record, APP_FLUSH_IDLE_MS)) {
+      flush_to_flash();
     }
-    if (res.outcome != USBS_IMPORT_NONE) {
-        /* Tell the user how it went before powering down: green for applied,
-         * red for refused. A refusal changes nothing. */
-        g.shutdown_after_feedback = true;
-        begin_feedback((res.outcome == USBS_IMPORT_OK) ? FB_SAVED : FB_REJECTED);
-        return;
+  }
+
+  if (elapsed(g.last_activity, APP_INACTIVITY_MS)) {
+    app_event_post(APP_EVT_INACTIVITY);
+  }
+}
+
+/* ------------------------------------------------------------------------ */
+/* Inputs                                                                   */
+/* ------------------------------------------------------------------------ */
+
+static void poll_button(void) {
+  switch (btn_update(&g.btn, plat_button_pressed(), g.now)) {
+  case BTN_SHORT:
+    dbg_button_short_count++;
+    app_event_post(APP_EVT_BUTTON_SHORT);
+    break;
+  case BTN_LONG:
+    dbg_button_long_count++;
+    app_event_post(APP_EVT_BUTTON_LONG);
+    break;
+  case BTN_NONE:
+  default:
+    break;
+  }
+}
+
+static void poll_vbus(void) {
+  bool raw = plat_usb_vbus_present();
+
+  if (raw != g.vbus_raw) {
+    g.vbus_raw = raw;
+    g.vbus_changed = g.now;
+  } else if (raw != g.vbus && elapsed(g.vbus_changed, APP_VBUS_DEBOUNCE_MS)) {
+    g.vbus = raw;
+    app_event_post(raw ? APP_EVT_USB_ATTACH : APP_EVT_USB_DETACH);
+  }
+}
+
+/* ------------------------------------------------------------------------ */
+/* Debug                                                                    */
+/* ------------------------------------------------------------------------ */
+
+static void apply_debug_requests(void) {
+  if (dbg_set_time_request) {
+    app_datetime_t dt = dbg_set_time;
+
+    if (time_is_valid(&dt)) {
+      plat_rtc_set(&dt);
+      g.next_clock = g.now;
     }
-    shutdown();
+    dbg_set_time_request = false;
+  }
+}
+
+static void publish_status(void) {
+  dbg_state = (uint8_t)g.state;
+  dbg_uptime_ms = g.now;
+  dbg_vbus = g.vbus;
+  dbg_usb_host = g.usb_host;
+  dbg_button_down = btn_is_down(&g.btn);
+
+  dbg_records_ram = rb_count(&g.rb);
+  dbg_records_flash = log_total(&g.log);
+  dbg_records_free = log_remaining(&g.log);
+
+  dbg_nfc_ready = g.nfc_ready;
+  dbg_nfc_last_status = (uint8_t)g.reader.last_status;
+  dbg_nfc_polls = g.reader.polls;
+  dbg_nfc_errors = g.reader.errors;
+  dbg_nfc_collisions = g.reader.collisions;
+
+  if (due(g.next_clock)) {
+    app_datetime_t dt;
+
+    g.next_clock = g.now + 1000u;
+    plat_rtc_get(&dt);
+    dbg_now = dt;
+  }
 }
 
 /* ------------------------------------------------------------------------ */
 /* Start-up                                                                 */
 /* ------------------------------------------------------------------------ */
 
-/** Flow chart: "Battery OK?" — read once at boot to catch a flat cell early. */
-static bool battery_startup_ok(void)
-{
-    app_adc_sample_t sample;
+void app_init(void) {
+  app_datetime_t dt;
 
-    if (!plat_adc_sample(&sample)) {
-        return true;   /* unusable reading is not evidence of a flat battery */
+  memset(&g, 0, sizeof(g));
+  g.now = plat_uptime_ms();
+  g.state = ST_IDLE;
+  g.batt = BATT_OK;
+  g.outputs = OUTPUTS_UNKNOWN;
+  g.last_activity = g.now;
+  g.last_record = g.now;
+  g.next_clock = g.now;
+
+  app_event_init();
+  dbg_boot_cause = (uint8_t)plat_boot_cause();
+
+  rb_init(&g.rb);
+  dedup_init(&g.dedup);
+  fb_init(&g.fb);
+  cr_init(&g.reader);
+  btn_init(&g.btn, plat_button_pressed(), g.now);
+
+  /* "Load student list & config from flash" */
+  load_config();
+  dbg_students = g.cfg.card_count;
+
+  log_init(&g.log);
+
+  /* An RTC that has never been set starts from the build time, which on a
+   * freshly flashed unit is within minutes of the truth. */
+  if (!plat_rtc_is_valid() && time_from_build(__DATE__, __TIME__, &dt)) {
+    plat_rtc_set(&dt);
+  }
+
+  /* "Battery OK?" — also picks the reader's supply mode, starting from the
+   * 5 V mode, which is the safe side of the 3.6 V boundary. */
+  sample_battery();
+
+#if APP_ENABLE_BATTERY_PROTECTION
+  if (g.batt == BATT_CRITICAL && !plat_usb_vbus_present()) {
+    if (elapsed(0u, APP_BATT_SETTLE_MS)) {
+      /* "Low-battery warning (red LED blinks)", then straight back off. */
+      begin_shutdown(FB_LOW_BATTERY);
+      return;
     }
+    /* Too soon after a battery was connected: C3 may still be charging.
+     * One more critical reading once it has settled shuts the unit down. */
+    g.batt_critical = (uint8_t)(APP_BATT_CRITICAL_SAMPLES - 1u);
+    g.next_battery = APP_BATT_SETTLE_MS;
+  }
+#endif
 
-    switch (batt_classify(batt_millivolts(&sample))) {
-    case BATT_CRITICAL:
-        return false;
-    case BATT_WARN:
-        g.battery_low = true;
-        return true;
-    case BATT_OK:
-    default:
-        g.battery_low = false;
-        return true;
-    }
-}
-
-void app_init(void)
-{
-    app_event_init();
-
-    g.state = ST_IDLE;
-    g.consecutive_false_wakes = 0u;
-    g.shutdown_after_feedback = false;
-    g.battery_low = false;
-
-    rb_init(&g.rb);
-    dedup_init(&g.dedup);
-    fb_init(&g.fb);
-
-    uint8_t *p = (uint8_t *)&g.stats;
-    uint32_t i;
-    for (i = 0u; i < sizeof(g.stats); i++) {
-        p[i] = 0u;
-    }
-
-    /* "Load config from flash" */
-    load_config();
-
-    log_init(&g.log);
-
-    if (!battery_startup_ok()) {
-        /* "Low-battery warning (red LED blinks)" then straight to Standby.
-         * This runs before main()'s app_task() pump exists, so it pumps its own
-         * events: sleeping between steps keeps even the warning low power. */
-        uint16_t ms = fb_start(&g.fb, FB_LOW_BATTERY);
-
-        while (ms > 0u) {
-            plat_timer_start(ms);
-
-            for (;;) {
-                plat_sleep_light(queue_still_empty);
-                if (app_event_get() == APP_EVT_TIMER) {
-                    break;
-                }
-            }
-            ms = fb_advance(&g.fb);
-        }
-        shutdown();
-    }
-
-    plat_touch_power(true);
-    plat_touch_recalibrate();
-    plat_touch_irq_enable(true);
-
-    plat_inactivity_restart(APP_INACTIVITY_MS);
-
-    /* Plugged into a host at power-up: go straight to the USB branch. */
-    if (plat_usb_vbus_present()) {
-        usb_attach();
-    }
+  start_reader();
+  begin_feedback(g.nfc_ready ? FB_POWER_ON : FB_ERROR);
 }
 
 /* ------------------------------------------------------------------------ */
 /* Event dispatch                                                           */
 /* ------------------------------------------------------------------------ */
 
-void app_dispatch(app_event_t evt)
-{
-    switch (evt) {
-
-    case APP_EVT_TOUCH:
-        /* Ignored in every state but idle: mid-read the pad is disarmed
-         * anyway, and during a USB session the reader stays off. */
-        if (g.state == ST_IDLE) {
-            start_read();
-        } else if (g.state == ST_FEEDBACK) {
-            /* Card still present at the end of a pattern; restart the
-             * inactivity window but do not interrupt the feedback. */
-            plat_inactivity_restart(APP_INACTIVITY_MS);
-        }
-        break;
-
-    case APP_EVT_CAPTURE_FULL:
-        if (g.state == ST_READING) {
-            finish_read();
-        }
-        break;
-
-    case APP_EVT_TIMER:
-        if (g.state == ST_READING) {
-            finish_read();               /* the 100 ms timeout */
-        } else if (g.state == ST_FEEDBACK) {
-            uint16_t ms = fb_advance(&g.fb);
-            if (ms > 0u) {
-                plat_timer_start(ms);
-            } else if (g.shutdown_after_feedback) {
-                shutdown();
-            } else {
-                go_idle();
-            }
-        }
-        break;
-
-    case APP_EVT_INACTIVITY:
-        /* Never while the host is attached; the timer is stopped then, but a
-         * late interrupt could still be queued. */
-        if (g.state != ST_USB) {
-            shutdown();
-        }
-        break;
-
-    case APP_EVT_USB_ATTACH:
-        if (g.state != ST_USB) {
-            usb_attach();
-        }
-        break;
-
-    case APP_EVT_USB_DETACH:
-        if (g.state == ST_USB) {
-            usb_detach();
-        }
-        break;
-
-    case APP_EVT_USB_ACTIVITY:
-        /* Host is reading the volume. Nothing to do beyond staying awake,
-         * which we already are. */
-        break;
-
-    case APP_EVT_LOW_BATTERY:
-        /* Flow chart: flush immediately, warn, then Standby. The flush comes
-         * first because the PVD trips well above brown-out but there is no
-         * guarantee of how much longer the cell will hold up under a page
-         * erase. */
-        g.battery_low = true;
-        plat_touch_irq_enable(false);
-        flush_to_flash();
-        log_seal(&g.log);
-        g.shutdown_after_feedback = true;
-        begin_feedback(FB_LOW_BATTERY);
-        break;
-
-    case APP_EVT_BUTTON:
-        /* Power button pressed while running: an explicit shutdown request. */
-        shutdown();
-        break;
-
-    case APP_EVT_NONE:
-    default:
-        break;
+void app_dispatch(app_event_t evt) {
+  switch (evt) {
+  case APP_EVT_BUTTON_SHORT:
+    /* A tap shows the battery: two green blinks, or the red low pattern. */
+    if (g.state != ST_SHUTDOWN) {
+      touch_activity();
+      begin_feedback(g.batt == BATT_OK ? FB_STATUS_OK : FB_LOW_BATTERY);
     }
+    break;
+
+  case APP_EVT_BUTTON_LONG:
+    if (g.state != ST_SHUTDOWN) {
+      begin_shutdown(FB_POWER_OFF);
+    }
+    break;
+
+  case APP_EVT_INACTIVITY:
+    if (g.state == ST_IDLE) {
+      begin_shutdown(FB_POWER_OFF);
+    }
+    break;
+
+  case APP_EVT_USB_ATTACH:
+    usb_attach();
+    break;
+
+  case APP_EVT_USB_DETACH:
+    g.charger_only = false;
+    if (g.state == ST_USB) {
+      usb_leave();
+    }
+    break;
+
+  case APP_EVT_USB_ACTIVITY:
+    /* The host is reading the volume; run_usb() keeps the unit awake. */
+    g.usb_host = true;
+    break;
+
+  case APP_EVT_LOW_BATTERY:
+    /* Flow chart: flush, warn, then Standby. begin_shutdown() flushes
+     * before the pattern starts. */
+    if (g.state == ST_IDLE) {
+      begin_shutdown(FB_LOW_BATTERY);
+    }
+    break;
+
+  case APP_EVT_NONE:
+  default:
+    break;
+  }
 }
 
 /* ------------------------------------------------------------------------ */
 /* Main loop                                                                */
 /* ------------------------------------------------------------------------ */
 
-/**
- * Handed to the platform so it can re-check, with interrupts masked, that
- * sleeping is still the right thing to do.
- */
-static bool queue_still_empty(void)
-{
-    return !app_event_pending();
-}
+void app_task(void) {
+  app_event_t evt;
 
-/** Pick the deepest sleep the current state allows. */
-static void idle_sleep(void)
-{
-    if (g.state == ST_READING) {
-        /* Capture timer and DMA must keep their clock. */
-        plat_sleep_idle(queue_still_empty);
-    } else if (g.state == ST_USB) {
-        /* The USB peripheral needs its 48 MHz clock; Stop 2 would drop the
-         * bus and the host would see the device disappear mid-copy. */
-        plat_sleep_idle(queue_still_empty);
-    } else {
-        plat_sleep_light(queue_still_empty);
-    }
-}
+  g.now = plat_uptime_ms();
 
-void app_task(void)
-{
-    app_event_t evt = app_event_get();
+  poll_button();
+  poll_vbus();
+  step_feedback();
 
-    if (evt == APP_EVT_NONE) {
-        idle_sleep();
-        return;
-    }
+  switch (g.state) {
+  case ST_IDLE:
+    run_idle();
+    break;
+  case ST_USB:
+    run_usb();
+    break;
+  case ST_SHUTDOWN:
+  default:
+    run_shutdown();
+    break;
+  }
+
+  while ((evt = app_event_get()) != APP_EVT_NONE) {
     app_dispatch(evt);
+  }
+
+  apply_debug_requests();
+  drive_indicator();
+  publish_status();
+
+  plat_sleep_idle(queue_still_empty);
 }
 
-app_state_t app_state(void)
-{
-    return g.state;
-}
+app_state_t app_state(void) { return g.state; }
 
-const app_stats_t *app_get_stats(void)
-{
-    return &g.stats;
-}
+const app_stats_t *app_get_stats(void) { return &g.stats; }

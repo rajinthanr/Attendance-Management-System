@@ -2,10 +2,12 @@
  * @file    bsp_power.c
  * @brief   Level 1 (HAL) — sleep modes, brown-out detection, boot cause.
  *
- * The three depths the application asks for map onto:
- *   plat_sleep_idle()   Sleep    core clock gated, peripherals running
- *   plat_sleep_light()  Stop 2   SRAM retained, LSE peripherals still running
+ * The two depths the application asks for map onto:
+ *   plat_sleep_idle()   Sleep    core clock gated until the next interrupt
  *   plat_sleep_deep()   Standby  SRAM lost, only the WKUP pin gets out
+ *
+ * Stop 2 comes back with the move to interrupts: in polling mode the loop
+ * needs SysTick, which Stop 2 halts.
  */
 #include "bsp.h"
 #include "app_events.h"
@@ -31,6 +33,7 @@ void bsp_power_init(void)
     __HAL_PWR_CLEAR_FLAG(PWR_FLAG_SB | PWR_FLAG_WU);
     __HAL_RCC_CLEAR_RESET_FLAGS();
 
+#if BSP_ENABLE_BATTERY_PVD
     /* Programmable voltage detector on the external input, which the board
      * ties to the battery divider. Levels 0..6 watch VDD, which a regulator
      * holds steady until it drops out entirely and by then it is too late to
@@ -44,6 +47,11 @@ void bsp_power_init(void)
     HAL_NVIC_SetPriority(PVD_PVM_IRQn, BSP_PRIO_PVD, 0u);
     HAL_NVIC_EnableIRQ(PVD_PVM_IRQn);
     HAL_PWR_EnablePVD();
+#else
+    /* The generated HAL_MspInit() switches the PVD on; nothing listens to it
+     * while the battery is polled through the ADC. */
+    HAL_PWR_DisablePVD();
+#endif
 }
 
 app_boot_cause_t plat_boot_cause(void)
@@ -119,6 +127,14 @@ void plat_sleep_idle(plat_idle_pred_t still_idle)
 {
     uint32_t primask;
 
+    /* With a debugger attached the core stays awake, as the bring-up loop
+     * did. Reads the debugger makes while the core sits in WFI can come back
+     * as zero, which makes Live Expressions flicker. Nothing depends on the
+     * sleep for timing: the loop runs off plat_uptime_ms(). */
+    if ((CoreDebug->DHCSR & CoreDebug_DHCSR_C_DEBUGEN_Msk) != 0u) {
+        return;
+    }
+
     if (!sleep_arm(still_idle, &primask)) {
         return;
     }
@@ -127,44 +143,13 @@ void plat_sleep_idle(plat_idle_pred_t still_idle)
     sleep_release(primask);
 }
 
-void plat_sleep_light(plat_idle_pred_t still_idle)
-{
-    uint32_t primask;
-
-    if (!sleep_arm(still_idle, &primask)) {
-        return;
-    }
-
-    /* SysTick would wake the core every millisecond and defeat the whole
-     * point, so it is masked across the Stop and restored on the way out. */
-    HAL_SuspendTick();
-
-    HAL_PWREx_EnterSTOP2Mode(PWR_STOPENTRY_WFI);
-
-    /* Unmask before touching the HAL again: bsp_clock_restore and
-     * HAL_ResumeTick both wait on HAL_GetTick(), which needs the SysTick
-     * interrupt to be serviceable. */
-    sleep_release(primask);
-
-    bsp_clock_restore();
-    HAL_ResumeTick();
-}
-
 void plat_sleep_deep(void)
 {
-    /* Everything the flow chart calls for before Standby: sensors and
-     * actuators down, wake sources reduced to the power button alone. */
+    /* Everything the flow chart calls for before Standby: actuators down,
+     * wake sources reduced to the power button alone. The application has
+     * already put the reader into its power-down mode. */
     plat_out_write(0u);
-    plat_rf_carrier(false);
-    plat_rf_power(false);
-    plat_touch_power(false);
-
-    HAL_NVIC_DisableIRQ(EXTI1_IRQn);      /* touch */
-    HAL_NVIC_DisableIRQ(EXTI9_5_IRQn);    /* USB VBUS */
     HAL_PWR_DisablePVD();
-
-    plat_inactivity_stop();
-    plat_timer_stop();
 
     /* Standby wakes on WKUP1 only, and wakes through reset, so the pending
      * flag has to be clear or the part would come straight back out. */
