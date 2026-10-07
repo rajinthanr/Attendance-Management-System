@@ -18,7 +18,7 @@
 #include "timeutil.h"
 #include <string.h>
 
-#define HOST_FLASH_BYTES  (NV_PAGE_SIZE * 64u)
+#define HOST_FLASH_BYTES  NV_REGION_BYTES   /* same region as the BSP's */
 
 uint8_t  host_flash[HOST_FLASH_BYTES];
 uint32_t host_out_mask;

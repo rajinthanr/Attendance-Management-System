@@ -7,6 +7,15 @@
  * format cannot reach the vector table or the code below it.
  */
 #include "bsp.h"
+#include "nv_layout.h"
+
+/* The region the BSP guards and the one Level 2 lays out are the same. */
+_Static_assert(BSP_FLASH_SIZE == NV_REGION_BYTES, "BSP_FLASH_SIZE must match NV_REGION_BYTES");
+_Static_assert(BSP_FLASH_PAGE_SIZE == NV_PAGE_SIZE, "flash page size mismatch");
+_Static_assert(BSP_FLASH_BASE == FLASH_BASE + (BSP_FLASH_FIRST_PAGE * BSP_FLASH_PAGE_SIZE),
+               "BSP_FLASH_FIRST_PAGE must match BSP_FLASH_BASE");
+_Static_assert(BSP_FLASH_BASE + BSP_FLASH_SIZE == FLASH_BASE + 0x20000u,
+               "the data region must end at the top of the 128 kB flash");
 
 /** True when [offset, offset+len) lies inside the data region. */
 static bool in_region(uint32_t offset, uint32_t len)

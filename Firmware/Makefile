@@ -31,7 +31,7 @@ C_SOURCES := \
   $(wildcard Middlewares/ST/STM32_USB_Device_Library/Core/Src/*.c) \
   $(wildcard Middlewares/ST/STM32_USB_Device_Library/Class/MSC/Src/*.c)
 
-ASM_SOURCES := Core/Startup/startup_stm32l432kcux.s
+ASM_SOURCES := Core/Startup/startup_stm32l432kbux.s
 
 # ---------------------------------------------------------------------------
 # Flags
@@ -52,6 +52,8 @@ INCS := \
   -IMiddlewares/ST/STM32_USB_Device_Library/Class/MSC/Inc
 
 # -Og keeps the debugger usable; the design is nowhere near cycle bound.
+# The code region is 72 kB (STM32L432KBUX_FLASH.ld): about 60 kB at -Og,
+# 50 kB at -Os. -O0 (about 97 kB) does not fit.
 OPT := -Og
 
 CFLAGS := $(CPU) $(DEFS) $(INCS) $(OPT) -std=gnu11 \
@@ -64,7 +66,7 @@ APP_CFLAGS := -Wconversion -Wsign-conversion -Wshadow -Wundef
 
 ASFLAGS := $(CPU) -x assembler-with-cpp -g3 -gdwarf-2 -MMD -MP
 
-LDSCRIPT := STM32L432KCUX_FLASH.ld
+LDSCRIPT := STM32L432KBUX_FLASH.ld
 LDFLAGS  := $(CPU) -T$(LDSCRIPT) --specs=nano.specs \
             -Wl,-Map=$(BUILD)/$(TARGET).map,--cref -Wl,--gc-sections \
             -Wl,--print-memory-usage

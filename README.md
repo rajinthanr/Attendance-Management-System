@@ -44,7 +44,7 @@ Makefile) and the companion app (Python).
    | Settings applied / refused (eject, button tap or unplug) | green and two buzzes / red and three buzzes |
 
 4. **Logging.** Taps go to a RAM buffer, then to flash within 5 seconds. The log
-   holds 13,970 records and survives a power cut. When it is full, new taps are
+   holds 6,858 records and survives a power cut. When it is full, new taps are
    refused rather than overwriting old ones.
 5. **Lectures.** Starting a lecture (module and lecture name) writes a marker
    into the log, so taps are grouped by lecture even without the app. A card
@@ -65,7 +65,7 @@ class with it.
 
 | Function | Part | Notes |
 |---|---|---|
-| MCU | STM32L432**KC** (Cortex-M4F, 256 kB flash, 64 kB RAM, QFN-32) | Runs at 4 MHz from MSI, and 24 MHz during USB sessions, with a 32.768 kHz LSE crystal. The firmware needs the 256 kB KC part; see [Known issues](#known-issues). |
+| MCU | STM32L432**KB** (Cortex-M4F, 128 kB flash, 64 kB RAM, QFN-32) | Runs at 4 MHz from MSI, and 24 MHz during USB sessions, with a 32.768 kHz LSE crystal. The 128 kB of flash holds both the firmware (72 kB) and the attendance log (56 kB). |
 | NFC reader | ST25R3916 (13.56 MHz, QFN-32) on SPI1 | Differential antenna drive with an EMC filter, a matching network and a capacitive RX divider; 27.12 MHz crystal. |
 | Antenna | PCB loop, `NFC_Loop_40x30_3T` (40 × 30 mm, 3 turns) | In the keep-out area at the top of the board. |
 | Backup reader | 8-pin header for a PN532 breakout (Elechouse V3 SPI pinout) | Shares SPI1, with its own chip-select (PA15) and IRQ (PB6). Not used by the firmware yet. |
@@ -151,12 +151,10 @@ make clean
 
 ### Data on the device
 
-- **Flash layout:** the top 128 kB of flash (from `0x08020000`) is reserved by
-  the linker script.
-  - Page 0: configuration (device ID, card count, card-list CRC).
-  - Pages 1–8: the registered card list, up to 1000 sorted card numbers (no
-    names).
-  - Pages 9–63: the attendance log.
+- **Flash layout:** the firmware takes the first 72 kB of the 128 kB flash; the
+  last 56 kB (from `0x08012000`) is reserved for data by the linker script.
+  - Its first page: configuration (device ID).
+  - The other 27 pages: the attendance log, 6,858 records.
 - **Records:** each record is 8 bytes (card number and seconds since
   2000-01-01), exactly one flash double-word. Lecture markers are records with
   reserved IDs from `0xFFFFFF00` up.
@@ -205,11 +203,6 @@ LICENSE              MIT
 
 ## Known issues
 
-- **The MCU part number.** The schematic and the JLCPCB production BOM list U4
-  as the **STM32L432KB** (128 kB flash). The firmware keeps its card list and
-  log above 128 kB, so it needs the **KC** (256 kB). To check a board, read the
-  flash size at `0x1FFF75E0` in the debugger (256 or 128). A KB board needs the
-  data area moved below 128 kB, which makes the log smaller.
 - **Battery reading at full scale.** On the bench the battery-sense pin reads
   full scale (`dbg_battery_error` = 4). The schematic, the layout and the BOM
   values are correct, and the firmware path has been checked. The next step is

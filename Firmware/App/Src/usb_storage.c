@@ -251,7 +251,7 @@ static void scan_markers(const log_store_t *ls)
             }
 
             if (s_n_marks >= USBS_MAX_MARKS) {
-                break;          /* cannot happen with a 13970-record log */
+                break;          /* table full (see Known limitations in ARCHITECTURE.md) */
             }
             cum += span;
             if (flag == 0u) {
