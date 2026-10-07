@@ -7,3 +7,7 @@
 # Python: caches and the Companion app's virtual environment (PySide6)
 __pycache__/
 Companion/.venv/
+
+# The Companion app no longer has a browser version or a test folder
+Companion/web/
+Companion/tests/
