@@ -1,115 +1,136 @@
 # Card Attendance System
 
-A battery-powered NFC attendance logger. A student taps an ID card and the unit confirms the scan with an LED and a vibration pulse. It stores the scan in on-chip flash with a timestamp. Plugged into a PC over USB-C, it appears as a read-only USB drive holding one file, `ATTEND.CSV`, which needs no driver or app to read.
+A battery-powered NFC attendance logger. A student taps an ID card and the unit
+confirms the tap with an LED and a vibration pulse, and stores the card number
+with a timestamp in on-chip flash. Plugged into a PC over USB-C, it appears as a
+USB drive, with no driver needed:
 
-The repository holds the hardware (KiCad 10) and the firmware (STM32CubeIDE / Makefile) for the reader.
+- `ATTEND.CSV`: every tap, read-only.
+- `STATUS.TXT`: a short summary of the device.
+- `SETTINGS.CSV`: edited by the PC to set the clock, start a lecture, and send
+  the list of registered card numbers.
 
-## Project status (2026-09-26)
+A desktop companion app for the PC keeps the student names and works out who
+attended which lecture.
+
+The repository holds the hardware (KiCad 10), the firmware (STM32CubeIDE /
+Makefile) and the companion app (Python).
+
+## Project status (2026-10-06)
 
 | Area | State |
 |---|---|
-| Schematic | Complete. ERC: 0 errors, 1 warning (U5's embedded symbol differs from its library copy). |
-| PCB layout | Placed and routed. The NFC loop antenna footprint (AE3) is still a net-tie placeholder on the board, so DRC reports the two antenna feed connections as open. Everything else is connected. |
-| Firmware, application logic | Complete for 125 kHz EM4100 cards. 94 host tests pass. |
-| Firmware, hardware drivers | Not ported to the new hardware yet. They still drive the original 125 kHz reader, not the ST25R3916. The cross-build currently fails because `Firmware/Middlewares/ST/STM32_USB_Device_Library` is missing (see [Known issues](#known-issues)). |
+| Schematic and PCB | Complete and sent to JLCPCB. DRC still reports two missing connections on the antenna loop (AE1). |
+| Firmware | Runs on the board in polling mode. Card reading, LEDs, vibration and the USB drive work. Battery measurement reads full scale on the bench (see [Known issues](#known-issues)). 829 host checks pass. |
+| Companion app | Desktop app (Tkinter); the earlier browser version is still included. 123 tests pass, including cross-checks against the firmware's own parser. |
 
 ## How it works
 
-1. **Card tap.** The ST25R3916 detects a card with its low-power capacitive wake-up (CSI/CSO electrode) and wakes the MCU.
-2. **Read and check.**
-   - The MCU reads the card ID over SPI.
-   - It drops a repeat of the same card within 10 s.
-   - It looks the ID up in a provisioned student list of up to 4096 IDs.
+1. **Card tap.** The ST25R3916 reader polls for ISO14443-A cards (MIFARE
+   Classic, NTAG and similar) every 100 ms. The card number is its UID: 4-byte
+   UIDs as they are, longer ones by their last four bytes.
+2. **Check.** A card read again within 10 s, or already recorded in the current
+   lecture, is a duplicate and is not recorded again. Every other card is
+   recorded. The device's card list only decides the colour: green for a
+   registered card, red for one it doesn't know.
 3. **Feedback.**
 
    | Result | Feedback |
    |---|---|
-   | Accepted | Green LED and one short vibration |
-   | Duplicate | Two short vibrations |
-   | Unknown card | Red LED and one long vibration |
-   | Low battery | Red LED blinks |
+   | Registered card | green LED and one short buzz |
+   | Unregistered card (still recorded) | red LED and one long buzz |
+   | Duplicate | two short buzzes |
+   | Log full, or reader fault | red blinks with buzzes |
+   | Settings applied / refused (eject, button tap or unplug) | green and two buzzes / red and three buzzes |
 
-4. **Logging.**
-   - Records (student ID and timestamp) are buffered in RAM, then written to flash in batches.
-   - The flash log holds 13,970 records and survives power loss mid-write.
-   - When the log is full, the unit refuses new scans rather than overwrite old ones.
-5. **Export.** Plug in USB-C. The device enumerates as a 1 MB FAT12 drive containing `ATTEND.CSV`:
+4. **Logging.** Taps go to a RAM buffer, then to flash within 5 seconds. The log
+   holds 13,970 records and survives a power cut. When it is full, new taps are
+   refused rather than overwriting old ones.
+5. **Lectures.** Starting a lecture (module and lecture name) writes a marker
+   into the log, so taps are grouped by lecture even without the app. A card
+   counts once per lecture. The app imports every tap before a lecture starts
+   and has the device delete its copy (`#CLEARLOG`).
+6. **USB.** Plug in USB-C. The reader stops and the drive appears. Ejecting
+   the drive or tapping the button applies `SETTINGS.CSV` and starts the reader
+   with the cable still in (unplugging does the same). A USB charger that is not
+   a computer is recognised after 5 s, and scanning carries on while it charges.
+7. **Power.** Press the power button to switch on. A tap shows the battery
+   level; holding it for 2 s switches the device off. On battery it also switches
+   itself off after 3 minutes without a tap, or when the battery is flat.
 
-   ```
-   SCAN_DATE,SCAN_TIME,STUDENT_ID
-   2026-09-10,13:27:45,0000123456
-   ```
-
-6. **Power.**
-   - The MCU stays in Stop 2 between scans.
-   - After 3 minutes idle, a low battery (PVD) or a press of the power button, it flushes the log and enters Standby.
-   - The power button (WKUP1) wakes it again.
+`Firmware/docs/USER_GUIDE.md` explains the device for the people who run a
+class with it.
 
 ## Hardware
 
 | Function | Part | Notes |
 |---|---|---|
-| MCU | STM32L432KCU6 (Cortex-M4F, 256 kB flash, 64 kB RAM, QFN-32) | Runs at 4 MHz from MSI, and 24 MHz during USB sessions. Uses a 32.768 kHz LSE crystal. |
-| NFC reader | ST25R3916 (13.56 MHz, QFN-32) on SPI1 | Differential antenna drive with an EMC filter, a matching network and a capacitive RX divider. Uses a 27.12 MHz crystal. |
-| Backup reader | 8-pin header J7 for a PN532 breakout (Elechouse V3 SPI pinout) | Shares SPI1 with the ST25R3916, with its own chip-select (PA15) and IRQ (PB6). |
-| Antenna | PCB loop, `NFC_Loop_40x30_3T` (40 × 30 mm, 3 turns) | Sits in the 57 × 37 mm keep-out area at the top of the board, fed through R21/R22 (0 Ω). |
-| Charger | MCP73833 Li-ion linear charger | Charge current set by R6, with a 10 kΩ NTC (TH1) and three charge-status LEDs. |
-| 3.3 V rail | TPS7A0233 LDO, 200 mA | Runs from the cell. The NFC reader's VDD/VDD_TX come straight from the battery, and its VDD_IO from 3.3 V. |
-| USB | USB-C receptacle (GCT USB4110), USB 2.0 full speed | Sink-only with 5.1 kΩ CC resistors. USBLC6-2SC6 ESD protection on D+/D-/VBUS. |
-| Battery | Single-cell Li-ion, 3.7 V, 2-pin JST-XA (J2) | Battery voltage is sensed by a divider (4.7 MΩ / 2.7 MΩ) on the ADC (PA7) and the PVD input (PB7), so the PVD trips at about 3.3 V. |
-| Feedback | Red and green LEDs, vibration motor (J4) | The motor is switched by an AO3400A MOSFET with an SS14 flyback diode. |
+| MCU | STM32L432**KC** (Cortex-M4F, 256 kB flash, 64 kB RAM, QFN-32) | Runs at 4 MHz from MSI, and 24 MHz during USB sessions, with a 32.768 kHz LSE crystal. The firmware needs the 256 kB KC part; see [Known issues](#known-issues). |
+| NFC reader | ST25R3916 (13.56 MHz, QFN-32) on SPI1 | Differential antenna drive with an EMC filter, a matching network and a capacitive RX divider; 27.12 MHz crystal. |
+| Antenna | PCB loop, `NFC_Loop_40x30_3T` (40 × 30 mm, 3 turns) | In the keep-out area at the top of the board. |
+| Backup reader | 8-pin header for a PN532 breakout (Elechouse V3 SPI pinout) | Shares SPI1, with its own chip-select (PA15) and IRQ (PB6). Not used by the firmware yet. |
+| Charger | MCP73833 Li-ion linear charger | 10 kΩ NTC and three charge-status LEDs. |
+| 3.3 V rail | TPS7A0233 LDO, 200 mA | Runs from the cell. The reader's VDD/VDD_TX come straight from the battery, and its VDD_IO from 3.3 V. |
+| USB | USB-C receptacle (GCT USB4110), USB 2.0 full speed | Sink-only with 5.1 kΩ CC resistors; USBLC6-2SC6 ESD protection. |
+| Battery | Single-cell Li-ion, 3.7 V, 2-pin JST-XA | Sensed through a 4.7 MΩ / 2.7 MΩ divider with 100 nF, on the ADC (PA7) and the PVD input (PB7). |
+| Feedback | Red and green LEDs, vibration motor | The motor is switched by an AO3400A MOSFET with an SS14 flyback diode. |
 | Buttons | Power (PA0 / WKUP1), reset, BOOT0 | |
-| Debug | 4-pin SWD header (J3): 3V3, SWDIO, SWCLK, GND | |
+| Debug | 4-pin SWD header: 3V3, SWDIO, SWCLK, GND | |
 
 ### MCU pin map
 
 | Pin | Signal | Pin | Signal |
 |---|---|---|---|
-| PA0 | Power button (EXTI0, WKUP1) | PB0 | ST25R3916 chip-select |
-| PA2 / PA3 | Green / red LED | PB1 | ST25R3916 IRQ (rising edge) |
+| PA0 | Power button (WKUP1, polled) | PB0 | ST25R3916 chip-select |
+| PA2 / PA3 | Green / red LED | PB1 | ST25R3916 IRQ (polled) |
 | PA4 | Vibration motor enable | PB3 / PB4 / PB5 | SPI1 SCK / MISO / MOSI |
 | PA7 | Battery sense (ADC1_IN12) | PB6 | PN532 IRQ |
-| PA9 | VBUS detect (EXTI9) | PB7 | Battery sense (external PVD input) |
+| PA9 | VBUS detect (polled) | PB7 | Battery sense (external PVD input) |
 | PA11 / PA12 | USB D- / D+ | PA15 | PN532 chip-select |
 | PA13 / PA14 | SWDIO / SWCLK | PC14 / PC15 | 32.768 kHz crystal |
 
-`Firmware/Card Attendance System.ioc` is the reference for the full CubeMX configuration.
+`Firmware/Bsp/Inc/bsp_board.h` is the firmware's reference for the pin map, and
+`Firmware/Card Attendance System.ioc` for the CubeMX configuration.
 
 ### PCB
 
-- **Board:**
-  - 60 × 88.6 mm, 2 layers, 1.6 mm FR-4.
-  - All 88 components are on the top side.
-  - 0805 passives throughout, except the 0402 ferrite beads, plus the QFN, MSOP, SOT-23 and SMA packages.
-- **Floorplan:**
-  - The NFC antenna occupies the top 37 mm, in a rule area that keeps copper pours out.
-  - Below it are the PN532 header, the MCU (left) and the ST25R3916 front end (centre-right).
-  - The power section runs along the bottom edge: USB-C, ESD protection, charger and LDO, with the battery connector on the right edge.
-- **Routing:**
-  - About 1.0 m of track on the top layer and 0.35 m on the bottom, with 90 vias of 0.8 mm diameter and 0.3 mm drill.
-  - Track widths run from 0.15 mm to 1.2 mm.
-- **Copper pours:** GND on both layers as the return plane, plus `+5V` pours for the USB input. The QFN exposed pads are stitched to GND with vias: 2 under U1 and 3 under U5.
-- **Net classes** (in `PCB/Attendance Management System.kicad_pro`):
-  - Every net is in the **Default** class (0.1 mm track, 0.1 mm clearance).
-  - **Power** (0.2 / 0.15 mm) and **Power2** (0.2 / 0.4 mm) are defined but not assigned to any net.
-  - Tracks are drawn at explicit widths: USB D+/D- at 0.15–0.2 mm, power up to 1.2 mm.
-  - Check the 0.1 mm clearance against your fab's 2-layer capability.
-- **Design rules:** manufacturing rules live in `PCB/Attendance Management System.kicad_dru`:
-  - global minimums for hole clearance, annular ring, hole-to-hole and courtyard clearance;
-  - exceptions for the MCP73833's 0.5 mm-pitch MSOP-10 pads and the antenna crossover.
+- **Board:** 60 × 88.6 mm, 2 layers, 1.6 mm FR-4, all parts on the top side.
+- **Floorplan:** the NFC antenna fills the top of the board. Below it are the
+  PN532 header, the MCU and the ST25R3916 front end. The power section (USB-C,
+  ESD, charger, LDO, battery connector) runs along the bottom edge.
 - **Schematic sheets:**
   - `power.kicad_sch`: USB-C, ESD, charger, LDO and battery.
-  - `mcu.kicad_sch`: STM32, buttons, LEDs, motor driver, SWD and the PN532 header.
-  - `rfid.kicad_sch`: ST25R3916, crystal, EMC filter, matching network and antenna.
+  - `mcu.kicad_sch`: STM32, buttons, LEDs, motor driver, SWD and the PN532
+    header.
+  - `rfid.kicad_sch`: ST25R3916, crystal, EMC filter, matching network and
+    antenna.
+- **Rules:** manufacturing rules are in `PCB/Attendance Management System.kicad_dru`.
+  The production files sent to JLCPCB are in `PCB/production/`.
 
 ## Firmware
 
-The firmware is split along one rule: **the application logic (`App/`) decides, the drivers (`Bsp/`) act**.
-- **`App/`:** holds the state machine, card decoding, flash log, student list, duplicate filter, CSV/FAT12 volume and battery maths. It includes no HAL or register headers and compiles on a PC.
-- **`Bsp/`:** implements the small hardware contract in `App/Inc/platform_if.h`, handing up only raw values.
-- **`Tests/`:** builds all of `App/` against a RAM-backed stub platform, so the logic is tested without hardware.
+The firmware is split along one rule: **the application logic (`App/`) decides,
+the drivers (`Bsp/`) act.**
 
-`Firmware/docs/ARCHITECTURE.md` describes the design in full: power modes, flash layout, record and CSV formats, and the decoder.
+- **`App/`:** the state machine, ISO14443-A protocol, card presence tracking,
+  button debouncing, flash log, card list and device config, lecture sessions,
+  the `SETTINGS.CSV` parser, the FAT12 volume, CSV and status files, and battery
+  maths. It includes no HAL or register headers and compiles on a PC.
+- **`Bsp/`:** implements the hardware contract in `App/Inc/platform_if.h`,
+  handing up only raw values. It includes the register-level ST25R3916 driver
+  (`bsp_nfc.c`).
+- **`Tests/`:** builds all of `App/` against a RAM-backed stub platform with a
+  simulated card and a simulated PC editing the drive, so the logic is tested
+  without hardware.
+
+The firmware currently **polls**: the main loop runs once a millisecond, and only
+SysTick and USB use interrupts. `Firmware/docs/ARCHITECTURE.md` describes the
+whole design: polling and the plan for interrupts, the flash layout, record, CSV
+and settings formats, sessions, the USB volume, and known limitations.
+
+For debugging, `dbg_*` globals defined in `Core/Src/main.c` show the battery
+voltage, the last card, button presses, reader status and record counts in
+STM32CubeIDE's Live Expressions view.
 
 ### Build and test
 
@@ -121,32 +142,54 @@ make         # cross-compiles build/card-attendance.{elf,hex,bin}
 make clean
 ```
 
-- **Toolchain:** `make` uses the GCC bundled with STM32CubeIDE (`/opt/st/stm32cubeide_*`) when one is installed, and otherwise `arm-none-eabi-gcc` on `PATH`.
-- **Flashing and debugging:** use STM32CubeIDE over SWD (J3).
+- **Toolchain:** `make` uses the GCC bundled with STM32CubeIDE
+  (`/opt/st/stm32cubeide_*`) when one is installed, and otherwise
+  `arm-none-eabi-gcc` on `PATH`.
+- **Flashing and debugging:** use STM32CubeIDE over the SWD header.
+- **Optional:** `Tests/fs_check.sh` checks the USB volume with real FAT tools
+  (needs `mtools` and `dosfstools`).
 
 ### Data on the device
 
-- **Flash layout:** the top 128 kB of flash (from `0x08020000`) is reserved by the linker script.
-  - Page 0: configuration.
-  - Pages 1–8: the sorted student list.
+- **Flash layout:** the top 128 kB of flash (from `0x08020000`) is reserved by
+  the linker script.
+  - Page 0: configuration (device ID, card count, card-list CRC).
+  - Pages 1–8: the registered card list, up to 1000 sorted card numbers (no
+    names).
   - Pages 9–63: the attendance log.
-- **Records:** each record is 8 bytes (student ID and seconds since 2000-01-01), exactly one flash double-word.
-- **Provisioning:** the student list is written into flash from outside, not by the firmware itself. `Firmware/Tests/test_main.c:provision_students()` shows the exact layout. The RTC starts at 2026-01-01 until a host sets it.
+- **Records:** each record is 8 bytes (card number and seconds since
+  2000-01-01), exactly one flash double-word. Lecture markers are records with
+  reserved IDs from `0xFFFFFF00` up.
+- **Setting up a device:** nothing is needed for it to log. The clock starts from
+  the firmware's build time until it is set with `#TIME` in `SETTINGS.CSV` (the
+  companion app does this when you start a lecture). The card list and device ID
+  also come from `SETTINGS.CSV`.
+
+## Companion app
+
+`Companion/` is a desktop app for the PC the device is plugged into. It needs
+only Python 3.8 or newer, with no install and no internet, and runs entirely on
+that computer. It finds the device, reads its taps into a local SQLite database,
+keeps student names, modules and lectures, starts lectures, sends the card list,
+and produces attendance reports as CSV or PDF. Start it with `start.bat` on
+Windows or `sh start.sh` on macOS and Linux. `Companion/README.md` explains it
+in full.
 
 ## Repository layout
 
 ```
 Firmware/            STM32CubeIDE project + standalone Makefile
   App/               application logic (portable, host-tested)
-  Bsp/               board support: HAL drivers, USB MSC glue, interrupt handlers
+  Bsp/               board support: HAL drivers, ST25R3916 driver, USB MSC glue
   Core/              CubeMX-generated startup code (edit only inside USER CODE blocks)
   Drivers/           ST HAL and CMSIS
-  Tests/             host test harness
-  docs/              ARCHITECTURE.md
+  Middlewares/       ST USB Device Library (core + MSC)
+  Tests/             host test harness and tools
+  docs/              ARCHITECTURE.md (design), USER_GUIDE.md (for users)
   Card Attendance System.ioc   CubeMX pin and peripheral configuration
-PCB/                 KiCad 10 project
-  Attendance Management System.kicad_sch / .kicad_pcb / .kicad_pro / .kicad_dru
-  power.kicad_sch, mcu.kicad_sch, rfid.kicad_sch
+Companion/           PC app (Python): desktop GUI, database, reports, tests
+PCB/                 KiCad 10 project, BOMs (bom/) and JLCPCB production files (production/)
+Enclosure/           3D-printable enclosure (enclosure.py and STL files)
 CLAUDE.md            detailed engineering notes (design decisions, open issues)
 LICENSE              MIT
 ```
@@ -154,23 +197,39 @@ LICENSE              MIT
 ## Tools
 
 - **PCB:** KiCad 10.0.
-- **Firmware:** STM32CubeIDE 1.19 (CubeMX 6.15, STM32Cube FW_L4 V1.18.2), or `arm-none-eabi-gcc` with `make`.
+- **Firmware:** STM32CubeIDE 1.19 (CubeMX 6.15, STM32Cube FW_L4 V1.18.2), or
+  `arm-none-eabi-gcc` with `make`.
 - **Host tests:** any C11 compiler (`cc`).
+- **Companion app:** Python 3.8+ with Tkinter (included with the standard Python
+  installers).
 
 ## Known issues
 
-- **The NFC antenna isn't on the board yet.** The schematic assigns AE3 the footprint `Snapeda:NFC_Loop_40x30_3T`, but the board still carries a net-tie placeholder. Run *Update PCB from Schematic*, place the loop in the antenna area, and route its feed to R21/R22.
-  - Tune the matching network (C16–C19, R15) and the RX divider (C15/C37, C38/C39) against the real coil's measured inductance, resistance and capacitance. ST's AN5276 describes the procedure.
-- **The PCB has footprint libraries outside the repository.** U3, U5 and the antenna footprint come from a SnapEDA library at an absolute path (`/home/rajinthan/Documents/kicad/external_libs/Snapeda.pretty`). That library is referenced in the global library table as `External` and in `PCB/fp-lib-table` as `Snapeda`, where it is listed twice. A fresh clone can't resolve those footprints until the library is added to the repository or the paths are updated.
-- **The firmware doesn't build.** `Firmware/Middlewares/ST/STM32_USB_Device_Library` was removed by a CubeMX regeneration. Restore Core and Class/MSC (without the `*_template.c` files) from STM32Cube FW_L4 V1.18.2 or from git history, and re-add `Middlewares` to the source folders in `.cproject`.
-- **The firmware still targets the 125 kHz EM4100 front end.** Porting it to the ST25R3916 requires:
-  - an SPI driver (for example ST's RFAL);
-  - the ST25R3916's capacitive wake-up;
-  - the PN532 fallback;
-  - a new card-ID to student-ID mapping, because ISO 14443 UIDs are 4, 7 or 10 bytes and the flash record's student ID is 32 bits;
-  - setting `APP_BATT_DIV_LOW_KOHM` to 2700 to match the battery divider.
-- **Charge current:** R6 = 1 kΩ sets 1 A. That's more than the 500 mA a USB-C sink with plain 5.1 kΩ CC resistors may draw, and more than the MSOP-10 charger can dissipate. Use R6 ≥ 2 kΩ.
-- **PN532 placement:** a PN532 module plugged into J7 sits close to the ST25R3916 antenna. Check that it doesn't detune the loop.
+- **The MCU part number.** The schematic and the JLCPCB production BOM list U4
+  as the **STM32L432KB** (128 kB flash). The firmware keeps its card list and
+  log above 128 kB, so it needs the **KC** (256 kB). To check a board, read the
+  flash size at `0x1FFF75E0` in the debugger (256 or 128). A KB board needs the
+  data area moved below 128 kB, which makes the log smaller.
+- **Battery reading at full scale.** On the bench the battery-sense pin reads
+  full scale (`dbg_battery_error` = 4). The schematic, the layout and the BOM
+  values are correct, and the firmware path has been checked. The next step is
+  to measure the voltage across the 2.7 MΩ resistor on the running board. Until
+  this is fixed, low-battery shutdown cannot work.
+- **Firmware limitations.** `Firmware/docs/ARCHITECTURE.md` lists them under
+  "Known limitations". The most important:
+  - Start each lecture from the PC. Without a new lecture, a card already
+    recorded in the last 6 hours counts as a duplicate.
+- **Antenna tuning.** Tune the matching network and the RX capacitive divider
+  against the real coil (ST AN5276). The reader measured a weak RX signal at
+  first; the target amplitude reading is about 190.
+- **Charge current.** The PROG resistor is 1 kΩ, which sets 1 A. That's more than
+  the 500 mA a USB-C sink with plain 5.1 kΩ CC resistors may draw, and more than
+  the MSOP-10 charger can dissipate. Use at least 2 kΩ.
+- **External footprint library.** Some footprints come from a SnapEDA library at
+  an absolute path outside the repository, so a fresh clone can't resolve them
+  until the library is added or the paths are updated.
+- **PN532 placement.** A PN532 module plugged into its header sits close to the
+  ST25R3916 antenna and may detune it.
 
 ## License
 

@@ -164,6 +164,11 @@
  *  stopped again and the unit keeps scanning while it charges. */
 #define APP_USB_ENUM_TIMEOUT_MS         (5000u)
 
+/** After the host ejects the drive, wait this long before dropping off the
+ *  bus, so the host finishes its side (udisks powers the port off) first.
+ *  Then SETTINGS.CSV is applied and scanning resumes on USB power. */
+#define APP_USB_EJECT_GRACE_MS          (1000u)
+
 /* ------------------------------------------------------------------------ */
 /* Log / CSV policy                                                         */
 /* ------------------------------------------------------------------------ */

@@ -17,6 +17,7 @@ extern bool     host_button;
 extern bool     host_vbus;
 extern bool     host_usb_configured;
 extern bool     host_usb_started;
+extern bool     host_usb_ejected;     /* the host sent an eject */
 extern uint16_t host_adc_vbat_counts;
 
 extern jmp_buf *host_deep_sleep_jmp;  /* plat_sleep_deep() longjmps here */

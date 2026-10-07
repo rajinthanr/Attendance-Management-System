@@ -204,3 +204,124 @@ void test_fsm_sessions(void)
     CHECK(strstr(csv, "Lecture      : EN2090 / Lecture 1") != NULL, "the device still knows which lecture is running");
     (void)unplug();
 }
+
+/* ===================================================================== */
+/* Still plugged in: eject, the button, clearing the log                  */
+/* ===================================================================== */
+
+/** Run until the USB session has ended; returns the first feedback outputs. */
+static uint32_t until_scanning(void)
+{
+    uint32_t i;
+
+    for (i = 0u; i < (APP_USB_EJECT_GRACE_MS + 500u) && app_state() == ST_USB; i++) {
+        app_task();
+    }
+    CHECK(app_state() == ST_IDLE && !host_usb_started, "the drive is gone and the unit scans");
+    g_fb = ((host_out_mask & FB_VIB_BIT) != 0u) ? host_out_mask : 0u;
+    run_ms(1500u);
+    return g_fb;
+}
+
+static void cable_out_and_in(void)
+{
+    host_vbus = false;
+    run_ms(300u);
+    host_usb_ejected = false;
+    plug();
+}
+
+void test_fsm_plugged_in(void)
+{
+    static hostfs_t h;
+    static char csv[8192];
+    static char status[513];
+    uint32_t fb;
+
+    printf("fsm while plugged in\n");
+
+    boot_fresh();
+    CHECK(tap(1000u, 10u) == APP_SCAN_ACCEPTED, "a tap from the last lecture");
+    CHECK(tap(1007u, 12u) == APP_SCAN_ACCEPTED, "and another");
+
+    /* ---- the app starts a lecture, clears the log and ejects ---- */
+    plug();
+    hf_mount(&h);
+    snprintf(csv, sizeof(csv), "#MODULE,EN2090\r\n#LECTURE,Lecture 5\r\n#NEWSESSION,1\r\n#CLEARLOG,1\r\n");
+    CHECK(hf_create(&h, HF_SETTINGS, csv, (uint32_t)strlen(csv)), "host copies SETTINGS.CSV");
+    read_status(&h, status);
+    CHECK(strstr(status, "all records will be deleted") != NULL, "STATUS.TXT warns of the clear [%s]", status);
+    CHECK(strstr(status, "a new lecture will start") != NULL, "and announces the lecture");
+
+    run_ms(500u);
+    CHECK(app_state() == ST_USB, "nothing happens before the eject");
+    host_usb_ejected = true;
+    run_ms(APP_USB_EJECT_GRACE_MS / 2u);
+    CHECK(app_state() == ST_USB && host_usb_started, "the host gets time to finish its eject");
+    fb = until_scanning();
+    CHECK((fb & FB_GREEN_BIT) != 0u && (fb & FB_RED_BIT) == 0u, "applied: green");
+    CHECK(host_vbus, "still on USB power");
+
+    CHECK(tap(1000u, 100u) == APP_SCAN_ACCEPTED, "the reader works with the cable in");
+    run_ms(10000u);
+    CHECK(app_state() == ST_IDLE, "the drive does not come back while the cable stays in");
+    run_ms(APP_INACTIVITY_MS + 2000u);
+    CHECK(app_state() == ST_IDLE, "and on USB power the unit does not switch itself off");
+    CHECK(tap(1000u, 400u) == APP_SCAN_DUPLICATE, "the lecture is in force");
+
+    cable_out_and_in();
+    read_attend(&h, csv, sizeof(csv));
+    CHECK(rows_in(csv) == 1u, "the old records are gone, the new tap is there (%u rows)", rows_in(csv));
+    CHECK(strstr(csv, "2026-09-10,13:01:40,0000001000\r\n") != NULL, "the tap after the eject");
+    read_status(&h, status);
+    CHECK(strstr(status, "Lecture      : EN2090 / Lecture 5") != NULL, "the marker survived the clear [%s]", status);
+
+    /* ---- a short press does what the eject does ---- */
+    hf_mount(&h);
+    snprintf(csv, sizeof(csv), "#MODULE,EN2090\r\n#LECTURE,Lecture 6\r\n");
+    CHECK(hf_create(&h, HF_SETTINGS, csv, (uint32_t)strlen(csv)), "host copies SETTINGS.CSV");
+    host_button = true;
+    run_ms(150u);
+    host_button = false;
+    fb = until_scanning();
+    CHECK((fb & FB_GREEN_BIT) != 0u && (fb & FB_RED_BIT) == 0u, "button: applied, green");
+    CHECK(tap(1000u, 500u) == APP_SCAN_ACCEPTED, "the new lecture counts the card again");
+
+    /* ---- a press with nothing edited still starts the reader ---- */
+    cable_out_and_in();
+    host_button = true;
+    run_ms(150u);
+    host_button = false;
+    (void)until_scanning();
+    CHECK(tap(1007u, 600u) == APP_SCAN_ACCEPTED, "scanning after a look-only session");
+
+    /* ---- switching off while plugged in keeps the edit ---- */
+    cable_out_and_in();
+    hf_mount(&h);
+    snprintf(csv, sizeof(csv), "#MODULE,EN2090\r\n#LECTURE,Lecture 7\r\n");
+    CHECK(hf_create(&h, HF_SETTINGS, csv, (uint32_t)strlen(csv)), "host copies SETTINGS.CSV");
+    {
+        static jmp_buf jb;
+        volatile int off = 0;
+
+        host_deep_sleeps = 0u;
+        host_deep_sleep_jmp = &jb;
+        if (setjmp(jb) == 0) {
+            host_button = true;
+            run_ms(APP_BTN_LONG_MS + 1000u);
+            host_button = false;
+            run_ms(5000u);
+        } else {
+            off = 1;
+        }
+        host_deep_sleep_jmp = NULL;
+        CHECK(off == 1, "the long press switches the unit off");
+    }
+    host_vbus = false;
+    reboot();
+    plug();
+    hf_mount(&h);
+    read_status(&h, status);
+    CHECK(strstr(status, "Lecture      : EN2090 / Lecture 7") != NULL, "the edit was applied before power-off [%s]", status);
+    (void)unplug();
+}

@@ -158,6 +158,9 @@ def student_page(rep):
 # PDF, by way of the PC's own browser
 # --------------------------------------------------------------------------
 
+NO_BROWSER = "PDF needs Chrome or Edge on this computer. Use Print and choose Save as PDF instead."
+
+
 def find_browser():
     """Path of a Chrome, Edge or Chromium that can print to PDF, or None."""
     cands = [os.environ.get("ATTENDANCE_BROWSER")]
@@ -184,7 +187,7 @@ def render_pdf(page_html, timeout=40):
     """PDF bytes for @page_html, or raises RuntimeError with a message fit to show the user."""
     browser = find_browser()
     if not browser:
-        raise RuntimeError("PDF needs Chrome or Edge on this computer. Use Print and choose Save as PDF instead.")
+        raise RuntimeError(NO_BROWSER)
     work = tempfile.mkdtemp(prefix="att-pdf-")
     try:
         src = os.path.join(work, "report.html")

@@ -6,7 +6,7 @@
  * module they take and what department they are in is the PC's business and
  * lives in its database. This file carries what the device itself needs:
  *
- *   # Edit these lines, then unplug the cable. ...
+ *   # Edit these lines, then eject the drive (or press the button). ...
  *   #TIME,2026-10-06 14:30:00
  *   #MODULE,EN2090
  *   #LECTURE,Circuits Lecture 4
@@ -34,6 +34,9 @@
  *     next taps belong to (24 and 32 bytes). A new session starts when either
  *     differs from what the file was shown with, or when a "#NEWSESSION" line
  *     is present (a second lecture with the same names).
+ *   - "#CLEARLOG" erases every record and lecture marker in the log. The
+ *     companion app sends it with a new lecture, once it has imported the
+ *     taps; renaming the lecture alone never clears anything.
  *   - A comma or quote inside a name becomes a space; quoted values work.
  *   - "#CARDS,<n>" announces a card list: the n lines after it, one number each
  *     (decimal or 0x hex; anything after a comma is ignored). The numbers must
@@ -77,6 +80,7 @@ typedef struct {
     bool     has_module;    /**< A #MODULE line was present (it may be empty). */
     bool     has_lecture;   /**< A #LECTURE line was present. */
     bool     new_session;   /**< A #NEWSESSION line was present. */
+    bool     clear_log;     /**< A #CLEARLOG line was present. */
     char     module[SESS_MODULE_MAX + 1u];
     char     lecture[SESS_LECTURE_MAX + 1u];
 

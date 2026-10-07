@@ -858,7 +858,7 @@ void test_usb_settings(void)
         CHECK(put_settings("#TIME,2031-01-01 00:00:00\r\n#DEVICE,77\r\n#MODULE,EN2090\r\n"), "settings to announce");
         n = hf_read(&g_hf, HF_STATUS, (uint8_t *)st, 512u);
         st[(n < 0) ? 0 : n] = '\0';
-        CHECK(strstr(st, "OK, will be applied when you unplug the cable") != NULL, "status: ok [%s]", st);
+        CHECK(strstr(st, "OK, will be applied when you eject the drive, press the button or unplug") != NULL, "status: ok [%s]", st);
         CHECK(strstr(st, "clock will be set") != NULL, "status: clock");
         CHECK(strstr(st, "device ID will change") != NULL, "status: device id");
         CHECK(strstr(st, "a new lecture will start") != NULL, "status: lecture");

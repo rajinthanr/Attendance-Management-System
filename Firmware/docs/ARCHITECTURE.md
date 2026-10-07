@@ -1,6 +1,8 @@
 # Card Attendance System — firmware architecture
 
 Target: **STM32L432KCU6** (Cortex-M4F, 256 kB flash, 64 kB SRAM, UFQFPN32).
+The 128 kB STM32L432KBU6 cannot run this firmware as it is: the card list and
+the log live in the upper 128 kB (see "Board notes").
 
 ## The two levels
 
@@ -135,7 +137,7 @@ debugging simple. Interrupts and Stop 2 come back once the hardware is proven.
 | Mode | Used when | Retained | Wakes on |
 |---|---|---|---|
 | Sleep | between main-loop passes, always | everything | SysTick (1 ms), USB |
-| Standby | 3 min idle, low battery, long press | RTC + backup registers | WKUP1 (button) only, through reset |
+| Standby | 3 min idle on battery, low battery, long press | RTC + backup registers | WKUP1 (button) only, through reset |
 
 `app_task()` runs once per millisecond: it samples the button and VBUS, steps
 the feedback pattern, polls the reader, then sleeps in WFI until the next
@@ -309,8 +311,10 @@ time reach the PC through `STATUS.TXT` (below), not through the CSV.
 
 Three layers, cheapest first:
 
-1. **The decoder** needs two matching frames before it accepts a card, so one
-   noisy read is never a tap.
+1. **The reader** accepts a card only after a clean ISO14443-A activation (BCC
+   and CRC_A checked in `iso14443a.c`), and `card_reader.c` reports a card held
+   on the reader once, not on every 100 ms poll, so one noisy read is never a
+   tap.
 2. **`dedup.c`**: a card seen in the last 10 seconds is a duplicate, whatever
    else happened. This is the card held against the reader. It is a RAM table,
    so it forgets at Standby.
@@ -358,9 +362,9 @@ Information` and macOS's `.Trashes` fit in the window beside the settings or are
 refused for lack of room; neither can touch the log.
 
 `usbs_begin()` takes the loaded `device_cfg_t` (device ID and card list) so that
-`SETTINGS.CSV` and `STATUS.TXT` can show them. In an ARM build with
-`LED_BOOT_DEBUG` 0 the application uses about 53 % of the main RAM block and
-50 % of SRAM2.
+`SETTINGS.CSV` and `STATUS.TXT` can show them. The ARM build uses about 22.7 kB
+(46 %) of the 48 kB main RAM block and 8 kB (50 %) of the 16 kB SRAM2, and 56 kB
+of the 128 kB code region.
 
 The record count is latched at attach. A host that saw the file size change
 mid-copy would produce a truncated CSV, so scans arriving during a USB session
@@ -372,9 +376,9 @@ recognises the device by that line). It lists the device ID, the clock, the
 number of records in `ATTEND.CSV`, the last tap (card and time), the current
 lecture with the device-clock time it started (`module / lecture (since ...)`, or
 `none set`), a `Cards        : N registered (CRC XXXXXXXX)` line (or `none
-registered`), and what the host's current `SETTINGS.CSV` would do when unplugged:
-unchanged, will be applied (clock set, device ID change, new lecture, new card
-list), or an error, in which case nothing is applied. A bad card list reads
+registered`), and what the host's current `SETTINGS.CSV` would do when the session
+ends: unchanged, will be applied (clock set, device ID change, all records
+deleted, new lecture, new card list), or an error, in which case nothing is applied. A bad card list reads
 `ERROR, the card list is wrong at line N`. The PC compares the card count and CRC
 with its own list to tell whether the device is out of date. The PC uses the lecture's start time,
 which is the device's own clock, to decide which taps belong to which lecture
@@ -385,7 +389,7 @@ whatever its own clock says.
 `SETTINGS.CSV` as first shown:
 
 ```
-# Edit these lines, then unplug the cable. Add #NEWSESSION,1 to start another lecture with the same names.
+# Edit these lines, then eject the drive (or press the button). Add #NEWSESSION,1 to start another lecture with the same names.
 #TIME,2026-10-06 14:30:00
 #MODULE,EN2090
 #LECTURE,Circuits Lecture 4
@@ -397,11 +401,27 @@ whatever its own clock says.
 ```
 
 The device shows its own list back, so a host that edits only the lines it cares
-about leaves the rest as they were. Nothing reaches the device while the cable is in. When VBUS drops, `usb_detach()`
-stops the USB peripheral and calls `usbs_end()`, which finds the file (by name,
-or the single other `.csv` if `SETTINGS.CSV` was not touched), follows its
-cluster chain through the window, and parses it with `setf_scan()`, which never
-touches flash. Only after the whole file is accepted is anything applied.
+about leaves the rest as they were. Nothing reaches the device while the drive is
+mounted. The session ends in one of four ways, and all of them run `usb_leave()`:
+
+- **Eject.** The host sends SCSI START STOP UNIT with START = 0 (Eject in
+  Explorer, Finder or a Linux file manager, `eject`, `udisksctl power-off`).
+  ST's MSC class handles that command without telling anyone, so `bsp_usb.c`
+  registers a copy of the class whose `DataOut` looks at the command block just
+  decoded and latches `plat_usb_ejected()`. `run_usb()` waits
+  `APP_USB_EJECT_GRACE_MS` (1 s) so the host finishes its side, then leaves.
+- **A short press of the button.**
+- **A long press.** `begin_shutdown()` applies the file before switching off.
+- **The cable coming out** (VBUS drops).
+
+After an eject or a press the unit stays on USB power and scans; it sets
+`usb_hold_off`, so the drive comes back only once the cable has been unplugged
+and plugged in again. While VBUS is present the 3-minute idle switch-off is
+suspended: Standby would bring the drive back on the next wake instead of the
+reader. `usb_leave()` stops the USB peripheral and calls `usbs_end()`, which finds the file by its exact 8.3 name `SETTINGS.CSV` (a file
+saved under any other name is ignored), follows its cluster chain through the
+window, and parses it with `setf_scan()`, which never touches flash. Only after
+the whole file is accepted is anything applied.
 
 Rules for the file (`settings_file.h` has the full list): CRLF, LF or CR line
 ends; UTF-8 BOM skipped; only lines whose first non-blank character is `#` mean
@@ -416,9 +436,10 @@ is broken is refused.
 | `#DEVICE,<id>` | sets the device ID (decimal or `0x` hex), stored in the config page and used as the volume serial |
 | `#MODULE,<name>` / `#LECTURE,<name>` | name the lecture (24 and 32 bytes). A new session starts when either differs from what the file was shown with. A name the file omits keeps its current value, and clearing both ends the lecture |
 | `#NEWSESSION` | starts a new session even if the names are unchanged (a second lecture with the same names) |
+| `#CLEARLOG` | erases the whole log (`log_erase_all()`), the RAM buffer and the 10 s table, before any new session marker is written. The Companion app sends it with every lecture start, and only after it has read every row of `ATTEND.CSV` into its database and the row count matched `STATUS.TXT`. Renaming the lecture by hand never clears anything |
 | `#CARDS,<n>` | the registered card list: the next `n` lines hold one card number each (decimal or `0x` hex; text after a comma is ignored), strictly ascending, non-zero and below `0xFFFFFF00`, exactly `n` of them, `n` at most 1000. Anything else refuses the whole file (`SETF_ERR_CARDS`, with the line number), so a truncated copy can never become the list. No `#CARDS` line leaves the stored list untouched; `#CARDS,0` clears it (every card then counts as known) |
 
-The card list is stored by `devcfg_set_cards()` when the cable comes out
+The card list is stored by `devcfg_set_cards()` when the session ends
 (`usbs_end()` reports `cards_set` and `card_count`); an identical list costs no
 flash erase. The session marker is written only if the import succeeded. A malformed `#TIME`
 or `#DEVICE` value is reported on `STATUS.TXT` and ignored; it does not fail the
@@ -489,18 +510,27 @@ chip's no-response timer (1 ms) end each exchange that gets no answer.
 | USB attach → enumerate → CSV | `usb_attach()`, `usb_storage.c`, `bsp_usb.c` |
 | low battery → flush → Standby | `sample_battery()` → `APP_EVT_LOW_BATTERY` |
 
-Two branches the flow chart does not have:
+Branches the flow chart does not have:
 
-- **No student list.** With `APP_ACCEPT_ALL_WHEN_NO_LIST` set, an unprovisioned
-  unit records every card instead of rejecting every card.
+- **Every card is recorded.** The card list only chooses green or red; an
+  unregistered card is still logged. With no list loaded,
+  `APP_ACCEPT_ALL_WHEN_NO_LIST` makes every card green.
 - **A charger is not a host.** VBUS that does not enumerate within 5 s is
   treated as a charger: USB is stopped again and scanning carries on.
+- **Settings when the USB session ends.** On an eject, a button press or the
+  cable coming out, an edited `SETTINGS.CSV` is applied (green, two pulses) or
+  refused (red, three pulses), and scanning carries on, with the cable still in
+  after an eject or a press.
+
+`handle_card()` checks in this order: the 10 s table (`dedup.c`), then "already
+recorded in this lecture" (`sess_card_seen()`), then whether the log has room,
+and only then records the card and picks green or red from the card list. So a
+repeat tap of an unregistered card gets the duplicate pattern, not red.
 
 Duplicate suppression uses an eight-entry MRU table rather than the single
 last-seen slot the diagram implies. With one slot, two people tapping in
 alternation each clear the other's entry and both get logged twice; there is a
-test for that case. Unknown cards are checked before duplicates, so an
-unknown card always gets the red pattern.
+test for that case.
 
 ## User interface
 
@@ -508,11 +538,13 @@ unknown card always gets the red pattern.
 |---|---|---|
 | Power on | green 300 ms | 120 ms |
 | Card accepted | green 250 ms | 90 ms |
-| Duplicate (within 10 s) | green ×2 | ×2 short |
-| Unknown card | red 450 ms | 450 ms |
+| Duplicate (within 10 s, or already in this lecture) | green ×2 | ×2 short |
+| Unregistered card (still recorded) | red 450 ms | 450 ms |
 | Log full, or reader failed at power-on | red ×4 | ×4 |
-| Button tap | green ×2 (battery OK) or red ×5 (low) | — |
-| Button held 2 s, or 3 min idle | red 700 ms, then off | 250 ms |
+| Settings applied (eject, button or unplug) | green, two pulses | ×2 |
+| Settings refused | red, three pulses | ×3 |
+| Button tap | green ×2 (battery OK) or red ×5 (low); while plugged in it first ends the USB session | — |
+| Button held 2 s, or 3 min idle on battery | red 700 ms, then off | 250 ms |
 | Idle | 30 ms green flash every 4 s; red if the battery is low or the reader failed | — |
 | USB session | green flash every second | — |
 
@@ -532,10 +564,11 @@ firmware's build time.
 
 ## Companion app
 
-`Companion/` holds the app for the computer the device is plugged into. It is a
-Python helper (`attendance_app.py`, standard library only) that serves a browser
-page on 127.0.0.1; the helper exists because a web page alone cannot list drives
-and browsers refuse to open the root of a USB drive. It recognises the device by
+`Companion/` holds the app for the computer the device is plugged into: a
+desktop window (`attendance_gui.py`, Python standard library with Tkinter) that
+needs no server and no browser except to print. The older browser version
+(`attendance_app.py`, serving a page on 127.0.0.1) is still included and shares
+the same actions. It recognises the device by
 `ATTEND.CSV`, `SETTINGS.CSV` and a `STATUS.TXT` that begins `ATTENDANCE LOGGER`,
 reads `ATTEND.CSV` and `STATUS.TXT`, and rewrites only `SETTINGS.CSV`, in place.
 
@@ -550,7 +583,7 @@ with every lecture start and clock set and with the Send cards to device button,
 and shows a banner when the count and CRC on `STATUS.TXT` differ from its own
 list. It refuses to send more than 1000 cards. Reports come
 out as CSV or as PDF (`report_pages.py` makes a page that headless Chrome or Edge
-prints; with neither, use the browser's Print, Save as PDF). `Companion/README.md`
+prints; with neither, Print opens the page in the browser, then Save as PDF). `Companion/README.md`
 describes use.
 
 ## Board notes for the hardware
@@ -568,8 +601,48 @@ describes use.
 - **PA0 is the power button**, active low to ground; it is WKUP1, and is
   polled while running.
 - USB is crystal-less: HSI48 trimmed by the CRS against the host's SOF.
+- **The MCU must be the 256 kB STM32L432KC.** The schematic value and the JLCPCB
+  production BOM (`PCB/production/bom.csv`) give U4 as STM32L432KBUx, the
+  128 kB part, which has no flash at `0x08020000`. Read the fitted part's flash
+  size at `0x1FFF75E0` (256 or 128) before trusting a board.
 
 Full pin map: `Bsp/Inc/bsp_board.h`.
+
+## Known limitations
+
+Found in review on 2026-10-06; none is covered by a test yet. (A long press
+while plugged in used to discard the host's edits; `begin_shutdown()` now applies
+them first, and `test_fsm_plugged_in()` covers it.)
+
+- **Back-to-back lectures need a new session.** Without a new marker, a card
+  recorded in the last 6 hours (`APP_SESSION_MAX_AGE_S`) is a duplicate, so a
+  second lecture within 6 hours that was not started over USB loses every
+  returning student, with no way to recover the taps.
+- **Card IDs from `0xFFFFFF00` up collide with session markers.** The PC app
+  refuses them, but `handle_card()` does not: a 7-byte UID whose last four bytes
+  fall in that range is logged as a marker and disappears from the CSV.
+- **The marker table holds 768 entries.** A log with more lecture markers than
+  that is cut short at the 768th in `ATTEND.CSV`, silently. With the Companion
+  app's `#CLEARLOG` at every lecture start the log holds one or two markers, so
+  this matters only to a device used without the app.
+- **Changing settings erases the config page first.** A power cut between the
+  erase and the final write leaves no device ID and no card list (by design no
+  half-valid list). After a failed flash write the RAM copy of the config is not
+  reloaded, so every card shows red until the next reset.
+- **Host editors.** The root directory has 16 entries and the settings window 28
+  clusters. An editor that saves to a temporary file and renames it needs a
+  second copy's worth of free clusters (a 1000-card list uses 24 of the 28), and
+  macOS metadata files use root entries; either can make a save fail with "disk
+  full". Excel may also rewrite `#TIME` in a locale format the parser does not
+  accept. Edit `SETTINGS.CSV` with a plain text editor, or let the Companion app
+  write it.
+- **Settings apply when the session ends.** `#TIME` is applied at the eject,
+  button press or unplug, so the clock is late by however long the drive stayed
+  mounted after the file was written (the app ejects straight away).
+- **Eject detection relies on START STOP UNIT.** A host that ejects some other
+  way (or only suspends the port) leaves the drive session running; the button
+  or the cable still end it. A Windows or Linux host that sends START = 0 for
+  disk power management would end the session as well.
 
 ## Provisioning
 

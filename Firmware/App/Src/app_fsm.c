@@ -69,6 +69,7 @@ static struct {
   uint32_t shutdown_since;
   uint32_t vbus_changed;
   uint32_t usb_since;
+  uint32_t eject_since;
 
   batt_state_t batt;
   uint8_t batt_critical;
@@ -77,7 +78,9 @@ static struct {
   bool vbus_raw;
   bool vbus;         /**< Debounced. */
   bool usb_host;     /**< A host enumerated this session. */
-  bool charger_only; /**< VBUS without a host; keep scanning. */
+  bool eject_seen;   /**< The host ejected the drive; leaving after the grace. */
+  bool usb_hold_off; /**< VBUS stays, but no drive until it goes: a charger,
+                          an eject or a button press ended the session. */
 } g;
 
 /* ------------------------------------------------------------------------ */
@@ -376,11 +379,15 @@ static void handle_card(const iso14443a_card_t *card) {
  * common: stop the reader, get the data safe, then play @p pattern. Standby
  * follows once it has finished and the button is up (run_shutdown()).
  */
+static void usb_leave(void);
+
 static void begin_shutdown(fb_pattern_t pattern) {
-  cr_enable(&g.reader, false, g.now);
   if (g.state == ST_USB) {
-    plat_usb_stop();
+    /* Apply what the host left in SETTINGS.CSV first: switching off while
+     * plugged in is no reason to lose a lecture or a card list. */
+    usb_leave();
   }
+  cr_enable(&g.reader, false, g.now);
   flush_to_flash();
 
   g.state = ST_SHUTDOWN;
@@ -418,7 +425,7 @@ static void run_shutdown(void) {
 static void usb_attach(void) {
   app_datetime_t dt;
 
-  if (g.state != ST_IDLE || g.charger_only) {
+  if (g.state != ST_IDLE || g.usb_hold_off) {
     return;
   }
 
@@ -436,6 +443,7 @@ static void usb_attach(void) {
   g.state = ST_USB;
   g.usb_since = g.now;
   g.usb_host = false;
+  g.eject_seen = false;
 }
 
 /**
@@ -453,6 +461,17 @@ static void start_session(const char *module, const char *lecture) {
     (void)rb_push(&g.rb, &recs[i]);
   }
   flush_to_flash();
+}
+
+/**
+ * #CLEARLOG: erase every record and lecture marker. The host imported them
+ * before asking. Anything still in RAM goes too, and the duplicate windows
+ * start afresh, so every card counts again.
+ */
+static bool clear_log(void) {
+  rb_init(&g.rb);
+  dedup_init(&g.dedup);
+  return log_erase_all(&g.log);
 }
 
 /**
@@ -482,12 +501,24 @@ static void usb_leave(void) {
       res.outcome = USBS_IMPORT_FAILED;
     }
   }
+  if (res.outcome == USBS_IMPORT_OK && res.clear_log && !clear_log()) {
+    res.outcome = USBS_IMPORT_FAILED;
+  }
   if (res.outcome == USBS_IMPORT_OK && res.session_start) {
     start_session(res.module, res.lecture);
   }
   if (res.outcome != USBS_IMPORT_NONE) {
     begin_feedback((res.outcome == USBS_IMPORT_OK) ? FB_SAVED : FB_REJECTED);
   }
+}
+
+/**
+ * End the USB session but stay on USB power: apply SETTINGS.CSV and scan. The
+ * drive comes back only when the cable is unplugged and plugged in again.
+ */
+static void usb_finish(void) {
+  g.usb_hold_off = true;
+  usb_leave();
 }
 
 static void run_usb(void) {
@@ -497,9 +528,20 @@ static void run_usb(void) {
     g.usb_host = true;
   } else if (!g.usb_host && elapsed(g.usb_since, APP_USB_ENUM_TIMEOUT_MS)) {
     /* Power without a host: a charger. Charge and keep scanning. */
-    g.charger_only = true;
-    usb_leave();
+    usb_finish();
     return;
+  }
+
+  /* The host ejected the drive: its writes are flushed, so apply them and
+   * start taking attendance without waiting for the cable to come out. */
+  if (plat_usb_ejected()) {
+    if (!g.eject_seen) {
+      g.eject_seen = true;
+      g.eject_since = g.now;
+    } else if (elapsed(g.eject_since, APP_USB_EJECT_GRACE_MS)) {
+      usb_finish();
+      return;
+    }
   }
 
   if (due(g.next_battery)) {
@@ -543,7 +585,11 @@ static void run_idle(void) {
     }
   }
 
-  if (elapsed(g.last_activity, APP_INACTIVITY_MS)) {
+  /* On USB power there is no battery to save, and Standby would bring the
+   * drive back on the next wake instead of the reader. */
+  if (g.vbus) {
+    touch_activity();
+  } else if (elapsed(g.last_activity, APP_INACTIVITY_MS)) {
     app_event_post(APP_EVT_INACTIVITY);
   }
 }
@@ -688,8 +734,14 @@ void app_init(void) {
 void app_dispatch(app_event_t evt) {
   switch (evt) {
   case APP_EVT_BUTTON_SHORT:
+    /* While plugged in, a tap ends the drive session: SETTINGS.CSV is
+     * applied and the reader starts, still on USB power. The settings
+     * pattern, if any, is the answer; otherwise the battery status is. */
+    if (g.state == ST_USB) {
+      usb_finish();
+    }
     /* A tap shows the battery: two green blinks, or the red low pattern. */
-    if (g.state != ST_SHUTDOWN) {
+    if (g.state != ST_SHUTDOWN && !fb_is_active(&g.fb)) {
       touch_activity();
       begin_feedback(g.batt == BATT_OK ? FB_STATUS_OK : FB_LOW_BATTERY);
     }
@@ -712,7 +764,7 @@ void app_dispatch(app_event_t evt) {
     break;
 
   case APP_EVT_USB_DETACH:
-    g.charger_only = false;
+    g.usb_hold_off = false;
     if (g.state == ST_USB) {
       usb_leave();
     }

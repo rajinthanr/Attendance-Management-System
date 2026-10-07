@@ -192,4 +192,11 @@ void plat_usb_stop(void);
 /** True once a host has configured the device (as opposed to a bare charger). */
 bool plat_usb_configured(void);
 
+/**
+ * True once the host has ejected the drive this session (SCSI START STOP UNIT
+ * with START = 0: Eject in Windows Explorer, macOS Finder or a Linux file
+ * manager, `eject`, `udisksctl power-off`). Cleared by plat_usb_start().
+ */
+bool plat_usb_ejected(void);
+
 #endif /* PLATFORM_IF_H */

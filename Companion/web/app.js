@@ -213,7 +213,7 @@
       if (d.error) {
         h += banner('err:' + d.error, 'bad', 'The device refused the last settings file', ' ' + d.error.replace(/^ERROR,?\s*/, ''));
       }
-      if (d.pending) { h += banner('pending', 'info', 'Changes are waiting on the device.', ' Eject the drive and unplug the cable to apply them.'); }
+      if (d.pending) { h += banner('pending', 'info', 'Changes are waiting on the device.', ' Eject the drive, or press the button on the device, to apply them.'); }
       var cs = st.cards;
       if (cs && cs.too_many) {
         h += banner('cardsmany', 'bad', 'There are more students than the device can hold.',
@@ -233,7 +233,7 @@
         ' ' + S.sent.module + ' · ' + S.sent.title + '. Students can tap their cards now.');
     } else if (S.sent) {
       h += banner('await:' + S.sent.title, 'info', 'Sent to the device.',
-        ' Now eject the drive and unplug the cable. The device checks the file as the cable comes out: green light and two buzzes means started, red light and three buzzes means it was refused.');
+        ' Now eject the drive, or press the button on the device once. The device then checks the file: green light and two buzzes means started, red light and three buzzes means it was refused. The cable can stay in.');
     }
     if (!S.online) {
       h += banner('offline', 'info', 'The app is not running.', ' Close this page and start attendance_app.py (or double-click start.bat).');
@@ -321,7 +321,7 @@
       ' (it will not be sent to the device).</div></div>' +
       '<div class="card"><h3>How a lecture works</h3><ol class="steps">' +
         '<li><b>Send to device</b> puts the module and lecture name, and the card numbers of your students, on the drive.</li>' +
-        '<li><b>Eject and unplug</b> the cable. The device checks the file: <span class="led green"></span> green light and two buzzes = started, <span class="led red"></span> red light and three buzzes = refused.</li>' +
+        '<li><b>Eject the drive</b> (this page does it for you), or press the button on the device once. The device checks the file: <span class="led green"></span> green light and two buzzes = started, <span class="led red"></span> red light and three buzzes = refused.</li>' +
         '<li><b>Students tap their cards.</b> The device stores only the card number and the time. <span class="led green"></span> Green and a short buzz: a registered card. <span class="led red"></span> Red and a long buzz: a card that is not in your list (it is still recorded, so you can register it). A second tap in the same lecture gets a double buzz and is ignored.</li>' +
         '<li><b>Plug the device back in.</b> This page reads the taps, matches the cards to your student list, and shows who came.</li>' +
       '</ol></div>';
@@ -337,7 +337,7 @@
       S.dismissed = {};
       lsSet('lastModule', r.lecture.module_code);
       f.touched = false;
-      toast('Sent. Now eject and unplug the cable.');
+      toast(r && r.ejected ? 'Sent and ejected. The lecture starts on the device now.' : 'Sent. Now eject the drive or press the button on the device.');
       return loadAll();
     }).then(function () { render(); poll(); }).catch(function (e) { S.busy = false; fail(e); render(); });
   }
@@ -529,7 +529,7 @@
       (!S.students.length ? '' : '') + '</div>' +
       (!S.cards.length ? '<div class="card"><h3>Adding a new student</h3><ol class="steps"><li>Tap the new student’s card on the device.</li><li>Plug the device into this computer.</li>' +
         '<li>The card appears here under “New cards”. Press <b>Register</b>, fill in the details and save.</li>' +
-        '<li>Press <b>Send cards to device</b>, eject and unplug, so the device shows green for the new card.</li></ol></div>' : '');
+        '<li>Press <b>Send cards to device</b>, then eject the drive or press the device\'s button, so the device shows green for the new card.</li></ol></div>' : '');
     drawStudents();
   }
 
@@ -839,11 +839,11 @@
       case 'backup': download('/api/backup.db'); break;
       case 'send-cards':
         api('POST', '/api/device/cards', {}).then(function (r) {
-          toast(plural(r.count, 'card') + ' sent. Eject and unplug to apply.'); S.sent = null; poll();
+          toast(plural(r.count, 'card') + ' sent. Eject the drive or press the device\'s button to apply.'); S.sent = null; poll();
         }).catch(fail);
         break;
       case 'device-clock':
-        api('POST', '/api/device/clock', {}).then(function () { toast('Clock sent. Eject and unplug to apply it.'); S.sent = null; }).catch(fail);
+        api('POST', '/api/device/clock', {}).then(function () { toast('Clock sent. Eject the drive or press the device\'s button to apply it.'); S.sent = null; }).catch(fail);
         break;
     }
   });

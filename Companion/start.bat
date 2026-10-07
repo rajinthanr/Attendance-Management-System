@@ -1,14 +1,17 @@
 @echo off
-rem Starts the Attendance Logger app. Double-click this file.
+rem Starts the Attendance Logger app in its own window. Double-click this file.
+rem (The browser version is still there: python attendance_app.py)
 cd /d "%~dp0"
 where python >nul 2>nul
 if %errorlevel%==0 (
-    python attendance_app.py %*
+    python attendance_gui.py %*
+    if errorlevel 1 pause
     goto :end
 )
 where py >nul 2>nul
 if %errorlevel%==0 (
-    py -3 attendance_app.py %*
+    py -3 attendance_gui.py %*
+    if errorlevel 1 pause
     goto :end
 )
 echo.

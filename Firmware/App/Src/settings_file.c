@@ -76,7 +76,7 @@ uint32_t setf_render(char *buf, uint32_t cap, const app_datetime_t *now,
     out_t o = { buf, cap, 0u, false };
     uint32_t i;
 
-    out_str(&o, "# Edit these lines, then unplug the cable. "
+    out_str(&o, "# Edit these lines, then eject the drive (or press the button). "
                 "Add #NEWSESSION,1 to start another lecture with the same names.");
     out_eol(&o);
 
@@ -485,6 +485,7 @@ void setf_scan(setf_get_fn get, void *ctx, uint32_t size, setf_report_t *rep)
     rep->has_module = false;
     rep->has_lecture = false;
     rep->new_session = false;
+    rep->clear_log = false;
     rep->module[0] = '\0';
     rep->lecture[0] = '\0';
     rep->has_cards = false;
@@ -551,6 +552,8 @@ void setf_scan(setf_get_fn get, void *ctx, uint32_t size, setf_report_t *rep)
             copy_limited(rep->lecture, l.val, l.val_len, SESS_LECTURE_MAX);
         } else if (keyword(&l, "#NEWSESSION")) {
             rep->new_session = true;
+        } else if (keyword(&l, "#CLEARLOG")) {
+            rep->clear_log = true;
         } else if (keyword(&l, "#CARDS")) {
             if (in_cards || !parse_u32(l.val, l.val_len, &declared) || declared > NV_CARDS_MAX) {
                 cards_twice = true;             /* a second #CARDS, or a count that makes no sense */

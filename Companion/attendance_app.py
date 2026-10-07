@@ -24,6 +24,7 @@ import os
 import platform
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -43,7 +44,7 @@ STATUS_NAME = "STATUS.TXT"
 ATTEND_NAME = "ATTEND.CSV"
 SETTINGS_NAME = "SETTINGS.CSV"
 STATUS_MAGIC = "ATTENDANCE LOGGER"
-MAX_SETTINGS_BYTES = 8 * 512          # the window on the device
+MAX_SETTINGS_BYTES = 28 * 512         # the window on the device (SETF_MAX_BYTES)
 MAX_BODY = 4 * 1024 * 1024            # a pasted class list is the largest thing sent
 BACKUPS_KEPT = 14
 
@@ -133,6 +134,84 @@ def find_device(forced=None):
         if is_device(root):
             return root
     return None
+
+
+def _quiet_run(args, timeout=30):
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout,
+                          creationflags=flags).returncode == 0
+
+
+def _eject_windows(root):
+    """Lock, dismount and eject the volume: what Explorer's Eject does, without its localised verb."""
+    import ctypes
+    from ctypes import wintypes
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    k.CreateFileW.restype = wintypes.HANDLE
+    k.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
+                              wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    k.DeviceIoControl.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD,
+                                  wintypes.LPVOID, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID]
+    k.CloseHandle.argtypes = [wintypes.HANDLE]
+    drive = os.path.splitdrive(os.path.abspath(root))[0]
+    h = k.CreateFileW("\\\\.\\" + drive, 0xC0000000, 3, None, 3, 0, None)   # read/write, share both, open existing
+    if h is None or h == wintypes.HANDLE(-1).value:
+        return False
+    try:
+        done = wintypes.DWORD()
+
+        def ioctl(code, buf=None, size=0):
+            return bool(k.DeviceIoControl(h, code, buf, size, None, 0, ctypes.byref(done), None))
+        for _ in range(20):                      # FSCTL_LOCK_VOLUME: waits for Explorer to let go
+            if ioctl(0x00090018):
+                break
+            time.sleep(0.25)
+        else:
+            return False
+        if not ioctl(0x00090020):                # FSCTL_DISMOUNT_VOLUME
+            return False
+        allow = ctypes.c_ubyte(0)
+        ioctl(0x002D4804, ctypes.byref(allow), 1)  # IOCTL_STORAGE_MEDIA_REMOVAL: allow
+        return ioctl(0x002D4808)                 # IOCTL_STORAGE_EJECT_MEDIA: the SCSI eject the device waits for
+    finally:
+        k.CloseHandle(h)
+
+
+def _block_device(root):
+    """/dev/... mounted at @root, from /proc/mounts (Linux), or None."""
+    try:
+        with open("/proc/mounts") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) > 1 and parts[1].encode().decode("unicode_escape") == root.rstrip("/"):
+                    return parts[0]
+    except OSError:
+        pass
+    return None
+
+
+def eject_drive(root):
+    """
+    Eject the device's drive, as the system's own Eject does. The device sees it, applies SETTINGS.CSV and
+    starts taking attendance with the cable still in. Returns True when the system says it worked.
+    """
+    try:
+        system = platform.system()
+        if system == "Windows":
+            return _eject_windows(root)
+        if system == "Darwin":
+            return _quiet_run(["diskutil", "eject", root])
+        dev = _block_device(root)
+        if dev and shutil.which("udisksctl"):
+            if _quiet_run(["udisksctl", "unmount", "--no-user-interaction", "-b", dev]):
+                return _quiet_run(["udisksctl", "power-off", "--no-user-interaction", "-b", dev])
+        if shutil.which("gio"):
+            return _quiet_run(["gio", "mount", "--eject", root])
+        if shutil.which("eject"):
+            return _quiet_run(["eject", root])
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return False
 
 
 def volume_label(root):
@@ -259,6 +338,76 @@ class App:
         """Seconds to add to this PC's clock to get the device's (0 when unknown)."""
         return -self.pc_minus_device if self.pc_minus_device is not None else 0
 
+    # ---- what the screens ask of the device (the web routes and the desktop window both call these)
+    def import_everything(self):
+        """
+        Read every tap off the device into the database, now. True only when ATTEND.CSV held exactly
+        the number of rows STATUS.TXT promises and none was unreadable: then the device may be cleared.
+        """
+        with self.lock:
+            root = self.device_dir()
+            if not root:
+                return False
+            st = D.parse_status(read_text(os.path.join(root, STATUS_NAME), 1024))
+            rows, skipped = D.parse_attend(read_text(os.path.join(root, ATTEND_NAME)))
+            if not st["ok"] or skipped or len(rows) != st["records"]:
+                return False
+            self._sync(root, st)
+            self.sig = None                     # read STATUS.TXT afresh on the next poll
+            return True
+
+    def eject(self):
+        """Eject the drive so the device applies SETTINGS.CSV and starts scanning. True when it worked."""
+        with self.lock:
+            root = self.device_dir()
+            ok = bool(root) and not self.forced_dir and eject_drive(root)
+            if ok:
+                self.last_path = None
+                self.sig = None
+            return ok
+
+    def start_lecture(self, module, title, sync_clock=True, clear_device=True):
+        """
+        Tell the device which lecture this is, and record it here. With @clear_device the device's
+        records are imported first and the device deletes them when it starts the lecture. The drive
+        is then ejected so the lecture starts at once. Returns {lecture, clock_set, cleared, ejected}.
+        """
+        module = D.clean_device_text(module, D.MODULE_BYTES)
+        title = D.clean_device_text(title, D.LECTURE_BYTES)
+        if not module:
+            raise ApiError(400, "Choose or enter a module")
+        if not title:
+            raise ApiError(400, "Enter a lecture name")
+        sync = sync_clock is not False
+        st = self.status or {}
+        now = D.now_ts()
+        clear = bool(clear_device) and self.import_everything()
+        text = D.build_settings(now=now if sync else None, module=module, lecture=title, new_session=True,
+                                device_id=st.get("device_id", 0), cards=self.db.card_ids(), clear_log=clear)
+        self.write_settings(text)                # first: if the device cannot be written, nothing is recorded here
+        start = now if sync else now + int(self.device_offset())
+        lecture = self.db.start_lecture(module, title, start)
+        return {"lecture": lecture, "clock_set": sync, "cleared": clear, "ejected": self.eject()}
+
+    def set_clock(self):
+        """Set the device clock to this computer's time (and refresh its card list)."""
+        st = self.status or {}
+        self.write_settings(D.build_settings(now=D.now_ts(), device_id=st.get("device_id", 0), cards=self.db.card_ids()))
+
+    def send_cards(self):
+        """Give the device the card numbers of every registered student, so it can show green or red.
+        Returns how many were sent."""
+        st = self.status or {}
+        ids = self.db.card_ids()
+        self.write_settings(D.build_settings(device_id=st.get("device_id", 0), cards=ids))
+        return len(ids)
+
+    def set_device_id(self, value):
+        dev = _int(value, "device number")
+        if dev < 0 or dev >= 0xFFFFFFFF:
+            raise ApiError(400, "The device number must be between 0 and 4294967294")
+        self.write_settings(D.build_settings(device_id=dev))
+
 
 def rotate_backup(db, data_dir):
     """Keep a dated copy of the database, one a day, the last BACKUPS_KEPT of them."""
@@ -277,6 +426,111 @@ def rotate_backup(db, data_dir):
         except OSError:
             pass
     return path
+
+
+# --------------------------------------------------------------------------
+# Actions and exports shared by the web routes and the desktop window
+# --------------------------------------------------------------------------
+
+CSV_TYPE = "text/csv; charset=utf-8"
+HTML_TYPE = "text/html; charset=utf-8"
+PDF_TYPE = "application/pdf"
+
+
+def _int(v, what="number"):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        raise ApiError(400, "That is not a valid %s" % what)
+
+
+def opt_ts(v):
+    """A typed date or date and time as a naive epoch; empty means None."""
+    v = (v or "").strip() if isinstance(v, str) else v
+    return D.parse_ts(v) if v else None
+
+
+def _slug(s):
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", str(s)).strip("_") or "attendance"
+
+
+def import_taps(db, text):
+    """Taps from a saved ATTEND.CSV, when the device itself is not to hand. Returns {read, new, skipped}."""
+    if not isinstance(text, str):
+        raise ApiError(400, "expected {\"text\": \"...\"}")
+    rows, skipped = D.parse_attend(text)
+    if not rows:
+        raise ApiError(400, "No taps found in that file. It should be the ATTEND.CSV from the device.")
+    return {"read": len(rows), "new": db.add_taps(rows, 0), "skipped": skipped}
+
+
+def edit_lecture(db, lecture_id, fields):
+    """Change a lecture. @fields holds any of module, title, start, end (dates as typed; an empty end means running)."""
+    kw = {}
+    if "module" in fields:
+        kw["module"] = fields["module"]
+    if "title" in fields:
+        kw["title"] = fields["title"]
+    if "start" in fields:
+        kw["start_ts"] = opt_ts(fields["start"])
+    if "end" in fields:
+        kw["end_ts"] = opt_ts(fields["end"])
+    return db.update_lecture(lecture_id, **kw)
+
+
+def save_module(db, old, code, title="", department=""):
+    """Add a module, or edit one (renaming it first when @old differs from @code), as the Modules screen does."""
+    if old and old != str(code or "").strip():
+        db.rename_module(old, code)
+    return db.upsert_module(code, title, department)
+
+
+def _pdf_bytes(page):
+    try:
+        return R.render_pdf(page)
+    except RuntimeError as e:
+        raise ApiError(501, str(e))
+
+
+def _export(kind, csv_text, page, base):
+    """(data, content type, file name) for kind csv, html or pdf. @page is called only when needed."""
+    if kind == "csv":
+        return ("﻿" + csv_text()).encode("utf-8"), CSV_TYPE, base + ".csv"
+    if kind == "html":
+        return page().encode("utf-8"), HTML_TYPE, base + ".html"
+    if kind == "pdf":
+        return _pdf_bytes(page()), PDF_TYPE, base + ".pdf"
+    raise ValueError(kind)
+
+
+def lecture_export(db, lecture_id, kind):
+    att = db.lecture_attendance(lecture_id)
+    l = att["lecture"]
+    return _export(kind, lambda: D.Database.lecture_csv(att), lambda: R.lecture_page(att),
+                   "%s_%s_%s" % (_slug(l["date"]), _slug(l["module_code"]), _slug(l["title"])))
+
+
+def module_export(db, code, kind, date_from=None, date_to=None):
+    rep = db.module_report(code, date_from or None, date_to or None)
+    return _export(kind, lambda: D.Database.module_csv(rep), lambda: R.module_page(rep), "%s_attendance" % _slug(code))
+
+
+def student_export(db, card_id, kind):
+    rep = db.student_report(card_id)
+    return _export(kind, lambda: D.Database.student_csv(rep), lambda: R.student_page(rep),
+                   "%s_attendance" % _slug(rep["student"]["name"]))
+
+
+def students_export(db):
+    return ("﻿" + db.students_csv()).encode("utf-8"), CSV_TYPE, "students.csv"
+
+
+def taps_export(db, ts_from=None, ts_to=None):
+    return ("﻿" + db.taps_csv(ts_from, ts_to)).encode("utf-8"), CSV_TYPE, "taps.csv"
+
+
+def backup_export(db):
+    return db.backup_bytes(), "application/octet-stream", "attendance-%s.db" % time.strftime("%Y%m%d-%H%M")
 
 
 # --------------------------------------------------------------------------
@@ -349,7 +603,7 @@ def make_demo(data_dir, device_dir):
               "Last tap     : %010d at %s\r\nLecture      : EN2090 / Circuits Lecture 4 (since %s)\r\nSETTINGS.CSV : unchanged\r\n"
               % (now.strftime("%Y-%m-%d %H:%M:%S"), len(taps), cards_line, last_card, D.fmt_ts(last_ts), start.strftime("%Y-%m-%d %H:%M:%S")))
     status = status.ljust(510) + "\r\n"
-    settings = ("# Edit these lines, then unplug the cable. Add #NEWSESSION,1 to start another lecture with the same names.\r\n"
+    settings = ("# Edit these lines, then eject the drive (or press the button). Add #NEWSESSION,1 to start another lecture with the same names.\r\n"
                 "#TIME,%s\r\n#MODULE,EN2090\r\n#LECTURE,Circuits Lecture 4\r\n#DEVICE,0012648430\r\n" % now.strftime("%Y-%m-%d %H:%M:%S"))
     for name, text in ((ATTEND_NAME, attend), (STATUS_NAME, status), (SETTINGS_NAME, settings)):
         with open(os.path.join(device_dir, name), "w", newline="", encoding="utf-8") as f:
@@ -360,24 +614,14 @@ def make_demo(data_dir, device_dir):
 # The web server
 # --------------------------------------------------------------------------
 
-def _int(v, what="number"):
-    try:
-        return int(v)
-    except (TypeError, ValueError):
-        raise ApiError(400, "That is not a valid %s" % what)
-
-
-def _opt_ts(v):
-    v = (v or "").strip() if isinstance(v, str) else v
-    return D.parse_ts(v) if v else None
-
-
 def _download(data, ctype, filename=None):
     return ("download", data, ctype, filename)
 
 
-def _slug(s):
-    return re.sub(r"[^A-Za-z0-9._-]+", "_", str(s)).strip("_") or "attendance"
+def _file(export):
+    """An export as a download; a page to print is shown, not saved."""
+    data, ctype, filename = export
+    return _download(data, ctype, None if ctype == HTML_TYPE else filename)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -566,7 +810,7 @@ def r_student_import(app, m, q, b):
 
 @route("GET", r"/api/students\.csv")
 def r_students_csv(app, m, q, b):
-    return _download(("\ufeff" + app.db.students_csv()).encode("utf-8"), "text/csv; charset=utf-8", "students.csv")
+    return _file(students_export(app.db))
 
 
 @route("GET", r"/api/cards/unregistered")
@@ -613,40 +857,17 @@ def r_lectures(app, m, q, b):
 @route("POST", r"/api/lectures/start")
 def r_lecture_start(app, m, q, b):
     """Tell the device which lecture this is, and record it here."""
-    module = D.clean_device_text(b.get("module"), D.MODULE_BYTES)
-    title = D.clean_device_text(b.get("title"), D.LECTURE_BYTES)
-    if not module:
-        raise ApiError(400, "Choose or enter a module")
-    if not title:
-        raise ApiError(400, "Enter a lecture name")
-    sync = b.get("sync_clock", True) is not False
-    st = app.status or {}
-    now = D.now_ts()
-    text = D.build_settings(now=now if sync else None, module=module, lecture=title, new_session=True,
-                            device_id=st.get("device_id", 0), cards=app.db.card_ids())
-    app.write_settings(text)                 # first: if the device cannot be written, nothing is recorded here
-    start = now if sync else now + int(app.device_offset())
-    lecture = app.db.start_lecture(module, title, start)
-    return {"lecture": lecture, "clock_set": sync}
+    return app.start_lecture(b.get("module"), b.get("title"), b.get("sync_clock", True))
 
 
 @route("POST", r"/api/lectures")
 def r_lecture_create(app, m, q, b):
-    return app.db.create_lecture(b.get("module"), b.get("title"), _opt_ts(b.get("start")), _opt_ts(b.get("end")))
+    return app.db.create_lecture(b.get("module"), b.get("title"), opt_ts(b.get("start")), opt_ts(b.get("end")))
 
 
 @route("PATCH", r"/api/lectures/(\d+)")
 def r_lecture_update(app, m, q, b):
-    kw = {}
-    if "module" in b:
-        kw["module"] = b["module"]
-    if "title" in b:
-        kw["title"] = b["title"]
-    if "start" in b:
-        kw["start_ts"] = _opt_ts(b["start"])
-    if "end" in b:
-        kw["end_ts"] = _opt_ts(b["end"])
-    return app.db.update_lecture(int(m.group(1)), **kw)
+    return edit_lecture(app.db, int(m.group(1)), b)
 
 
 @route("POST", r"/api/lectures/(\d+)/end")
@@ -667,29 +888,17 @@ def r_lecture(app, m, q, b):
 
 @route("GET", r"/api/lectures/(\d+)\.csv")
 def r_lecture_csv(app, m, q, b):
-    att = app.db.lecture_attendance(int(m.group(1)))
-    l = att["lecture"]
-    return _download(("\ufeff" + D.Database.lecture_csv(att)).encode("utf-8"), "text/csv; charset=utf-8",
-                     "%s_%s_%s.csv" % (_slug(l["date"]), _slug(l["module_code"]), _slug(l["title"])))
+    return _file(lecture_export(app.db, int(m.group(1)), "csv"))
 
 
 @route("GET", r"/api/lectures/(\d+)\.html")
 def r_lecture_html(app, m, q, b):
-    return _download(R.lecture_page(app.db.lecture_attendance(int(m.group(1)))).encode("utf-8"), "text/html; charset=utf-8")
+    return _file(lecture_export(app.db, int(m.group(1)), "html"))
 
 
 @route("GET", r"/api/lectures/(\d+)\.pdf")
 def r_lecture_pdf(app, m, q, b):
-    att = app.db.lecture_attendance(int(m.group(1)))
-    l = att["lecture"]
-    return _pdf(R.lecture_page(att), "%s_%s_%s.pdf" % (_slug(l["date"]), _slug(l["module_code"]), _slug(l["title"])))
-
-
-def _pdf(page, filename):
-    try:
-        return _download(R.render_pdf(page), "application/pdf", filename)
-    except RuntimeError as e:
-        raise ApiError(501, str(e))
+    return _file(lecture_export(app.db, int(m.group(1)), "pdf"))
 
 
 @route("POST", r"/api/unassigned/lecture")
@@ -701,84 +910,58 @@ def r_unassigned_lecture(app, m, q, b):
 @route("GET", r"/api/reports/module/(.+?)(\.csv|\.html|\.pdf)?")
 def r_report_module(app, m, q, b):
     code, ext = m.group(1), m.group(2)
-    rep = app.db.module_report(code, q.get("from") or None, q.get("to") or None)
-    if ext == ".csv":
-        return _download(("\ufeff" + D.Database.module_csv(rep)).encode("utf-8"), "text/csv; charset=utf-8",
-                         "%s_attendance.csv" % _slug(code))
-    if ext == ".html":
-        return _download(R.module_page(rep).encode("utf-8"), "text/html; charset=utf-8")
-    if ext == ".pdf":
-        return _pdf(R.module_page(rep), "%s_attendance.pdf" % _slug(code))
-    return rep
+    if ext:
+        return _file(module_export(app.db, code, ext[1:], q.get("from"), q.get("to")))
+    return app.db.module_report(code, q.get("from") or None, q.get("to") or None)
 
 
 @route("GET", r"/api/reports/student/(\d+)(\.csv|\.html|\.pdf)?")
 def r_report_student(app, m, q, b):
     card, ext = int(m.group(1)), m.group(2)
-    rep = app.db.student_report(card)
-    name = _slug(rep["student"]["name"])
-    if ext == ".csv":
-        return _download(("\ufeff" + D.Database.student_csv(rep)).encode("utf-8"), "text/csv; charset=utf-8", "%s_attendance.csv" % name)
-    if ext == ".html":
-        return _download(R.student_page(rep).encode("utf-8"), "text/html; charset=utf-8")
-    if ext == ".pdf":
-        return _pdf(R.student_page(rep), "%s_attendance.pdf" % name)
-    return rep
+    if ext:
+        return _file(student_export(app.db, card, ext[1:]))
+    return app.db.student_report(card)
 
 
 # -- raw taps and the device
 @route("GET", r"/api/taps")
 def r_taps(app, m, q, b):
     card = D.parse_card(q["card"]) if q.get("card") else None
-    return {"taps": app.db.list_taps(_opt_ts(q.get("from")), _opt_ts(q.get("to")), card, limit=min(_int(q.get("limit", 500)), 20000))}
+    return {"taps": app.db.list_taps(opt_ts(q.get("from")), opt_ts(q.get("to")), card, limit=min(_int(q.get("limit", 500)), 20000))}
 
 
 @route("GET", r"/api/taps\.csv")
 def r_taps_csv(app, m, q, b):
-    return _download(("\ufeff" + app.db.taps_csv(_opt_ts(q.get("from")), _opt_ts(q.get("to")))).encode("utf-8"),
-                     "text/csv; charset=utf-8", "taps.csv")
+    return _file(taps_export(app.db, opt_ts(q.get("from")), opt_ts(q.get("to"))))
 
 
 @route("POST", r"/api/taps/import")
 def r_taps_import(app, m, q, b):
     """Taps from a saved ATTEND.CSV, when the device itself is not to hand."""
-    text = b.get("text")
-    if not isinstance(text, str):
-        raise ApiError(400, "expected {\"text\": \"...\"}")
-    rows, skipped = D.parse_attend(text)
-    if not rows:
-        raise ApiError(400, "No taps found in that file. It should be the ATTEND.CSV from the device.")
-    return {"read": len(rows), "new": app.db.add_taps(rows, 0), "skipped": skipped}
+    return import_taps(app.db, b.get("text"))
 
 
 @route("POST", r"/api/device/clock")
 def r_device_clock(app, m, q, b):
-    st = app.status or {}
-    app.write_settings(D.build_settings(now=D.now_ts(), device_id=st.get("device_id", 0), cards=app.db.card_ids()))
+    app.set_clock()
     return {"ok": True}
 
 
 @route("POST", r"/api/device/cards")
 def r_device_cards(app, m, q, b):
     """Give the device the card numbers of every registered student, so it can show green or red."""
-    st = app.status or {}
-    ids = app.db.card_ids()
-    app.write_settings(D.build_settings(device_id=st.get("device_id", 0), cards=ids))
-    return {"ok": True, "count": len(ids)}
+    return {"ok": True, "count": app.send_cards()}
 
 
 @route("POST", r"/api/device/id")
 def r_device_id(app, m, q, b):
-    dev = _int(b.get("device_id"), "device number")
-    if dev < 0 or dev >= 0xFFFFFFFF:
-        raise ApiError(400, "The device number must be between 0 and 4294967294")
-    app.write_settings(D.build_settings(device_id=dev))
+    app.set_device_id(b.get("device_id"))
     return {"ok": True}
 
 
 @route("GET", r"/api/backup\.db")
 def r_backup(app, m, q, b):
-    return _download(app.db.backup_bytes(), "application/octet-stream", "attendance-%s.db" % time.strftime("%Y%m%d-%H%M"))
+    return _file(backup_export(app.db))
 
 
 # --------------------------------------------------------------------------

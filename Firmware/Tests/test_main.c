@@ -552,6 +552,7 @@ int main(void)
     test_button();
     test_fsm();
     test_fsm_sessions();
+    test_fsm_plugged_in();
     test_cards();
     test_battery_boot();
 

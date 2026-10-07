@@ -501,6 +501,7 @@ static void report_clear(setf_report_t *r, setf_status_t status)
     r->has_module = false;
     r->has_lecture = false;
     r->new_session = false;
+    r->clear_log = false;
     r->module[0] = '\0';
     r->lecture[0] = '\0';
     r->has_cards = false;
@@ -696,7 +697,7 @@ static void status_sector(uint8_t *out)
         } else {
             bool any = false;
 
-            sb_str(&s, "OK, will be applied when you unplug the cable");
+            sb_str(&s, "OK, will be applied when you eject the drive, press the button or unplug");
             if (a.rep.has_time) {
                 sb_str(&s, "; clock will be set"); any = true;
             }
@@ -705,6 +706,9 @@ static void status_sector(uint8_t *out)
             }
             if (cards_would_change(&a.rep)) {
                 sb_str(&s, "; "); sb_dec(&s, a.rep.card_count); sb_str(&s, " cards will be registered"); any = true;
+            }
+            if (a.rep.clear_log) {
+                sb_str(&s, "; all records will be deleted"); any = true;
             }
             if (session_would_start(&a.rep)) {
                 sb_str(&s, "; a new lecture will start"); any = true;
@@ -913,6 +917,7 @@ void usbs_end(usbs_result_t *result)
     result->cards_set = false;
     result->card_count = 0u;
     result->session_start = false;
+    result->clear_log = false;
     result->module[0] = '\0';
     result->lecture[0] = '\0';
     report_clear(&result->rep, SETF_OK);
@@ -967,6 +972,7 @@ void usbs_end(usbs_result_t *result)
     }
 
     result->outcome = USBS_IMPORT_OK;
+    result->clear_log = a.rep.clear_log;
 
     /* Only a #TIME the user actually edited sets the clock: the unedited line
      * shows the moment of attach, which is already in the past by now. */

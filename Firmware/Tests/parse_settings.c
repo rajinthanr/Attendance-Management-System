@@ -66,6 +66,7 @@ int main(int argc, char **argv)
         printf("module=%s\nlecture=%s\n", r.has_module ? r.module : "", r.has_lecture ? r.lecture : "");
         if (r.has_cards) { printf("cards=%u\n", r.card_count); } else { printf("cards=-\n"); }
         printf("cards_crc=%08x\n", r.card_crc);
+        printf("clear=%d\n", (int)r.clear_log);
         free(buf);
     }
     return 0;

@@ -45,6 +45,7 @@ static inline void boot_fresh(void)
     host_button = false;
     host_vbus = false;
     host_usb_configured = false;
+    host_usb_ejected = false;
     host_nfc_init_ok = true;
     host_deep_sleep_jmp = NULL;
     app_init();

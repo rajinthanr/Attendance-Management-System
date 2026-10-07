@@ -77,6 +77,7 @@ bool     host_button;
 bool     host_vbus;
 bool     host_usb_configured;
 bool     host_usb_started;
+bool     host_usb_ejected;
 uint16_t host_adc_vbat_counts = 1751u;   /* about 3.88 V */
 
 jmp_buf *host_deep_sleep_jmp;
@@ -317,6 +318,7 @@ bool plat_adc_sample(app_adc_sample_t *o)
 }
 
 /* ---- usb ---- */
-void plat_usb_start(void) { host_usb_started = true; }
+void plat_usb_start(void) { host_usb_started = true; host_usb_ejected = false; }
 void plat_usb_stop(void) { host_usb_started = false; }
 bool plat_usb_configured(void) { return host_usb_started && host_usb_configured; }
+bool plat_usb_ejected(void) { return host_usb_started && host_usb_ejected; }

@@ -9,12 +9,37 @@
 #include "bsp.h"
 #include "usbd_core.h"
 #include "usbd_msc.h"
+#include "usbd_msc_scsi.h"
 #include "usbd_desc.h"
 #include "usb_storage.h"
 #include "app_events.h"
 
 static USBD_HandleTypeDef s_usbd;
 static bool s_started;
+static volatile bool s_ejected;
+
+/* ------------------------------------------------------------------------ */
+/* Eject detection                                                          */
+/* ------------------------------------------------------------------------ */
+
+/* ST's MSC class handles START STOP UNIT itself and tells nobody, so the
+ * class is registered through a copy whose DataOut looks at the command block
+ * the original has just decoded. A START = 0 the class accepted (the medium was
+ * not locked by PREVENT ALLOW MEDIUM REMOVAL) is the host's eject. */
+static USBD_ClassTypeDef s_msc_class;
+
+static uint8_t msc_data_out(USBD_HandleTypeDef *pdev, uint8_t epnum)
+{
+    uint8_t ret = USBD_MSC.DataOut(pdev, epnum);
+    const USBD_MSC_BOT_HandleTypeDef *hmsc =
+        (const USBD_MSC_BOT_HandleTypeDef *)pdev->pClassDataCmsit[pdev->classId];
+
+    if (hmsc != NULL && hmsc->cbw.CB[0] == SCSI_START_STOP_UNIT &&
+        (hmsc->cbw.CB[4] & 0x01u) == 0u && hmsc->scsi_medium_state != SCSI_MEDIUM_LOCKED) {
+        s_ejected = true;
+    }
+    return ret;
+}
 
 /* ------------------------------------------------------------------------ */
 /* SCSI storage callbacks                                                   */
@@ -58,7 +83,7 @@ static int8_t storage_is_ready(uint8_t lun)
 static int8_t storage_is_write_protected(uint8_t lun)
 {
     (void)lun;
-    /* STUDENTS.CSV is edited by the host, so the volume has to be writable.
+    /* SETTINGS.CSV is edited by the host, so the volume has to be writable.
      * Writes only ever land in RAM; usbs_end() decides what reaches flash. */
     return 0;
 }
@@ -118,7 +143,10 @@ void plat_usb_start(void)
     if (USBD_Init(&s_usbd, &bsp_usb_descriptors, 0u) != USBD_OK) {
         return;
     }
-    if (USBD_RegisterClass(&s_usbd, &USBD_MSC) != USBD_OK) {
+    s_msc_class = USBD_MSC;
+    s_msc_class.DataOut = msc_data_out;
+    s_ejected = false;
+    if (USBD_RegisterClass(&s_usbd, &s_msc_class) != USBD_OK) {
         return;
     }
     if (USBD_MSC_RegisterStorage(&s_usbd, &s_storage_fops) != USBD_OK) {
@@ -147,6 +175,11 @@ void plat_usb_stop(void)
 bool plat_usb_configured(void)
 {
     return s_started && (s_usbd.dev_state == USBD_STATE_CONFIGURED);
+}
+
+bool plat_usb_ejected(void)
+{
+    return s_started && s_ejected;
 }
 
 /* ------------------------------------------------------------------------ */

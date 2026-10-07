@@ -210,15 +210,17 @@ def cards_crc(card_ids):
     return zlib.crc32(b"".join(struct.pack("<I", i) for i in ids)) & 0xFFFFFFFF
 
 
-def build_settings(now=None, module=None, lecture=None, new_session=False, device_id=0, echo_time=None, cards=None):
+def build_settings(now=None, module=None, lecture=None, new_session=False, device_id=0, echo_time=None, cards=None,
+                   clear_log=False):
     """
     The SETTINGS.CSV to put on the device. now: a naive epoch to set the clock to (None leaves
     the clock alone); echo_time: the #TIME text the device showed, repeated so that the clock is not touched.
     module / lecture None leaves the line out; "" clears it.
     cards: the registered card numbers the device should compare taps with (None leaves its list alone,
     an empty list clears it). The device wants them ascending, without repeats, and at most DEVICE_CARDS_MAX.
+    clear_log: the device deletes every record it holds (only once they are safely in this database).
     """
-    lines = ['# Edit these lines, then unplug the cable. Add #NEWSESSION,1 to start another lecture with the same names.']
+    lines = ['# Edit these lines, then eject the drive (or press the button). Add #NEWSESSION,1 to start another lecture with the same names.']
     if now is not None:
         lines.append("#TIME," + fmt_ts(now))
     elif echo_time:
@@ -229,6 +231,8 @@ def build_settings(now=None, module=None, lecture=None, new_session=False, devic
         lines.append("#LECTURE," + clean_device_text(lecture, LECTURE_BYTES))
     if new_session:
         lines.append("#NEWSESSION,1")
+    if clear_log:
+        lines.append("#CLEARLOG,1")
     if device_id:
         lines.append("#DEVICE,%010d" % device_id)
     if cards is not None:

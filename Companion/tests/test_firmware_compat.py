@@ -14,6 +14,7 @@ Skipped when there is neither.
 import os
 import re
 import shutil
+import atexit
 import subprocess
 import sys
 import tempfile
@@ -69,8 +70,8 @@ def _build():
     except (RuntimeError, OSError) as e:
         print("firmware compile failed: %s" % str(e)[:300], file=sys.stderr)
         tools = None
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
+    # The cc tools live in `work`, so it can only go once the tests are done.
+    atexit.register(shutil.rmtree, work, True)
     _CACHE["tools"] = tools
     _CACHE["wsl"] = tools is not None and not shutil.which("cc")
     return tools
@@ -102,6 +103,8 @@ def _parse_output(text):
             cur["cards"] = None if v == "-" else int(v)
         elif line.startswith("cards_crc="):
             cur["cards_crc"] = int(line[len("cards_crc="):], 16)
+        elif line.startswith("clear="):
+            cur["clear"] = line[len("clear="):] == "1"
     return out
 
 
@@ -126,6 +129,8 @@ class AppToFirmware(unittest.TestCase):
         "no_cards": dict(cards=[]),
         "cards_and_names": dict(module="EN2090", lecture="Lecture 4", device_id=12345, cards=list(range(100000, 101000))),
         "cards_largest": dict(cards=[1, 0xFFFFFEFF]),
+        "new_lecture_and_clear": dict(now=D.parse_ts("2030-05-06 07:08:09"), module="EN2090", lecture="Lecture 5",
+                                      new_session=True, cards=[1000, 1007], clear_log=True),
     }
 
     def test_every_case_reads_back_as_intended(self):
@@ -148,6 +153,7 @@ class AppToFirmware(unittest.TestCase):
                 if "now" in kw:
                     self.assertEqual(g["time_value"], D.fmt_ts(kw["now"]), name)
                 self.assertEqual(g["new"], bool(kw.get("new_session")), name)
+                self.assertEqual(g["clear"], bool(kw.get("clear_log")), name + ": the log is cleared only when asked")
                 self.assertEqual(g["device"], kw.get("device_id") or None, name)
                 if kw.get("cards") is None:
                     self.assertIsNone(g["cards"], name + ": no #CARDS line, the device keeps its list")

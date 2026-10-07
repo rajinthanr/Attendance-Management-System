@@ -65,6 +65,13 @@ typedef struct {
     bool          session_start;
     char          module[SESS_MODULE_MAX + 1u];
     char          lecture[SESS_LECTURE_MAX + 1u];
+
+    /**
+     * The host asked for the log to be erased (#CLEARLOG). The caller does it
+     * after the USB peripheral has stopped, before any session marker.
+     * Valid when outcome == USBS_IMPORT_OK.
+     */
+    bool          clear_log;
 } usbs_result_t;
 
 /**
