@@ -24,6 +24,7 @@ typedef struct {
 #define HF_SETTINGS  "SETTINGSCSV"
 #define HF_ATTEND    "ATTEND  CSV"
 #define HF_STATUS    "STATUS  TXT"
+#define HF_LECTURES  "LECTURESCSV"
 
 /** Read the boot sector, both FATs' first copy and the root directory. */
 void hf_mount(hostfs_t *h);

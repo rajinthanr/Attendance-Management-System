@@ -314,7 +314,10 @@ class TestLecturesApi(ServerCase):
         r = self.get("/api/lectures")
         titles = [l["title"] for l in r["lectures"]]
         self.assertEqual(titles[0], "Circuits Lecture 4", "newest first")
-        self.assertEqual(len(titles), 7)
+        self.assertEqual(len(titles), 8, "the lab started on the device is read from LECTURES.CSV")
+        lab = [l for l in r["lectures"] if l["title"] == "Intro to Python 2"][0]
+        self.assertGreater(lab["counts"]["present_enrolled"], 0, "the lab's taps are its own")
+        self.assertFalse(lab["running"], "another lecture followed it on the device")
         first = r["lectures"][-1]
         self.assertGreater(first["counts"]["enrolled"], 5)
         self.assertGreater(first["counts"]["present_enrolled"], 0)
@@ -714,6 +717,13 @@ class TestDemo(unittest.TestCase):
             st = D.parse_status(rb(os.path.join(dev, app.STATUS_NAME)).decode())
             self.assertTrue(st["ok"] and st["has_lecture"] and st["since"])
             self.assertEqual(st["records"], len(rows))
+            raw = rb(os.path.join(dev, app.LECTURES_NAME))
+            self.assertEqual(len(raw) % 128, 0, "every lecture row is 128 bytes")
+            for i in range(0, len(raw), 128):
+                self.assertEqual(raw[i + 126:i + 128], b"\r\n")
+            lectures, skipped = D.parse_lectures(raw.decode())
+            self.assertEqual((skipped, len(lectures)), (0, len(raw) // 128 - 1))
+            self.assertEqual(lectures[-1], (st["since"], st["module"], st["lecture"]), "the newest is the one STATUS.TXT shows")
         finally:
             shutil.rmtree(data, ignore_errors=True)
             shutil.rmtree(dev, ignore_errors=True)

@@ -14,6 +14,16 @@
 
 static app_boot_cause_t s_boot_cause;
 
+/* Switch the PVD off and deselect its external input. With PLS still at 7
+ * (PVD_IN) and the PVD off, PB7 pulls the battery divider node up to VDD,
+ * so PA7 reads full scale (measured on the board: 4079 counts instead of
+ * ~1250). Level 0 watches VDD internally and leaves PB7 alone. */
+static void pvd_off(void)
+{
+    HAL_PWR_DisablePVD();
+    MODIFY_REG(PWR->CR2, PWR_CR2_PLS, PWR_PVDLEVEL_0);
+}
+
 void bsp_power_init(void)
 {
     /* Latch why we booted before the flags are cleared; the application uses
@@ -50,7 +60,7 @@ void bsp_power_init(void)
 #else
     /* The generated HAL_MspInit() switches the PVD on; nothing listens to it
      * while the battery is polled through the ADC. */
-    HAL_PWR_DisablePVD();
+    pvd_off();
 #endif
 }
 
@@ -149,7 +159,7 @@ void plat_sleep_deep(void)
      * wake sources reduced to the power button alone. The application has
      * already put the reader into its power-down mode. */
     plat_out_write(0u);
-    HAL_PWR_DisablePVD();
+    pvd_off();
 
     /* Standby wakes on WKUP1 only, and wakes through reset, so the pending
      * flag has to be clear or the part would come straight back out. */

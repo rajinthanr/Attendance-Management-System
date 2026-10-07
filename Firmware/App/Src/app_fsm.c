@@ -464,6 +464,28 @@ static void start_session(const char *module, const char *lecture) {
 }
 
 /**
+ * A lecture started from the button, with no PC to name it: same module as
+ * the lecture before, the lecture name numbered on ("Lecture 4" -> "Lecture
+ * 5"). Everyone signs in afresh, because sess_card_seen() stops at the new
+ * header. The PC learns about it from LECTURES.CSV.
+ */
+static void new_lecture(void) {
+  session_t cur;
+  char next[SESS_LECTURE_MAX + 1u];
+
+  touch_activity();
+  flush_to_flash();
+  if (log_remaining(&g.log) < SESS_MAX_RECORDS) {
+    begin_feedback(FB_ERROR);
+    return;
+  }
+  (void)sess_latest(&g.log, &cur);
+  sess_next_name(cur.valid ? cur.lecture : "", next);
+  start_session(cur.valid ? cur.module : "", next);
+  begin_feedback(FB_LECTURE);
+}
+
+/**
  * #CLEARLOG: erase every record and lecture marker. The host imported them
  * before asking. Anything still in RAM goes too, and the duplicate windows
  * start afresh, so every card counts again.
@@ -604,9 +626,15 @@ static void poll_button(void) {
     dbg_button_short_count++;
     app_event_post(APP_EVT_BUTTON_SHORT);
     break;
+  case BTN_HOLD:
+    app_event_post(APP_EVT_BUTTON_HOLD);
+    break;
   case BTN_LONG:
     dbg_button_long_count++;
     app_event_post(APP_EVT_BUTTON_LONG);
+    break;
+  case BTN_OFF:
+    app_event_post(APP_EVT_BUTTON_OFF);
     break;
   case BTN_NONE:
   default:
@@ -747,7 +775,25 @@ void app_dispatch(app_event_t evt) {
     }
     break;
 
+  case APP_EVT_BUTTON_HOLD:
+    /* Felt while still holding: let go now for a new lecture. */
+    if (g.state != ST_SHUTDOWN) {
+      touch_activity();
+      begin_feedback(FB_HOLD);
+    }
+    break;
+
   case APP_EVT_BUTTON_LONG:
+    if (g.state == ST_IDLE) {
+      new_lecture();
+    } else if (g.state == ST_USB) {
+      /* Plugged in, the drive is up and the reader is off: end the drive
+       * session as a tap would. The lecture can be started once scanning. */
+      app_dispatch(APP_EVT_BUTTON_SHORT);
+    }
+    break;
+
+  case APP_EVT_BUTTON_OFF:
     if (g.state != ST_SHUTDOWN) {
       begin_shutdown(FB_POWER_OFF);
     }

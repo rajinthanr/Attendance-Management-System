@@ -12,7 +12,8 @@ nothing to install and no internet. It listens on this computer only.
     python attendance_app.py --data-dir D:\\Attendance    keep the database elsewhere
 
 The device is a small USB drive called ATTENDANCE holding ATTEND.CSV (one row
-per tap: date, time, card number), SETTINGS.CSV and STATUS.TXT. It knows nothing
+per tap: date, time, card number), LECTURES.CSV (one row per lecture start; not
+on older firmware), SETTINGS.CSV and STATUS.TXT. It knows nothing
 about people. This program keeps who each card belongs to, their department and
 modules, and the lectures, in its own database, and matches the two.
 """
@@ -42,6 +43,7 @@ WEB = os.path.join(HERE, "web")
 DEFAULT_PORT = 8765
 STATUS_NAME = "STATUS.TXT"
 ATTEND_NAME = "ATTEND.CSV"
+LECTURES_NAME = "LECTURES.CSV"         # every lecture start in the log; older firmware has none
 SETTINGS_NAME = "SETTINGS.CSV"
 STATUS_MAGIC = "ATTENDANCE LOGGER"
 MAX_SETTINGS_BYTES = 28 * 512         # the window on the device (SETF_MAX_BYTES)
@@ -241,7 +243,7 @@ class App:
         self.last_path = None
         self.sig = None
         self.status = None              # the device's STATUS.TXT, parsed
-        self.last_sync = {"seq": 0, "new": 0, "read": 0, "skipped": 0, "at": ""}
+        self.last_sync = {"seq": 0, "new": 0, "read": 0, "skipped": 0, "lectures": 0, "at": ""}
         self.pc_minus_device = None     # seconds the PC clock is ahead of the device's, as last read
 
     # ---- the device
@@ -253,17 +255,31 @@ class App:
             self.last_path = find_device(self.forced_dir)
             return self.last_path
 
+    @staticmethod
+    def _read_lectures(root):
+        """LECTURES.CSV parsed, (rows, skipped), or None when this firmware does not write one."""
+        path = os.path.join(root, LECTURES_NAME)
+        if not os.path.isfile(path):
+            return None
+        return D.parse_lectures(read_text(path))
+
     def _sync(self, root, st):
-        """Read the taps off the device into the database. Safe to repeat: known taps are skipped."""
+        """Read the taps and lectures off the device into the database. Safe to repeat: known ones are skipped."""
         rows, skipped = D.parse_attend(read_text(os.path.join(root, ATTEND_NAME)))
         new = self.db.add_taps(rows, st["device_id"])
-        if st["has_lecture"] and st["since"]:
+        lectures = self._read_lectures(root)
+        added = 0
+        if lectures is not None:
+            # Every lecture start, so lectures the device started by itself each get their own taps.
+            added = self.db.take_device_lectures(lectures[0])
+        elif st["has_lecture"] and st["since"]:
+            # Older firmware: only the newest lecture, from STATUS.TXT.
             if self.db.confirm_lecture_start(st["module"], st["lecture"], st["since"]):
                 self.db.note_confirmed(st["since"])
-            else:
-                self.db.adopt_device_lecture(st["module"], st["lecture"], st["since"])
+            elif self.db.adopt_device_lecture(st["module"], st["lecture"], st["since"]):
+                added = 1
         self.last_sync = {"seq": self.last_sync["seq"] + 1, "new": new, "read": len(rows), "skipped": skipped,
-                          "at": time.strftime("%H:%M:%S")}
+                          "lectures": added, "at": time.strftime("%H:%M:%S")}
 
     def refresh(self, force=False):
         """Look at the device; read its taps if anything changed. Returns the state for the page."""
@@ -341,8 +357,9 @@ class App:
     # ---- what the screens ask of the device (the web routes and the desktop window both call these)
     def import_everything(self):
         """
-        Read every tap off the device into the database, now. True only when ATTEND.CSV held exactly
-        the number of rows STATUS.TXT promises and none was unreadable: then the device may be cleared.
+        Read every tap and lecture start off the device into the database, now. True only when ATTEND.CSV
+        held exactly the number of rows STATUS.TXT promises, and every row of it and of LECTURES.CSV (when
+        the firmware writes one) was readable: then the device may be cleared, lecture markers and all.
         """
         with self.lock:
             root = self.device_dir()
@@ -351,6 +368,12 @@ class App:
             st = D.parse_status(read_text(os.path.join(root, STATUS_NAME), 1024))
             rows, skipped = D.parse_attend(read_text(os.path.join(root, ATTEND_NAME)))
             if not st["ok"] or skipped or len(rows) != st["records"]:
+                return False
+            try:
+                lectures = self._read_lectures(root)
+            except OSError:
+                return False
+            if lectures is not None and lectures[1]:
                 return False
             self._sync(root, st)
             self.sig = None                     # read STATUS.TXT afresh on the next poll
@@ -393,6 +416,21 @@ class App:
         """Set the device clock to this computer's time (and refresh its card list)."""
         st = self.status or {}
         self.write_settings(D.build_settings(now=D.now_ts(), device_id=st.get("device_id", 0), cards=self.db.card_ids()))
+
+    def clear_device(self):
+        """
+        Empty the device's flash log: first every tap and lecture is copied into the database, and only when
+        all of them were read is the device told to erase its copy (#CLEARLOG). The drive is then ejected so
+        the device does it at once. Students and everything in the database are kept. Returns {ejected}.
+        """
+        if not self.device_dir():
+            raise ApiError(409, "The device is not connected. Plug it in with the USB-C cable.")
+        if not self.import_everything():
+            raise ApiError(409, "Not every record could be read from the device, so nothing was erased. "
+                                "Unplug it, plug it in again and try once more.")
+        st = self.status or {}
+        self.write_settings(D.build_settings(device_id=st.get("device_id", 0), clear_log=True))
+        return {"ejected": self.eject()}
 
     def send_cards(self):
         """Give the device the card numbers of every registered student, so it can show green or red.
@@ -538,7 +576,7 @@ def backup_export(db):
 # --------------------------------------------------------------------------
 
 def make_demo(data_dir, device_dir):
-    """Fill @data_dir with a database and @device_dir with the device's three files."""
+    """Fill @data_dir with a database and @device_dir with the device's files."""
     import random
     rnd = random.Random(11)
     db = D.Database(os.path.join(data_dir, "attendance.db"))
@@ -564,17 +602,26 @@ def make_demo(data_dir, device_dir):
     plan = [("EN2090", "Circuits Lecture 1", 21, 0.93), ("EN2090", "Circuits Lecture 2", 14, 0.85),
             ("EN2090", "Circuits Lecture 3", 7, 0.74), ("MA1010", "Calculus Lecture 1", 20, 0.9),
             ("MA1010", "Calculus Lecture 2", 13, 0.8), ("CS1010", "Intro to Python", 15, 0.88)]
-    taps = []
+    taps, lectures = [], []
     for module, title, ago, rate in plan:
         start = day(ago)
         lec = db.create_lecture(module, title, D.to_ts(start), D.to_ts(start) + 3600)
+        lectures.append((D.to_ts(start), module, title))
         for card, mods in people:
             if module in mods and rnd.random() < rate:
                 taps.append((D.to_ts(start) + rnd.randint(2, 480), card))
+    # A lab the lecturer started on the device itself (a long press), named after the lecture before it.
+    # Only the device knows it: the first read finds it in LECTURES.CSV and files the lab's taps under it.
+    lab, lab_rnd = D.to_ts(day(15)) + 2 * 3600, random.Random(29)     # its own numbers: the rest stays as it was
+    lectures.append((lab, "CS1010", "Intro to Python 2"))
+    for card, mods in people:
+        if "CS1010" in mods and lab_rnd.random() < 0.8:
+            taps.append((lab + lab_rnd.randint(5, 600), card))
     # One lecture today, still running, with a new card in it.
     now = datetime.datetime.now().replace(microsecond=0)
     start = now - datetime.timedelta(minutes=40)
     cur = db.start_lecture("EN2090", "Circuits Lecture 4", D.to_ts(start))
+    lectures.append((D.to_ts(start), "EN2090", "Circuits Lecture 4"))
     for card, mods in people:
         if "EN2090" in mods and rnd.random() < 0.7:
             taps.append((D.to_ts(start) + rnd.randint(30, 1500), card))
@@ -595,6 +642,10 @@ def make_demo(data_dir, device_dir):
     attend = pad("DATE,TIME,CARD_ID", 30) + "\r\n"
     for ts, card in taps:
         attend += "%s,%s,%010d\r\n" % (D.fmt_ts(ts)[:10], D.fmt_ts(ts)[11:], card)
+    # Every lecture start in the log, in the same fixed-width form: 128-byte rows, four to a sector.
+    lectures_csv = pad("DATE,TIME,MODULE,LECTURE", 126) + "\r\n"
+    for ts, module, title in sorted(lectures):
+        lectures_csv += pad("%s,%s,%s,%s" % (D.fmt_ts(ts)[:10], D.fmt_ts(ts)[11:], module, title), 126) + "\r\n"
     last_ts, last_card = taps[-1]
     # The device already knows the registered students, but not the two new cards.
     cards_line = "%d registered (CRC %08X)" % (len(people), D.cards_crc([c for c, _ in people]))
@@ -605,7 +656,7 @@ def make_demo(data_dir, device_dir):
     status = status.ljust(510) + "\r\n"
     settings = ("# Edit these lines, then eject the drive (or press the button). Add #NEWSESSION,1 to start another lecture with the same names.\r\n"
                 "#TIME,%s\r\n#MODULE,EN2090\r\n#LECTURE,Circuits Lecture 4\r\n#DEVICE,0012648430\r\n" % now.strftime("%Y-%m-%d %H:%M:%S"))
-    for name, text in ((ATTEND_NAME, attend), (STATUS_NAME, status), (SETTINGS_NAME, settings)):
+    for name, text in ((ATTEND_NAME, attend), (LECTURES_NAME, lectures_csv), (STATUS_NAME, status), (SETTINGS_NAME, settings)):
         with open(os.path.join(device_dir, name), "w", newline="", encoding="utf-8") as f:
             f.write(text)
 

@@ -3,3 +3,7 @@
 
 # KiCad editor lock files
 *.lck
+
+# Python: caches and the Companion app's virtual environment (PySide6)
+__pycache__/
+Companion/.venv/

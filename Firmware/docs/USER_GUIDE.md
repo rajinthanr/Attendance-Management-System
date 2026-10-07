@@ -19,6 +19,7 @@ Tap a card on the reader. The device answers:
 | green light and one short buzz | a registered card: the tap is recorded |
 | red light and one long buzz | a card that is not on the device's list: the tap is still recorded, so you can register the card (see below) |
 | two short buzzes | this card is already recorded in this lecture (or was read twice in a row); not recorded again |
+| green light and three quick buzzes | a new lecture has started (you held the button, see below) |
 | red light blinking five times | the battery is low |
 
 Every card is recorded, registered or not; the colour only tells you whether the
@@ -30,12 +31,13 @@ On battery, after three minutes without a tap the device switches itself off.
 Press the power button to wake it (green light and a short buzz). While its
 cable is in (a computer or a charger) it stays on.
 
-The power button also does two other things while the device is on:
+The power button also does three other things while the device is on:
 
 | Press | Result |
 |---|---|
 | tap | shows the battery: two green blinks if it is fine, red blinking five times if it is low. While it is a USB drive on a computer, a tap first ends that and starts taking attendance (see below) |
-| hold for 2 seconds | switches the device off (red light and a long buzz), once you let go. Any changes you made to `SETTINGS.CSV` are applied first |
+| hold until it buzzes (2 seconds), then let go | **starts the next lecture** (green and three quick buzzes). See [Starting a lecture on the device](#starting-a-lecture-on-the-device) |
+| keep holding for 5 seconds | switches the device off (red light and a long buzz) instead; no lecture is started. Any changes you made to `SETTINGS.CSV` are applied first |
 
 ## Taking attendance with the cable in
 
@@ -61,6 +63,27 @@ belongs to. Start one from the app (Lecture tab), or by editing the `#MODULE` an
 or unplugging). Edit them to the same text as
 before and add a line `#NEWSESSION,1` to start a second lecture with the same
 names.
+
+### Starting a lecture on the device
+
+You can take attendance for several lectures in a row without a computer.
+When one lecture ends and the next begins, **hold the power button until you
+feel a buzz (2 seconds), then let go.** The device answers with a green light and
+three quick buzzes, and every card counts again from that moment.
+
+The new lecture keeps the module of the one before and counts its name on:
+`Circuits Lecture 4` becomes `Circuits Lecture 5`, then `Circuits Lecture 6`. A
+name without a number gets ` 2`, ` 3` and so on, and if no lecture was ever set
+the first one is `Lecture 1` with no module. The next time you plug the device
+in, the companion app adds each of these lectures with the taps that belong to
+it; rename one there if the automatic name is not right. A lecture without a
+module is filed under **UNASSIGNED** until you move it.
+
+Keep holding past the buzz and the device switches off instead (at 5 seconds),
+without starting a lecture. A hold while the device is a USB drive on a computer
+only ends the drive session, like a tap; hold again once it is taking attendance.
+
+### Double taps
 
 Within one lecture a card counts **once**. A student who taps twice by accident,
 holds the card on the reader, or comes back to the reader later gets a double
@@ -98,6 +121,11 @@ it to keep every row the same width; most programs ignore this, and a script
 should strip them. The file holds only taps: the lecture markers are not rows,
 and there are no names. To see names and per-lecture attendance, use the
 companion app, which matches the card numbers to your student list.
+
+`LECTURES.CSV`, also read-only, lists every lecture start in the log, one row
+each: date, time, module and lecture name, for example
+`2026-10-07,14:00:03,EN2090,Circuits Lecture 5`. The rows are padded with spaces
+like `ATTEND.CSV`. A tap belongs to the last lecture that started before it.
 
 `STATUS.TXT` on the drive is a short read-only summary: the device ID, the clock,
 how many records the log holds, the last tap, how many cards are registered, the
@@ -144,8 +172,8 @@ What each line does:
 Safe to know:
 
 - Nothing is applied until you eject the drive, tap the button or unplug the
-  cable. Save the file first. Holding the power button while plugged in also
-  applies your changes before the device switches off.
+  cable. Save the file first. Holding the power button for 5 seconds while
+  plugged in also applies your changes before the device switches off.
 - Module names can be up to **24 bytes** and lecture names up to **32 bytes**
   (about that many English letters; fewer for Sinhala or Tamil, which take three
   bytes a letter). A comma inside a name is turned into a space.

@@ -67,8 +67,12 @@
 
 #define APP_BTN_DEBOUNCE_MS             (30u)
 
-/** Hold this long to power off. Shorter presses show the battery status. */
+/** Hold this long for a new lecture: a buzz marks the moment, and letting go
+ *  before APP_BTN_OFF_MS starts it. Shorter presses show the battery status. */
 #define APP_BTN_LONG_MS                 (2000u)
+
+/** Hold this long to power off instead; no lecture is started. */
+#define APP_BTN_OFF_MS                  (5000u)
 
 /** Give up waiting for the button to be released before Standby. */
 #define APP_BTN_RELEASE_TIMEOUT_MS      (10000u)
@@ -91,6 +95,9 @@
 #define APP_FB_POWER_ON_VIB_MS          (120u)
 #define APP_FB_POWER_OFF_MS             (700u)
 #define APP_FB_POWER_OFF_VIB_MS         (250u)
+#define APP_FB_HOLD_VIB_MS              (60u)
+#define APP_FB_LECTURE_PULSE_MS         (80u)
+#define APP_FB_LECTURE_GAP_MS           (120u)
 
 /** Idle heartbeat: one short flash per period, green, or red on a low cell. */
 #define APP_IND_IDLE_PERIOD_MS          (4000u)

@@ -354,7 +354,8 @@ static void test_export_with_markers(void)
     flush_all();
     t = attend_text(&len);
     CHECK(len == csv_size(0u), "only markers: a header and nothing else");
-    CHECK(usbs_sector_count() == FAT12_DATA_START_LBA + 1u + USBS_SETTINGS_CLUSTERS + 1u, "one ATTEND cluster");
+    CHECK(usbs_sector_count() == FAT12_DATA_START_LBA + 1u + USBS_SETTINGS_CLUSTERS + 1u + 1u,
+          "one ATTEND cluster, one LECTURES cluster");
     free(t);
 
     /* An orphaned text record (a marker whose header was lost) is skipped, not shown. */
@@ -606,10 +607,170 @@ static void test_session_start(void)
     }
 }
 
+/* ===================================================================== */
+/* Lectures started on the device: the next name, the newest marker       */
+/* ===================================================================== */
+
+static bool next_is(const char *cur, const char *want)
+{
+    char out[SESS_LECTURE_MAX + 1u];
+
+    memset(out, 'x', sizeof(out));
+    sess_next_name(cur, out);
+    if (strcmp(out, want) != 0) {
+        printf("    next(\"%s\") = \"%s\", want \"%s\"\n", cur != NULL ? cur : "(null)", out, want);
+        return false;
+    }
+    return true;
+}
+
+static void test_lecture_names(void)
+{
+    session_t s;
+
+    printf("lectures started on the device\n");
+
+    CHECK(next_is("Circuits Lecture 4", "Circuits Lecture 5"), "a trailing number counts up");
+    CHECK(next_is("Lecture 9", "Lecture 10"), "with a carry");
+    CHECK(next_is("Week 09", "Week 10"), "keeping leading zeros");
+    CHECK(next_is("L99", "L100"), "growing a digit");
+    CHECK(next_is("999", "1000"), "a name that is only a number");
+    CHECK(next_is("Tutorial", "Tutorial 2"), "no number: \" 2\" is added");
+    CHECK(next_is("Lab 2b", "Lab 2b 2"), "a number not at the end does not count");
+    CHECK(next_is("", "Lecture 1"), "no previous lecture");
+    CHECK(next_is(NULL, "Lecture 1"), "NULL is no previous lecture");
+    /* 32 bytes, the most a lecture name holds: the text before the number is cut. */
+    CHECK(next_is("Introduction to circuit theor 99", "Introduction to circuit theo 100"), "cut to fit");
+    CHECK(next_is("Introduction to circuit theory a", "Introduction to circuit theory 2"), "cut to fit, no number");
+    /* ...never through a UTF-8 character: "é" is two bytes. */
+    CHECK(next_is("Leçon numéro un à la finé 99", "Leçon numéro un à la fin 100"), "cut at a character boundary");
+    CHECK(next_is("Leçon numéro un à la fiéé99", "Leçon numéro un à la fié100"), "cut at a character boundary, 2");
+    CHECK(next_is("99999999999999999999999999999999", "10000000000000000000000000000000"), "32 nines");
+
+    fresh();
+    CHECK(!sess_latest(&g_ls, &s) && !s.valid, "an empty log has no lecture");
+    add(1000u, 10u);
+    flush_all();
+    CHECK(!sess_latest(&g_ls, &s), "taps alone are no lecture");
+    mark("EN2090", "Circuits Lecture 4", 50u);
+    add(1001u, 60u);
+    mark("EN2090", "Circuits Lecture 5", 100u);
+    add(1002u, 110u);
+    add(1003u, 120u);
+    flush_all();
+    CHECK(sess_latest(&g_ls, &s) && s.valid && s.start == 100u && strcmp(s.module, "EN2090") == 0 &&
+          strcmp(s.lecture, "Circuits Lecture 5") == 0, "the newest marker, past the taps after it");
+}
+
+/** LECTURES.CSV through the volume, as a host would read it. */
+static char *lectures_text(uint32_t *len)
+{
+    int32_t n;
+    char *buf;
+
+    usbs_begin(&g_ls, &(device_cfg_t){ true, 0xC0FFEEu, 0u, 0u }, &k_now);
+    hf_mount(&g_hf);
+    buf = (char *)malloc(256u * 1024u);
+    n = hf_read(&g_hf, HF_LECTURES, (uint8_t *)buf, 256u * 1024u - 1u);
+    if (n < 0) { n = 0; }
+    buf[n] = '\0';
+    *len = (uint32_t)n;
+    return buf;
+}
+
+/** Row @p r of LECTURES.CSV is @p text, space padded, then CRLF. */
+static bool lecture_row_is(const char *csv, uint32_t r, const char *text)
+{
+    const char *row = &csv[r * CSV_LECTURE_ROW_BYTES];
+    size_t n = strlen(text);
+    size_t i;
+
+    if (memcmp(row, text, n) != 0) {
+        printf("    row %u: \"%.40s\", want \"%s\"\n", r, row, text);
+        return false;
+    }
+    for (i = n; i < CSV_LECTURE_ROW_BYTES - 2u; i++) {
+        if (row[i] != ' ') {
+            return false;
+        }
+    }
+    return row[CSV_LECTURE_ROW_BYTES - 2u] == '\r' && row[CSV_LECTURE_ROW_BYTES - 1u] == '\n';
+}
+
+static void test_lectures_csv(void)
+{
+    static const char k_mod24[] = "ABCDEFGHIJKLMNOPQRSTUVWX";
+    static const char k_lec32[] = "abcdefghijklmnopqrstuvwxyz012345";
+    char *t;
+    uint32_t len, i;
+    char want[128];
+
+    printf("LECTURES.CSV\n");
+
+    fresh();
+    t = lectures_text(&len);
+    CHECK(len == CSV_LECTURE_ROW_BYTES && lecture_row_is(t, 0u, "DATE,TIME,MODULE,LECTURE"), "no lectures: the header alone");
+    free(t);
+
+    fresh();
+    add(1000u, 10u);
+    mark("EN2090", "Circuits Lecture 4", 50u);
+    add(1001u, 60u);
+    mark("", "Lecture 1", 3661u);
+    add(1002u, 3700u);
+    {
+        app_record_t stray;     /* the tail of a torn marker: not a lecture */
+
+        stray.student_id = NV_MARK_TEXT;
+        stray.stamp = 0x41424344u;
+        (void)rb_push(&g_rb, &stray);
+    }
+    mark(k_mod24, k_lec32, 86400u);
+    flush_all();
+    t = lectures_text(&len);
+    CHECK(len == csv_lecture_size(3u), "three lectures (%u bytes)", len);
+    CHECK(lecture_row_is(t, 1u, "2000-01-01,00:00:50,EN2090,Circuits Lecture 4"), "a lecture row");
+    CHECK(lecture_row_is(t, 2u, "2000-01-01,01:01:01,,Lecture 1"), "an empty module stays an empty field");
+    snprintf(want, sizeof(want), "2000-01-02,00:00:00,%s,%s", k_mod24, k_lec32);
+    CHECK(lecture_row_is(t, 3u, want), "the longest names fit");
+    free(t);
+    t = attend_text(&len);
+    CHECK(len == csv_size(3u), "ATTEND.CSV is unchanged: three taps");
+    free(t);
+
+    /* Enough lectures to span sectors: row 4 starts the second one. */
+    fresh();
+    for (i = 0u; i < 9u; i++) {
+        snprintf(want, sizeof(want), "Lecture %u", i + 1u);
+        mark("EN2090", want, 100u * (i + 1u));
+        add(2000u + i, (100u * (i + 1u)) + 10u);
+    }
+    flush_all();
+    t = lectures_text(&len);
+    CHECK(len == csv_lecture_size(9u), "nine lectures");
+    for (i = 0u; i < 9u; i++) {
+        char text[96];
+        app_datetime_t dt;
+
+        time_from_epoch(100u * (i + 1u), &dt);
+        snprintf(text, sizeof(text), "%04u-%02u-%02u,%02u:%02u:%02u,EN2090,Lecture %u",
+                 dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, i + 1u);
+        CHECK(lecture_row_is(t, i + 1u, text), "row %u across sectors", i + 1u);
+    }
+    free(t);
+    {
+        usbs_result_t q;
+
+        usbs_end(&q);
+    }
+}
+
 void test_sessions(void)
 {
     test_marker_format();
     test_card_seen();
     test_export_with_markers();
     test_session_start();
+    test_lecture_names();
+    test_lectures_csv();
 }

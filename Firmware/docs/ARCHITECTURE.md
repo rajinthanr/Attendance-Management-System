@@ -137,7 +137,7 @@ debugging simple. Interrupts and Stop 2 come back once the hardware is proven.
 | Mode | Used when | Retained | Wakes on |
 |---|---|---|---|
 | Sleep | between main-loop passes, always | everything | SysTick (1 ms), USB |
-| Standby | 3 min idle on battery, low battery, long press | RTC + backup registers | WKUP1 (button) only, through reset |
+| Standby | 3 min idle on battery, low battery, a 5 s hold | RTC + backup registers | WKUP1 (button) only, through reset |
 
 `app_task()` runs once per millisecond: it samples the button and VBUS, steps
 the feedback pattern, polls the reader, then sleeps in WFI until the next
@@ -281,6 +281,17 @@ names; once USB has stopped, the state machine appends the marker with
 `start_session()`, which flushes the RAM buffer first so the marker always fits
 and last so it is in flash at once.
 
+A marker is also started from the button, with no PC: hold past
+`APP_BTN_LONG_MS` (2 s, a short buzz) and let go before `APP_BTN_OFF_MS` (5 s).
+`new_lecture()` in `app_fsm.c` finds the newest marker with `sess_latest()` and
+appends one with the same module and the next name from `sess_next_name()`: a
+trailing number counts up (`Circuits Lecture 4` -> `Circuits Lecture 5`, `Week
+09` -> `Week 10`), a name without one gets ` 2`, an empty log gives `Lecture 1`
+with no module, and the text before the number is cut, at a character boundary,
+if the result would pass 32 bytes. It is stamped when the button is released.
+With fewer than `SESS_MAX_RECORDS` free log slots it shows the log-full pattern
+instead. The PC learns of these lectures from `LECTURES.CSV`.
+
 A marker can be torn by a power cut. A header then promises more text than
 follows, or the tail of one has lost its header. `usbs_begin()` claims only the
 text records that are really there, and records strays separately, so what comes
@@ -304,8 +315,26 @@ lecture column. No column holds a comma or a quote, so no quoting is needed.
 Markers are not rows. At attach the log is read once and every marker is noted
 in a table (position, attendance records before it, marker records so far; 6
 bytes each, up to 768, in SRAM2). Row `r` is then log record `r` plus the marker
-records before it, found by binary search. The newest marker's names and start
-time reach the PC through `STATUS.TXT` (below), not through the CSV.
+records before it, found by binary search. Every marker's names and start time
+reach the PC through `LECTURES.CSV`, and the newest one's through `STATUS.TXT`
+too (below), not through the attendance CSV.
+
+### Lecture list: 128 bytes per row
+
+```
+DATE,TIME,MODULE,LECTURE<spaces>
+2026-10-07,14:00:03,EN2090,Circuits Lecture 5<spaces>
+```
+
+`LECTURES.CSV` has one row per marker header in the log, in log order, built
+from the same marker table (`read_lectures_sector()` in `usb_storage.c`, rows
+from `csv_lecture_row()`). The names need more than 32 bytes, so the rows are
+128: at most 77 bytes of text, spaces to byte 125, CRLF, four rows to a sector.
+A stray text record (the tail of a torn marker) is no lecture and has no row; a
+torn header shows the names it still has. The module field is empty for a
+lecture started from the button before any was named. Names never hold a comma
+or a quote. The PC treats each row as a lecture start by the device clock, and
+a tap belongs to the last lecture that started before it.
 
 ### Duplicate taps
 
@@ -334,7 +363,7 @@ where the scan stops.
 
 ### USB volume
 
-A FAT12 volume with three files, sized afresh at every attach to be exactly as
+A FAT12 volume with four files, sized afresh at every attach to be exactly as
 large as its contents:
 
 | File | Access | Source |
@@ -342,11 +371,13 @@ large as its contents:
 | `ATTEND.CSV` | read-only | synthesised sector by sector from the flash log |
 | `SETTINGS.CSV` | read/write | the current settings rendered as text into a 14 kB RAM window (`SETF_MAX_BYTES` = 28 x 512) |
 | `STATUS.TXT` | read-only | one generated sector: see below |
+| `LECTURES.CSV` | read-only | synthesised from the marker table: one row per lecture start |
 
 ```
 cluster 2        STATUS.TXT
 clusters 3..30   SETTINGS.CSV window (the only free space the host sees)
 clusters 31..    ATTEND.CSV
+then             LECTURES.CSV (1 cluster per 4 lectures, header included; at most 193)
 ```
 
 One sector per cluster, two FATs of 6 sectors, 16 root entries; at most 2046
@@ -356,7 +387,7 @@ at 32 bytes a row, so it fits with room to spare. The FAT (3 kB) and root
 directory are real RAM tables, kept in SRAM2 with the marker table, that the
 host's writes modify, so the host may allocate, delete and replace files exactly
 as its driver pleases. Because the window is the only free space, everything the
-host writes lands in RAM; a write to `ATTEND.CSV` or `STATUS.TXT` is refused, and
+host writes lands in RAM; a write to `ATTEND.CSV`, `LECTURES.CSV` or `STATUS.TXT` is refused, and
 a write to the boot sector is accepted and ignored. Windows' `System Volume
 Information` and macOS's `.Trashes` fit in the window beside the settings or are
 refused for lack of room; neither can touch the log.
@@ -411,7 +442,7 @@ mounted. The session ends in one of four ways, and all of them run `usb_leave()`
   decoded and latches `plat_usb_ejected()`. `run_usb()` waits
   `APP_USB_EJECT_GRACE_MS` (1 s) so the host finishes its side, then leaves.
 - **A short press of the button.**
-- **A long press.** `begin_shutdown()` applies the file before switching off.
+- **A 5 s hold** (switch off). `begin_shutdown()` applies the file before switching off. A 2-5 s hold ends the session like a tap.
 - **The cable coming out** (VBUS drops).
 
 After an eject or a press the unit stays on USB power and scans; it sets
@@ -543,8 +574,10 @@ test for that case.
 | Log full, or reader failed at power-on | red ×4 | ×4 |
 | Settings applied (eject, button or unplug) | green, two pulses | ×2 |
 | Settings refused | red, three pulses | ×3 |
+| Button held 2 s (still down) | — | 60 ms |
+| Released between 2 s and 5 s: new lecture | green | ×3 short |
 | Button tap | green ×2 (battery OK) or red ×5 (low); while plugged in it first ends the USB session | — |
-| Button held 2 s, or 3 min idle on battery | red 700 ms, then off | 250 ms |
+| Button held 5 s, or 3 min idle on battery | red 700 ms, then off | 250 ms |
 | Idle | 30 ms green flash every 4 s; red if the battery is low or the reader failed | — |
 | USB session | green flash every second | — |
 
@@ -594,6 +627,10 @@ describes use.
   as PA7. The PVD's levels 0–6 watch VDD, which a regulator holds steady until
   it drops out entirely — by which point it is too late to write flash. Level 7
   compares PVD_IN against VREFINT and so actually tracks the cell.
+- **Never leave PLS at 7 with the PVD off.** In that state PB7 pulls the
+  divider node up to VDD and PA7 reads full scale (4079 counts measured on
+  the board, against ~1250 when deselected). `pvd_off()` in `bsp_power.c`
+  disables the PVD and sets PLS back to 0, at boot and before Standby.
 - **The divider is 4.7 M over 2.7 M with 100 nF across the low leg.** It is
   permanently connected because the PVD watches it, so it is sized for ~0.5 µA;
   the cap keeps the source impedance low enough for the ADC's 640.5-cycle
@@ -616,14 +653,20 @@ them first, and `test_fsm_plugged_in()` covers it.)
 
 - **Back-to-back lectures need a new session.** Without a new marker, a card
   recorded in the last 6 hours (`APP_SESSION_MAX_AGE_S`) is a duplicate, so a
-  second lecture within 6 hours that was not started over USB loses every
-  returning student, with no way to recover the taps.
+  second lecture within 6 hours that was started neither over USB nor with the
+  button (hold 2 s, let go) loses every returning student, with no way to
+  recover the taps.
+- **A button lecture can be started by accident.** One 2-5 s hold starts it,
+  with no confirmation. Nothing is lost: the taps after it are filed under the
+  new lecture, which can be deleted or merged in the app. While the device is a
+  USB drive the hold only ends the drive session.
 - **Card IDs from `0xFFFFFF00` up collide with session markers.** The PC app
   refuses them, but `handle_card()` does not: a 7-byte UID whose last four bytes
   fall in that range is logged as a marker and disappears from the CSV.
 - **The marker table holds 768 entries.** A log with more lecture markers than
-  that is cut short at the 768th in `ATTEND.CSV`, silently. With the Companion
-  app's `#CLEARLOG` at every lecture start the log holds one or two markers, so
+  that is cut short at the 768th in `ATTEND.CSV` and `LECTURES.CSV`, silently.
+  With the Companion app's `#CLEARLOG` at every lecture start the log holds the
+  markers since the last one, a few lectures started from the button at most, so
   this matters only to a device used without the app.
 - **Changing settings erases the config page first.** A power cut between the
   erase and the final write leaves no device ID and no card list (by design no

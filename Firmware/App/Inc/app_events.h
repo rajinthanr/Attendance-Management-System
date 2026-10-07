@@ -18,7 +18,9 @@
 typedef enum {
     APP_EVT_NONE = 0,
     APP_EVT_BUTTON_SHORT, /**< Power button tapped. */
-    APP_EVT_BUTTON_LONG,  /**< Power button held past APP_BTN_LONG_MS. */
+    APP_EVT_BUTTON_HOLD,  /**< Power button still held, past APP_BTN_LONG_MS. */
+    APP_EVT_BUTTON_LONG,  /**< Released between APP_BTN_LONG_MS and APP_BTN_OFF_MS: new lecture. */
+    APP_EVT_BUTTON_OFF,   /**< Power button held past APP_BTN_OFF_MS. */
     APP_EVT_INACTIVITY,   /**< No activity for APP_INACTIVITY_MS. */
     APP_EVT_USB_ATTACH,   /**< VBUS appeared (debounced). */
     APP_EVT_USB_DETACH,   /**< VBUS went away (debounced). */

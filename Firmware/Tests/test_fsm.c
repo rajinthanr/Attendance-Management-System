@@ -308,7 +308,7 @@ void test_fsm_plugged_in(void)
         host_deep_sleep_jmp = &jb;
         if (setjmp(jb) == 0) {
             host_button = true;
-            run_ms(APP_BTN_LONG_MS + 1000u);
+            run_ms(APP_BTN_OFF_MS + 1000u);
             host_button = false;
             run_ms(5000u);
         } else {
@@ -323,5 +323,109 @@ void test_fsm_plugged_in(void)
     hf_mount(&h);
     read_status(&h, status);
     CHECK(strstr(status, "Lecture      : EN2090 / Lecture 7") != NULL, "the edit was applied before power-off [%s]", status);
+    (void)unplug();
+}
+
+/* ===================================================================== */
+/* Lectures started from the button                                       */
+/* ===================================================================== */
+
+/** What the outputs did while the button was held for @p ms and let go. */
+typedef struct {
+    bool vib_while_held;    /**< The motor ran at some point during the hold. */
+    uint32_t after_release; /**< Outputs straight after the release. */
+} press_t;
+
+static press_t press(uint32_t ms)
+{
+    press_t p = { false, 0u };
+    uint32_t i;
+
+    host_button = true;
+    for (i = 0u; i < ms; i++) {
+        run_ms(1u);
+        if ((host_out_mask & FB_VIB_BIT) != 0u) {
+            p.vib_while_held = true;
+        }
+    }
+    host_button = false;
+    run_ms(APP_BTN_DEBOUNCE_MS + 5u);
+    p.after_release = host_out_mask;
+    run_ms(1500u);
+    return p;
+}
+
+/** LECTURES.CSV through the volume (already plugged in), NUL terminated. */
+static uint32_t read_lectures(hostfs_t *h, char *out, uint32_t cap)
+{
+    int32_t n;
+
+    hf_mount(h);
+    n = hf_read(h, HF_LECTURES, (uint8_t *)out, cap - 1u);
+    out[(n < 0) ? 0 : n] = '\0';
+    return (n < 0) ? 0u : ((uint32_t)n / CSV_LECTURE_ROW_BYTES) - 1u;
+}
+
+void test_fsm_lectures(void)
+{
+    static hostfs_t h;
+    static char csv[8192];
+    press_t p;
+
+    printf("fsm lectures from the button\n");
+
+    /* ---- no lecture named yet: "Lecture 1", no module ---- */
+    boot_fresh();
+    CHECK(tap(1000u, 10u) == APP_SCAN_ACCEPTED, "a tap before any lecture");
+    p = press(APP_BTN_LONG_MS + 300u);
+    CHECK(p.vib_while_held, "a buzz while held says: let go now for a new lecture");
+    CHECK((p.after_release & (FB_GREEN_BIT | FB_VIB_BIT)) == (FB_GREEN_BIT | FB_VIB_BIT),
+          "green with the motor on release: lecture started (outputs %u)", p.after_release);
+    CHECK(app_state() == ST_IDLE, "and the unit keeps scanning");
+    CHECK(tap(1000u, 20u) == APP_SCAN_ACCEPTED, "the same card signs in to the new lecture");
+    plug();
+    CHECK(read_lectures(&h, csv, sizeof(csv)) == 1u, "one lecture on LECTURES.CSV");
+    CHECK(strstr(csv, ",,Lecture 1 ") != NULL, "named Lecture 1, no module [%.60s]", &csv[CSV_LECTURE_ROW_BYTES]);
+
+    /* ---- a lecture named by the PC, then two more from the button ---- */
+    snprintf(csv, sizeof(csv), "#MODULE,EN2090\r\n#LECTURE,Circuits Lecture 4\r\n");
+    (void)host_edits_and_unplugs(&h, csv);
+    CHECK(tap(1000u, 100u) == APP_SCAN_ACCEPTED, "lecture 4: signed in");
+    CHECK(tap(1007u, 110u) == APP_SCAN_ACCEPTED, "lecture 4: another student");
+    CHECK(tap(1000u, 120u) == APP_SCAN_DUPLICATE, "lecture 4: a second tap is a duplicate");
+
+    host_set_time(&(app_datetime_t){ 2026u, 9u, 10u, 14u, 0u, 0u });
+    p = press(APP_BTN_LONG_MS + 1000u);
+    CHECK((p.after_release & FB_GREEN_BIT) != 0u, "lecture 5 started");
+    CHECK(tap(1000u, 3700u) == APP_SCAN_ACCEPTED, "lecture 5: everyone signs in afresh");
+    CHECK(tap(1000u, 3710u) == APP_SCAN_DUPLICATE, "lecture 5: but only once");
+
+    host_set_time(&(app_datetime_t){ 2026u, 9u, 10u, 15u, 0u, 0u });
+    (void)press(APP_BTN_OFF_MS - 500u);     /* just short of switching off */
+    CHECK(app_state() == ST_IDLE, "a 4.5 s hold is still a lecture, not a power-off");
+    CHECK(tap(1000u, 7300u) == APP_SCAN_ACCEPTED, "lecture 6: signed in");
+
+    /* ---- held to 5 s: off, and no lecture (four, not five, below) ---- */
+    power_cycle();
+
+    /* ---- what the PC sees ---- */
+    plug();
+    CHECK(read_lectures(&h, csv, sizeof(csv)) == 4u, "four lectures in all");
+    CHECK(strstr(csv, ",EN2090,Circuits Lecture 4 ") != NULL, "lecture 4 as the PC named it");
+    /* Stamped on release, so a few seconds after the hold began. */
+    CHECK(strstr(csv, "2026-09-10,14:00:03,EN2090,Circuits Lecture 5 ") != NULL, "lecture 5, numbered on");
+    CHECK(strstr(csv, "2026-09-10,15:00:04,EN2090,Circuits Lecture 6 ") != NULL, "lecture 6, numbered on");
+    read_status(&h, csv);
+    CHECK(strstr(csv, "Lecture      : EN2090 / Circuits Lecture 6") != NULL, "STATUS.TXT shows the newest");
+    read_attend(&h, csv, sizeof(csv));
+    CHECK(rows_in(csv) == 6u, "ATTEND.CSV: the 6 recorded taps, no marker rows (%u)", rows_in(csv));
+
+    /* ---- plugged in, the drive is up: a long press only ends the drive session ---- */
+    p = press(APP_BTN_LONG_MS + 300u);
+    CHECK(app_state() == ST_IDLE && !host_usb_started, "the drive session ended");
+    host_vbus = false;
+    run_ms(300u);
+    plug();
+    CHECK(read_lectures(&h, csv, sizeof(csv)) == 4u, "no lecture was started from the drive session");
     (void)unplug();
 }

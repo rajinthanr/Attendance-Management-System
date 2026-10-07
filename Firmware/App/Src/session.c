@@ -216,3 +216,112 @@ bool sess_card_seen(const log_store_t *ls, const record_buffer_t *rb, uint32_t i
     }
     return false;
 }
+
+bool sess_latest(const log_store_t *ls, session_t *out)
+{
+    uint32_t i;
+
+    out->valid = false;
+    if (ls == NULL) {
+        return false;
+    }
+    for (i = log_total(ls); i > 0u; i--) {
+        app_record_t r;
+
+        if (!log_read(ls, i - 1u, &r)) {
+            return false;
+        }
+        if (sess_is_header(r.student_id)) {
+            return sess_read(ls, i - 1u, out);
+        }
+    }
+    return false;
+}
+
+void sess_next_name(const char *current, char *out)
+{
+    static const char k_first[] = "Lecture 1";
+    char digits[SESS_LECTURE_MAX + 2u];     /* the new number, or " 2" */
+    uint32_t len = 0u;
+    uint32_t start, n_digits, sep, gap, prefix, i;
+    bool carry = true;
+
+    if (current != NULL) {
+        while (len < SESS_LECTURE_MAX && current[len] != '\0') {
+            len++;
+        }
+    }
+    if (len == 0u) {
+        for (i = 0u; k_first[i] != '\0'; i++) {
+            out[i] = k_first[i];
+        }
+        out[i] = '\0';
+        return;
+    }
+
+    /* The trailing run of digits, if any, counts up with carry: "099" -> "100",
+     * "99" -> "100". */
+    start = len;
+    while (start > 0u && current[start - 1u] >= '0' && current[start - 1u] <= '9') {
+        start--;
+    }
+    n_digits = len - start;
+    if (n_digits == 0u) {
+        digits[0] = ' ';
+        digits[1] = '2';
+        n_digits = 2u;
+    } else {
+        for (i = 0u; i < n_digits; i++) {
+            digits[i + 1u] = current[start + i];
+        }
+        for (i = n_digits; i > 0u && carry; i--) {
+            if (digits[i] == '9') {
+                digits[i] = '0';
+            } else {
+                digits[i]++;
+                carry = false;
+            }
+        }
+        if (carry) {
+            digits[0] = '1';
+            n_digits++;
+        } else {
+            for (i = 0u; i < n_digits; i++) {
+                digits[i] = digits[i + 1u];
+            }
+        }
+    }
+
+    /* Keep as much of the text before the number as still fits, cutting the
+     * words and not the spaces in front of the number (a name that is nothing
+     * but 32 nines keeps the first 32 digits of the new number). */
+    if (n_digits > SESS_LECTURE_MAX) {
+        n_digits = SESS_LECTURE_MAX;
+    }
+    sep = start;
+    while (sep > 0u && current[sep - 1u] == ' ') {
+        sep--;
+    }
+    gap = start - sep;
+    if (gap + n_digits > SESS_LECTURE_MAX) {
+        gap = SESS_LECTURE_MAX - n_digits;
+    }
+    prefix = sep;
+    if (prefix + gap + n_digits > SESS_LECTURE_MAX) {
+        prefix = SESS_LECTURE_MAX - gap - n_digits;
+        /* Never leave half a UTF-8 character at the end of the cut. */
+        while (prefix > 0u && ((uint8_t)current[prefix] & 0xC0u) == 0x80u) {
+            prefix--;
+        }
+    }
+    for (i = 0u; i < prefix; i++) {
+        out[i] = current[i];
+    }
+    for (i = 0u; i < gap; i++) {
+        out[prefix + i] = ' ';
+    }
+    for (i = 0u; i < n_digits; i++) {
+        out[prefix + gap + i] = digits[i];
+    }
+    out[prefix + gap + n_digits] = '\0';
+}

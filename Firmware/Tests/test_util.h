@@ -48,6 +48,7 @@ void test_usb_robustness(void);
 void test_fsm(void);
 void test_fsm_sessions(void);
 void test_fsm_plugged_in(void);
+void test_fsm_lectures(void);
 
 /* ---- test_cards.c ---- */
 void test_cards(void);

@@ -45,4 +45,27 @@ void csv_row(const app_record_t *rec, char *out);
 /** Total CSV size for @p n_records, header included. */
 uint32_t csv_size(uint32_t n_records);
 
+/*
+ * LECTURES.CSV: one row per lecture start in the log, the same fixed-width
+ * idea with wider rows, since the names do not fit in 32 bytes:
+ *
+ *   DATE,TIME,MODULE,LECTURE<spaces><CR><LF>
+ *   2026-10-07,14:00:00,EN2090,Circuits Lecture 5<spaces><CR><LF>
+ *
+ * 10 + 1 + 8 + 1 + module (24) + 1 + lecture (32) = 77 bytes of text at most,
+ * space padded to 126, then CRLF. Four rows per sector. Neither name can hold
+ * a comma or a quote (SETTINGS.CSV refuses them), so no quoting is needed.
+ */
+#define CSV_LECTURE_ROW_BYTES        128u
+#define CSV_LECTURE_ROWS_PER_SECTOR  (512u / CSV_LECTURE_ROW_BYTES)
+
+/** Write the LECTURES.CSV header row. @p out must have CSV_LECTURE_ROW_BYTES of space. */
+void csv_lecture_header(char *out);
+
+/** Render one lecture start; names are cut at 24 and 32 bytes, NULL is empty. */
+void csv_lecture_row(app_epoch_t start, const char *module, const char *lecture, char *out);
+
+/** LECTURES.CSV size for @p n_lectures, header included. */
+uint32_t csv_lecture_size(uint32_t n_lectures);
+
 #endif /* CSV_H */

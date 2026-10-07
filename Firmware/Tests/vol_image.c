@@ -49,7 +49,19 @@ static bool next_card(void *ctx, uint32_t *id)
     return true;
 }
 
-static void setup(uint32_t n_records)
+static void push_marker(app_epoch_t start, const char *module, const char *lecture)
+{
+    app_record_t m[SESS_MAX_RECORDS];
+    uint16_t k, c = sess_encode(m, SESS_MAX_RECORDS, start, module, lecture);
+
+    for (k = 0u; k < c; k++) {
+        (void)rb_push(&g_rb, &m[k]);
+    }
+}
+
+/* @p second_lecture: a lecture started from the button at record 45, named
+ * the way the firmware names it ("Lecture 1" -> "Lecture 2"). */
+static void setup(uint32_t n_records, bool second_lecture)
 {
     uint32_t i;
 
@@ -73,13 +85,13 @@ static void setup(uint32_t n_records)
 
         if (i == 30u) {
             /* A lecture starts here: records 30.. belong to it. */
-            app_record_t m[SESS_MAX_RECORDS];
-            uint16_t k, c = sess_encode(m, SESS_MAX_RECORDS, time_to_epoch(&k_now) + (i * 37u),
-                                        "EN2090", "Lecture 1");
+            push_marker(time_to_epoch(&k_now) + (i * 37u), "EN2090", "Lecture 1");
+        }
+        if (i == 45u && second_lecture) {
+            char next[SESS_LECTURE_MAX + 1u];
 
-            for (k = 0u; k < c; k++) {
-                (void)rb_push(&g_rb, &m[k]);
-            }
+            sess_next_name("Lecture 1", next);
+            push_marker(time_to_epoch(&k_now) + (i * 37u), "EN2090", next);
         }
         rec.student_id = 1000u + (7u * (i % 5u));
         rec.stamp = time_to_epoch(&k_now) + (i * 37u);
@@ -100,11 +112,13 @@ int main(int argc, char **argv)
     FILE *f;
 
     if (argc != 3 && argc != 4) {
-        fprintf(stderr, "usage: %s dump|apply|files image-or-dir [big]\n", argv[0]);
+        fprintf(stderr, "usage: %s dump|apply|files image-or-dir [big|lectures]\n", argv[0]);
         return 2;
     }
-    /* A third argument "big" fills the log to near capacity. */
-    setup((argc == 4 && strcmp(argv[3], "big") == 0) ? 13900u : 60u);
+    /* A third argument "big" fills the log to near capacity; "lectures" adds a
+     * second lecture, started from the button, at record 45. */
+    setup((argc == 4 && strcmp(argv[3], "big") == 0) ? 13900u : 60u,
+          argc == 4 && strcmp(argv[3], "lectures") == 0);
     total = usbs_sector_count();
 
     if (strcmp(argv[1], "dump") == 0) {
@@ -119,7 +133,7 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    /* "files <dir>": write ATTEND.CSV, SETTINGS.CSV and STATUS.TXT exactly as
+    /* "files <dir>": write ATTEND.CSV, SETTINGS.CSV, STATUS.TXT and LECTURES.CSV exactly as
      * the device presents them, by reading the volume the way a host would. */
     if (strcmp(argv[1], "files") == 0) {
         uint8_t root[512], fat[FAT12_FAT_BYTES];

@@ -23,7 +23,9 @@ typedef enum {
     FB_POWER_ON,    /**< Green with a short pulse. */
     FB_POWER_OFF,   /**< Red with a long pulse. */
     FB_SAVED,       /**< Green + two pulses: settings written to the device. */
-    FB_REJECTED     /**< Red + three pulses: settings file refused. */
+    FB_REJECTED,    /**< Red + three pulses: settings file refused. */
+    FB_HOLD,        /**< One short pulse: the button has been held long enough for a new lecture. */
+    FB_LECTURE      /**< Green + three short pulses: a new lecture has started. */
 } fb_pattern_t;
 
 typedef struct {

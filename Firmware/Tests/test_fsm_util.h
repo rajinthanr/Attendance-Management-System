@@ -158,7 +158,7 @@ static inline void power_cycle(void)
     host_deep_sleep_jmp = &jb;
     if (setjmp(jb) == 0) {
         host_button = true;
-        run_ms(APP_BTN_LONG_MS + 1000u);
+        run_ms(APP_BTN_OFF_MS + 1000u);
         CHECK(app_state() == ST_SHUTDOWN, "the long press starts the shutdown");
         host_button = false;
         run_ms(3000u);

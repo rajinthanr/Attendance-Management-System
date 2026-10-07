@@ -421,9 +421,12 @@ static void test_button(void)
 {
     static button_t b;
     uint32_t t;
-    int shorts = 0, longs = 0;
+    int shorts = 0, holds = 0, longs = 0, offs = 0;
 
     printf("button\n");
+
+#define COUNT_EVENT(e) do { shorts += ((e) == BTN_SHORT); holds += ((e) == BTN_HOLD); \
+                            longs += ((e) == BTN_LONG); offs += ((e) == BTN_OFF); } while (0)
 
     btn_init(&b, false, 0u);
     for (t = 0u; t < 100u; t++) { (void)btn_update(&b, t < 10u, t); }
@@ -431,29 +434,48 @@ static void test_button(void)
 
     for (t = 100u; t < 400u; t++) {
         button_event_t e = btn_update(&b, t < 300u, t);
-        shorts += (e == BTN_SHORT); longs += (e == BTN_LONG);
+        COUNT_EVENT(e);
     }
-    CHECK(shorts == 1 && longs == 0, "tap: %d short, %d long", shorts, longs);
+    CHECK(shorts == 1 && holds == 0 && longs == 0 && offs == 0, "tap: %d short, %d hold, %d long, %d off",
+          shorts, holds, longs, offs);
 
-    shorts = longs = 0;
+    /* Held 2.5 s: a hold while still down, then a long press on release. */
+    shorts = holds = longs = offs = 0;
     for (t = 1000u; t < 4000u; t++) {
         button_event_t e = btn_update(&b, t < 3500u, t);
-        shorts += (e == BTN_SHORT); longs += (e == BTN_LONG);
+        COUNT_EVENT(e);
+        if (e == BTN_HOLD) {
+            CHECK(t >= 1000u + APP_BTN_LONG_MS && t < 3500u, "hold fires at the threshold, while held");
+        }
         if (e == BTN_LONG) {
-            CHECK(t >= 1000u + APP_BTN_LONG_MS, "long fires at the threshold");
-            CHECK(t < 3500u, "long fires while still held");
+            CHECK(t >= 3500u, "long fires on release");
         }
     }
-    CHECK(shorts == 0 && longs == 1, "hold: %d short, %d long", shorts, longs);
+    CHECK(shorts == 0 && holds == 1 && longs == 1 && offs == 0, "2.5 s: %d short, %d hold, %d long, %d off",
+          shorts, holds, longs, offs);
 
-    /* The press that woke the unit is ignored. */
-    btn_init(&b, true, 0u);
-    shorts = longs = 0;
-    for (t = 0u; t < 5000u; t++) {
-        button_event_t e = btn_update(&b, t < 4000u, t);
-        shorts += (e == BTN_SHORT); longs += (e == BTN_LONG);
+    /* Held 6 s: hold, then off while still down, and the release says nothing. */
+    shorts = holds = longs = offs = 0;
+    for (t = 5000u; t < 12000u; t++) {
+        button_event_t e = btn_update(&b, t < 11000u, t);
+        COUNT_EVENT(e);
+        if (e == BTN_OFF) {
+            CHECK(t >= 5000u + APP_BTN_OFF_MS && t < 11000u, "off fires at the threshold, while held");
+        }
     }
-    CHECK(shorts == 0 && longs == 0, "wake press ignored: %d, %d", shorts, longs);
+    CHECK(shorts == 0 && holds == 1 && longs == 0 && offs == 1, "6 s: %d short, %d hold, %d long, %d off",
+          shorts, holds, longs, offs);
+
+    /* The press that woke the unit is ignored, however long it is held. */
+    btn_init(&b, true, 0u);
+    shorts = holds = longs = offs = 0;
+    for (t = 0u; t < 8000u; t++) {
+        button_event_t e = btn_update(&b, t < 7000u, t);
+        COUNT_EVENT(e);
+    }
+    CHECK(shorts == 0 && holds == 0 && longs == 0 && offs == 0, "wake press ignored: %d, %d, %d, %d",
+          shorts, holds, longs, offs);
+#undef COUNT_EVENT
 }
 
 /* ===================================================================== */
@@ -553,6 +575,7 @@ int main(void)
     test_fsm();
     test_fsm_sessions();
     test_fsm_plugged_in();
+    test_fsm_lectures();
     test_cards();
     test_battery_boot();
 

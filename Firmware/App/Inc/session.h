@@ -53,6 +53,24 @@ bool sess_decode(const app_record_t *recs, uint16_t n, session_t *out);
 bool sess_read(const log_store_t *ls, uint32_t index, session_t *out);
 
 /**
+ * The newest session in the flash log: scans back from the end for the last
+ * marker header. Markers are always flushed as soon as they are written, so
+ * the RAM buffer never holds one. @return false (and @p out invalid) when the
+ * log holds no marker, e.g. straight after #CLEARLOG.
+ */
+bool sess_latest(const log_store_t *ls, session_t *out);
+
+/**
+ * The name for the lecture after @p current, for a lecture started on the
+ * device itself: a trailing number goes up by one ("Lecture 9" -> "Lecture 10",
+ * "Week 09" -> "Week 10"), a name without one gets " 2", and an empty name
+ * becomes "Lecture 1". The text before the number is cut, at a character
+ * boundary, if the result would not fit in SESS_LECTURE_MAX bytes.
+ * @param out  Room for SESS_LECTURE_MAX + 1 bytes.
+ */
+void sess_next_name(const char *current, char *out);
+
+/**
  * Has @p id already been recorded in the current session?
  *
  * Scans the RAM buffer and then the flash log backwards from the newest

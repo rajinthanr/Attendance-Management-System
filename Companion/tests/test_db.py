@@ -117,9 +117,49 @@ class DeviceFiles(unittest.TestCase):
         self.assertFalse(s["pending"])
         s = D.parse_status("ATTENDANCE LOGGER\r\nLecture      : EN2090 / Old firmware, no since\r\n")
         self.assertTrue(s["has_lecture"] and s["since"] is None and s["lecture"] == "Old firmware, no since")
+        # A lecture started from the button before any was named: no module.
+        s = D.parse_status("ATTENDANCE LOGGER\r\nLecture      :  / Lecture 1 (since 2026-10-07 14:00:03)\r\n")
+        self.assertTrue(s["has_lecture"])
+        self.assertEqual((s["module"], s["lecture"], s["since"]), ("", "Lecture 1", D.parse_ts("2026-10-07 14:00:03")))
         self.assertFalse(D.parse_status("some other file")["ok"])
         self.assertFalse(D.parse_status("")["ok"])
         self.assertTrue(D.parse_status("﻿ATTENDANCE LOGGER\r\n")["ok"])
+
+    @staticmethod
+    def lecture_rows(*rows):
+        """LECTURES.CSV as the firmware writes it: 128-byte rows, space padded, CRLF."""
+        return "".join(r.ljust(126) + "\r\n" for r in ("DATE,TIME,MODULE,LECTURE",) + rows)
+
+    def test_lectures(self):
+        text = self.lecture_rows("2026-10-07,09:00:03,EN2090,Circuits Lecture 4", "2026-10-07,11:00:00,EN2090,Circuits Lecture 5")
+        self.assertEqual(len(text), 3 * 128)
+        rows, skipped = D.parse_lectures(text)
+        self.assertEqual(rows, [(D.parse_ts("2026-10-07 09:00:03"), "EN2090", "Circuits Lecture 4"),
+                                (D.parse_ts("2026-10-07 11:00:00"), "EN2090", "Circuits Lecture 5")], "padding is not part of the name")
+        self.assertEqual(skipped, 0)
+
+    def test_lectures_header_only_and_empty(self):
+        self.assertEqual(D.parse_lectures(self.lecture_rows()), ([], 0))
+        self.assertEqual(D.parse_lectures(""), ([], 0))
+
+    def test_lectures_with_no_module(self):
+        rows, skipped = D.parse_lectures(self.lecture_rows("2026-10-07,14:00:00,,Lecture 1"))
+        self.assertEqual((rows, skipped), ([(D.parse_ts("2026-10-07 14:00:00"), "", "Lecture 1")], 0))
+
+    def test_lectures_stop_at_a_nul_and_skip_what_is_wrong(self):
+        text = ("\ufeff" + self.lecture_rows("2026-10-07,09:00:00, EN2090 ,A long name with  spaces",
+                                             "garbage",
+                                             "2026-13-45,09:00:00,EN2090,Impossible date",
+                                             "2026-10-07,09:00,EN2090,No seconds",
+                                             "2026-10-07,10:00:00,EN2090,Too,many",
+                                             "2026-10-07,10:30:00,EN2090",
+                                             "") +
+                "\r\n" + self.lecture_rows("2026-10-07,11:00:00,EN2090,Kept")[128:] +
+                "\x00" * 64 + self.lecture_rows("2026-10-07,12:00:00,EN2090,After the end")[128:])
+        rows, skipped = D.parse_lectures(text)
+        self.assertEqual([r[1:] for r in rows], [("EN2090", "A long name with  spaces"), ("EN2090", "Kept")],
+                         "blank lines are passed over and nothing after a NUL is read")
+        self.assertEqual(skipped, 5)
 
     def test_building_settings(self):
         t = D.build_settings(now=D.parse_ts("2026-10-06 14:05:09"), module="EN,2090", lecture='Part "1"', new_session=True, device_id=42)
@@ -405,6 +445,51 @@ class Lectures(Base):
         self.assertIsNone(self.db.confirm_lecture_start("EN2090", "Lecture 2", T0 + 5000), "only once")
         self.assertIsNone(self.db.confirm_lecture_start("EN2090", "Never started", T0))
         self.assertEqual(self.db.get_lecture(b["id"])["start_ts"], T0 + 3700)
+
+    def test_lectures_the_device_started(self):
+        pc = self.db.start_lecture("EN2090", "Lecture 4", T0)                 # started here, not yet heard back
+        rows = [(T0 + 3, "EN2090", "Lecture 4"), (T0 + 7200, "EN2090", "Lecture 5"), (T0 + 86400, "EN2090", "Lecture 6")]
+        self.assertEqual(self.db.take_device_lectures(list(reversed(rows))), 2, "oldest first, whatever the order given")
+        ls = sorted(self.db.list_lectures(), key=lambda l: l["start_ts"])
+        self.assertEqual([(l["title"], l["start_ts"]) for l in ls], [(t, ts) for ts, _, t in rows])
+        self.assertEqual(ls[0]["id"], pc["id"], "the lecture started here takes the device's time")
+        self.assertEqual(ls[0]["end"], T0 + 7200)
+        self.assertEqual((ls[1]["end_ts"], ls[1]["running"]), (T0 + 7200 + D.MAX_LECTURE_SECONDS, False),
+                         "one the device moved on from is over, and no longer than an open lecture would be")
+        self.assertTrue(ls[2]["running"])
+        self.assertEqual(self.db.take_device_lectures(rows), 0, "reading the same list again adds nothing")
+        self.db.delete_lecture(ls[1]["id"])
+        self.db.delete_lecture(ls[2]["id"])
+        self.assertEqual(self.db.take_device_lectures(rows), 0, "deleted here stays deleted")
+        self.assertEqual(self.db.counts()["lectures"], 1)
+        self.db.take_device_lectures(rows + [(T0 + 3 * 86400, "EN2090", "Lecture 7")])
+        self.assertEqual(self.db.get_lecture(ls[0]["id"])["end_ts"], T0 + 7200, "an ended lecture is left alone")
+
+    def test_a_device_lecture_ends_an_open_one_no_later_than_six_hours(self):
+        self.db.take_device_lectures([(T0, "EN2090", "Lecture 1")])
+        self.db.take_device_lectures([(T0, "EN2090", "Lecture 1"), (T0 + 2 * 86400, "EN2090", "Lecture 2")])
+        first = [l for l in self.db.list_lectures() if l["title"] == "Lecture 1"][0]
+        self.assertEqual(first["end_ts"], T0 + D.MAX_LECTURE_SECONDS, "read two days later, it does not take the days between")
+
+    def test_an_older_lecture_of_the_same_name_does_not_confirm_a_newer_one(self):
+        pc = self.db.start_lecture("EN2090", "Lab", T0 + 3600)
+        self.db.take_device_lectures([(T0, "EN2090", "Lab"), (T0 + 3605, "EN2090", "Lab")])
+        self.assertEqual(self.db.get_lecture(pc["id"])["start_ts"], T0 + 3605)
+        self.assertEqual(sorted(l["start_ts"] for l in self.db.list_lectures()), [T0, T0 + 3605])
+
+    def test_a_device_lecture_with_no_module(self):
+        self.db.take_device_lectures([(T0, "", "Lecture 1"), (T0 + 3600, " ", "Lecture 2")])
+        ls = self.db.list_lectures(module=D.UNASSIGNED_MODULE)
+        self.assertEqual([l["title"] for l in ls], ["Lecture 2", "Lecture 1"])
+        self.assertTrue(self.db.get_module(D.UNASSIGNED_MODULE)["title"])
+        moved = self.db.update_lecture(ls[0]["id"], module="EN2090")
+        self.assertEqual(moved["module_code"], "EN2090")
+        self.assertEqual(self.db.take_device_lectures([(T0, "", "Lecture 1"), (T0 + 3600, "", "Lecture 2")]), 0,
+                         "a lecture moved to its module is not adopted again")
+        self.assertEqual(self.db.counts()["lectures"], 2)
+        self.assertEqual(self.db.take_device_lectures([(T0 + 7200, "", "")]), 0, "a lecture with no name at all is not taken")
+        with self.assertRaises(D.DbError):
+            self.db.start_lecture("", "Lecture 3", T0)                       # one started here still needs a module
 
     def test_manual_edit(self):
         l = self.db.create_lecture("MA1010", "Past lecture", T0, T0 + 3600)

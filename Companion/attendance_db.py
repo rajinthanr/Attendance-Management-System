@@ -28,6 +28,7 @@ DEVICE_CARDS_MAX = 1000        # registered cards the device can hold
 MODULE_BYTES = 24              # what the device can hold of a module code ...
 LECTURE_BYTES = 32             # ... and of a lecture title
 MAX_LECTURE_SECONDS = 6 * 3600  # a lecture with no end lasts at most this long (the device's own look-back)
+UNASSIGNED_MODULE = "UNASSIGNED"  # where a lecture the device started with no module name is filed
 
 _CTRL = re.compile(r"[\x00-\x1f\x7f]")
 
@@ -125,7 +126,7 @@ def fmt_card(card_id):
 
 
 # --------------------------------------------------------------------------
-# ATTEND.CSV and STATUS.TXT as the device writes them
+# ATTEND.CSV, LECTURES.CSV and STATUS.TXT as the device writes them
 # --------------------------------------------------------------------------
 
 _ATTEND_ROW = re.compile(r"^\s*(\d{4})-(\d\d)-(\d\d)\s*,\s*(\d\d):(\d\d):(\d\d)\s*,\s*(\d+)")
@@ -151,6 +152,33 @@ def parse_attend(text):
             skipped += 1
             continue
         rows.append((ts, card))
+    return rows, skipped
+
+
+_LECTURE_ROW = re.compile(r"^(\d{4})-(\d\d)-(\d\d),(\d\d):(\d\d):(\d\d)$")
+
+
+def parse_lectures(text):
+    """
+    Rows of LECTURES.CSV (every lecture start in the device's log) as [(ts, module, lecture)] in file
+    order, plus a count of lines skipped. Rows are 128 bytes, space padded; the names never hold a comma,
+    and the module is empty when the device started a lecture before any had been named. A NUL ends the data.
+    """
+    rows, skipped = [], 0
+    for line in str(text).lstrip("﻿").split("\x00", 1)[0].splitlines():
+        if not line.strip() or line.lstrip().upper().startswith("DATE"):
+            continue
+        parts = line.strip().split(",")
+        m = _LECTURE_ROW.match(",".join(p.strip() for p in parts[:2])) if len(parts) == 4 else None
+        if not m:
+            skipped += 1
+            continue
+        try:
+            ts = to_ts(_dt.datetime(*(int(x) for x in m.groups())))
+        except ValueError:
+            skipped += 1
+            continue
+        rows.append((ts, parts[2].strip(), parts[3].strip()))
     return rows, skipped
 
 
@@ -182,7 +210,7 @@ def parse_status(text):
                 out["last_tap"] = parse_ts(mm.group(2))
         elif key == "lecture":
             if val and val != "none set":
-                mm = re.match(r"^(.*?) / (.*?)(?: \(since (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)\))?$", val)
+                mm = re.match(r"^(.*?) ?/ (.*?)(?: \(since (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)\))?$", val)
                 if mm:
                     out["module"], out["lecture"] = mm.group(1).strip(), mm.group(2).strip()
                     if mm.group(3):
@@ -494,7 +522,7 @@ class Database:
     _HEAD = {
         "card_id": "card", "card": "card", "cardid": "card", "card_no": "card", "card_number": "card", "id": "card",
         "name": "name", "student_name": "name", "full_name": "name",
-        "student_no": "no", "student_number": "no", "index": "no", "index_no": "no", "reg_no": "no", "registration": "no",
+        "student_no": "no", "student_number": "no", "index": "no", "index_no": "no", "index_number": "no", "reg_no": "no", "registration": "no",
         "department": "dept", "dept": "dept",
         "modules": "modules", "module": "modules", "enrolled_modules": "modules", "enrolled": "modules",
     }
@@ -731,14 +759,15 @@ class Database:
 
     def adopt_device_lecture(self, module, title, since_ts):
         """
-        The device is running a lecture this database has no record of (someone edited SETTINGS.CSV by
-        hand, or the database is new). Record it, once: a lecture deleted here is not resurrected on the
-        next read, because only a lecture newer than the last one adopted is taken.
+        The device ran a lecture this database has no record of (the lecturer started it on the device,
+        someone edited SETTINGS.CSV by hand, or the database is new). Record it, once: a lecture deleted here is not resurrected on the
+        next read, because only a lecture newer than the last one adopted is taken. One with no module
+        name (the device started it before any lecture was named) is filed under UNASSIGNED_MODULE.
         Returns the new lecture, or None.
         """
-        module = clean_device_text(module, MODULE_BYTES)
+        module = clean_device_text(module, MODULE_BYTES) or UNASSIGNED_MODULE
         title = clean_device_text(title, LECTURE_BYTES)
-        if not module or not title:
+        if not title:
             return None
         with self.lock, self._tx():
             last = self.con.execute("SELECT value FROM kv WHERE key='adopted_since'").fetchone()
@@ -748,8 +777,14 @@ class Database:
                                 (module, title, since_ts)).fetchone():
                 self.con.execute("INSERT OR REPLACE INTO kv(key,value) VALUES('adopted_since',?)", (str(since_ts),))
                 return None
+            if module == UNASSIGNED_MODULE:
+                self.con.execute("INSERT OR IGNORE INTO modules(code,title,department) VALUES(?,?,'')",
+                                 (module, "Started on the device with no module: edit the lecture to move it"))
             self._ensure_module(module)
-            self.con.execute("UPDATE lectures SET end_ts=? WHERE end_ts IS NULL AND start_ts<=?", (since_ts, since_ts))
+            # A lecture still open here ends where this one starts, but no later than its open window did:
+            # read days afterwards, a device lecture must not stretch the one before it over the days between.
+            self.con.execute("UPDATE lectures SET end_ts=MIN(?, start_ts+?) WHERE end_ts IS NULL AND start_ts<=?",
+                             (since_ts, MAX_LECTURE_SECONDS, since_ts))
             cur = self.con.execute(
                 "INSERT INTO lectures(module_code,title,start_ts,end_ts,confirmed,created_at) VALUES(?,?,?,NULL,1,?)",
                 (module, title, since_ts, self._now()))
@@ -762,6 +797,38 @@ class Database:
             last = self.con.execute("SELECT value FROM kv WHERE key='adopted_since'").fetchone()
             if last is None or since_ts > int(last[0]):
                 self.con.execute("INSERT OR REPLACE INTO kv(key,value) VALUES('adopted_since',?)", (str(since_ts),))
+
+    def take_device_lectures(self, rows):
+        """
+        Every lecture start in the device's log (LECTURES.CSV: [(since_ts, module, title)]), oldest first:
+        each confirms the lecture started here with those names, or is adopted as a lecture of its own, so
+        lectures the device started by itself between two reads each get their taps. A row already
+        recorded is passed over, and only the last row with a pair of names may confirm, so an older
+        lecture of the same name never moves a newer one started here. Returns how many were added.
+        """
+        rows = sorted(rows, key=lambda r: r[0])
+        names = [(clean_device_text(m, MODULE_BYTES) or UNASSIGNED_MODULE, clean_device_text(t, LECTURE_BYTES))
+                 for _, m, t in rows]
+        last = {n: i for i, n in enumerate(names)}
+        added = 0
+        with self.lock, self._tx():
+            for i, ((since, _, _), (module, title)) in enumerate(zip(rows, names)):
+                if self.con.execute("SELECT 1 FROM lectures WHERE module_code=? AND title=? AND start_ts=? AND confirmed=1",
+                                    (module, title, since)).fetchone():
+                    self.note_confirmed(since)
+                elif last[(module, title)] == i and self.confirm_lecture_start(module, title, since):
+                    self.note_confirmed(since)
+                else:
+                    lec = self.adopt_device_lecture(module, title, since)
+                    if lec is None:
+                        continue
+                    added += 1
+                    if i + 1 < len(rows):
+                        # Another lecture followed on the device, so this one is over: not "running" here.
+                        end = min(rows[i + 1][0], since + MAX_LECTURE_SECONDS)
+                        if end > since:
+                            self.con.execute("UPDATE lectures SET end_ts=? WHERE id=?", (end, lec["id"]))
+        return added
 
     def current_lecture(self):
         """The lecture that is still open, if any."""

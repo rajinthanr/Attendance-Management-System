@@ -69,6 +69,25 @@ static const fb_step_t k_power_off[] = {
     { 0u,        0u }
 };
 
+/* Felt rather than seen, while the button is still held: let go now for a
+ * new lecture, keep holding to switch off. */
+static const fb_step_t k_hold[] = {
+    { VIB, APP_FB_HOLD_VIB_MS },
+    { 0u,  0u }
+};
+
+/* A new lecture: three quick pulses, unlike anything a card tap produces, so
+ * the lecturer can tell without looking that the press took. */
+static const fb_step_t k_lecture[] = {
+    { GREEN | VIB, APP_FB_LECTURE_PULSE_MS },
+    { GREEN,       APP_FB_LECTURE_GAP_MS   },
+    { GREEN | VIB, APP_FB_LECTURE_PULSE_MS },
+    { GREEN,       APP_FB_LECTURE_GAP_MS   },
+    { GREEN | VIB, APP_FB_LECTURE_PULSE_MS },
+    { GREEN,       400u },
+    { 0u,          0u   }
+};
+
 /* Blink tables are built at run time so the counts stay policy knobs rather
  * than hand-unrolled tables. Each holds on/off pairs plus a terminator. */
 static fb_step_t s_lowbatt[(APP_FB_LOWBATT_BLINKS * 2u) + 1u];
@@ -120,6 +139,8 @@ uint16_t fb_start(feedback_t *fb, fb_pattern_t pattern)
     case FB_POWER_OFF:   USE_TABLE(fb, k_power_off); break;
     case FB_SAVED:       USE_TABLE(fb, k_saved);     break;
     case FB_REJECTED:    USE_TABLE(fb, k_rejected);  break;
+    case FB_HOLD:        USE_TABLE(fb, k_hold);      break;
+    case FB_LECTURE:     USE_TABLE(fb, k_lecture);   break;
     case FB_NONE:
     default:
         fb_cancel(fb);

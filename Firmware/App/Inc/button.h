@@ -2,9 +2,13 @@
  * @file    button.h
  * @brief   Level 2 (logic) — debounce the power button and classify presses.
  *
- * Fed the raw pin level every pass of the main loop. A press shorter than
- * APP_BTN_LONG_MS is reported on release; a long press is reported once,
- * while still held, the moment it crosses the threshold.
+ * Fed the raw pin level every pass of the main loop. A press is one of:
+ *
+ *   released before APP_BTN_LONG_MS            BTN_SHORT on release
+ *   held past APP_BTN_LONG_MS                  BTN_HOLD at that moment, then
+ *     ...and released before APP_BTN_OFF_MS    BTN_LONG on release
+ *     ...or held on past APP_BTN_OFF_MS        BTN_OFF at that moment; the
+ *                                              release then reports nothing
  *
  * The press that woke the unit from Standby is still held when this starts,
  * so a button found down at start-up is ignored until it is released.
@@ -16,15 +20,18 @@
 
 typedef enum {
     BTN_NONE = 0,
-    BTN_SHORT,
-    BTN_LONG
+    BTN_SHORT,      /**< Tapped. */
+    BTN_HOLD,       /**< Still held, just crossed APP_BTN_LONG_MS. */
+    BTN_LONG,       /**< Released between APP_BTN_LONG_MS and APP_BTN_OFF_MS. */
+    BTN_OFF         /**< Still held, just crossed APP_BTN_OFF_MS. */
 } button_event_t;
 
 typedef struct {
     bool     raw;
     bool     down;           /**< Debounced level. */
     bool     locked;         /**< Ignore this press; wait for a release. */
-    bool     long_sent;
+    bool     hold_sent;
+    bool     off_sent;
     uint32_t raw_changed_ms;
     uint32_t down_ms;
 } button_t;

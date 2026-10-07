@@ -430,11 +430,12 @@ void test_usb_volume(void)
     begin_session(100u, 0xC0FFEEu);
 
     /* 101 rows * 32 B = 3232 B = 7 clusters, after the metadata, STATUS.TXT
-     * and the SETTINGS.CSV window. */
+     * and the SETTINGS.CSV window; then one cluster of LECTURES.CSV, which with
+     * no markers in the log is just its header. */
     const uint32_t att_clusters = (csv_size(100u) + 511u) / 512u;
     CHECK(att_clusters == 7u, "attend clusters %u", att_clusters);
     CHECK(usbs_file_size() == csv_size(100u), "file size %u", usbs_file_size());
-    CHECK(usbs_sector_count() == FAT12_DATA_START_LBA + 1u + USBS_SETTINGS_CLUSTERS + att_clusters,
+    CHECK(usbs_sector_count() == FAT12_DATA_START_LBA + 1u + USBS_SETTINGS_CLUSTERS + att_clusters + 1u,
           "sector count %u", usbs_sector_count());
     CHECK(usbs_sector_size() == 512u, "sector size");
     CHECK(att == 31u && USBS_SETTINGS_CLUSTERS == 28u, "cluster map");
@@ -452,23 +453,26 @@ void test_usb_volume(void)
     CHECK(fat12_rd32(&g_sec[39]) == 0xC0FFEEu, "serial is the device id");
     CHECK(memcmp(&g_sec[54], "FAT12   ", 8u) == 0, "fs type");
     CHECK(fat12_cluster_count(usbs_sector_count()) < 4085u, "cluster count is FAT12");
-    CHECK(fat12_cluster_count(usbs_sector_count()) == 1u + USBS_SETTINGS_CLUSTERS + att_clusters, "clusters %u",
+    CHECK(fat12_cluster_count(usbs_sector_count()) == 1u + USBS_SETTINGS_CLUSTERS + att_clusters + 1u, "clusters %u",
           fat12_cluster_count(usbs_sector_count()));
 
-    /* Root directory: label, STATUS, SETTINGS, ATTEND. */
+    /* Root directory: label, STATUS, SETTINGS, ATTEND, LECTURES. */
     CHECK(g_hf.root[11] == FAT12_ATTR_VOLUME_ID && memcmp(g_hf.root, "ATTENDANCE ", 11u) == 0, "label");
     int es = hf_find(&g_hf, HF_STATUS);
     int eu = hf_find(&g_hf, HF_SETTINGS);
     int ea = hf_find(&g_hf, HF_ATTEND);
-    CHECK(es >= 0 && eu >= 0 && ea >= 0, "all three files listed");
+    int el = hf_find(&g_hf, HF_LECTURES);
+    CHECK(es >= 0 && eu >= 0 && ea >= 0 && el >= 0, "all four files listed");
     CHECK(hf_find(&g_hf, "STUDENTSCSV") < 0, "there is no student file any more");
     CHECK(hf_first(&g_hf, es) == 2u && hf_size(&g_hf, es) == 512u, "STATUS entry");
     CHECK(hf_first(&g_hf, eu) == 3u && hf_size(&g_hf, eu) == usbs_settings_size(), "SETTINGS entry");
     CHECK(hf_first(&g_hf, ea) == att && hf_size(&g_hf, ea) == csv_size(100u), "ATTEND entry");
+    CHECK(hf_first(&g_hf, el) == att + att_clusters && hf_size(&g_hf, el) == csv_lecture_size(0u), "LECTURES entry");
+    CHECK((g_hf.root[el * 32 + 11] & FAT12_ATTR_READ_ONLY) != 0u, "LECTURES is read-only");
     CHECK((g_hf.root[es * 32 + 11] & FAT12_ATTR_READ_ONLY) != 0u, "STATUS is read-only");
     CHECK((g_hf.root[ea * 32 + 11] & FAT12_ATTR_READ_ONLY) != 0u, "ATTEND is read-only");
     CHECK((g_hf.root[eu * 32 + 11] & FAT12_ATTR_READ_ONLY) == 0u, "SETTINGS is writable");
-    CHECK(g_hf.root[4 * 32] == 0x00u, "directory ends after the fourth entry");
+    CHECK(g_hf.root[5 * 32] == 0x00u, "directory ends after the fifth entry");
 
     /* FAT chains and free space. */
     uint32_t set_clusters = (usbs_settings_size() + 511u) / 512u;
@@ -570,7 +574,7 @@ void test_usb_volume(void)
     /* An empty log still exports a valid header-only file. */
     begin_session(0u, 0xC0FFEEu);
     CHECK(usbs_file_size() == CSV_ROW_BYTES, "header only");
-    CHECK(usbs_sector_count() == FAT12_DATA_START_LBA + 1u + USBS_SETTINGS_CLUSTERS + 1u, "one ATTEND cluster");
+    CHECK(usbs_sector_count() == FAT12_DATA_START_LBA + 1u + USBS_SETTINGS_CLUSTERS + 1u + 1u, "one ATTEND cluster");
     CHECK(usbs_read(fat12_cluster_lba(att), g_sec, 1u), "read");
     snprintf(expect, sizeof(expect), "%-30s\r\n", "DATE,TIME,CARD_ID");
     CHECK(memcmp(g_sec, expect, 32u) == 0, "header present");

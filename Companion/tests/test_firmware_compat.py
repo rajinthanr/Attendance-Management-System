@@ -181,10 +181,10 @@ class AppToFirmware(unittest.TestCase):
 class FirmwareToApp(unittest.TestCase):
     """The files the real firmware generates, read by the app and synced into a database."""
 
-    def files(self, big=False):
+    def files(self, big=False, lectures=False):
         d = tempfile.mkdtemp(prefix="att-c2-")
         self.addCleanup(shutil.rmtree, d, True)
-        args = ["files", _path(d)] + (["big"] if big else [])
+        args = ["files", _path(d)] + (["big"] if big else []) + (["lectures"] if lectures else [])
         out = _build()["vol_image"](args)
         self.assertIn("wrote ATTEND.CSV", out)
         return d
@@ -218,6 +218,43 @@ class FirmwareToApp(unittest.TestCase):
         self.assertEqual(rows[-1][1], 1028)
         self.assertEqual(st["last_tap"], rows[-1][0], "STATUS.TXT agrees with the last row")
         self.assertEqual(len(raw) % 32, 0)
+
+    def test_the_lecture_list_reads_back(self):
+        d = self.files()
+        with open(os.path.join(d, "LECTURES.CSV"), encoding="utf-8", newline="") as f:
+            raw = f.read()
+        self.assertEqual(len(raw), 2 * 128, "the header and one 128-byte row")
+        self.assertTrue(raw.startswith("DATE,TIME,MODULE,LECTURE ") and raw.endswith("\r\n"))
+        rows, skipped = D.parse_lectures(raw)
+        self.assertEqual(skipped, 0)
+        self.assertEqual(rows, [(D.parse_ts("2026-10-06 09:48:30"), "EN2090", "Lecture 1")])
+        with open(os.path.join(d, "STATUS.TXT"), encoding="utf-8") as f:
+            self.assertEqual(D.parse_status(f.read())["since"], rows[0][0], "the same start as STATUS.TXT")
+
+    def test_lectures_started_on_the_device_each_get_their_taps(self):
+        """A second lecture, started from the button and named by the firmware, splits the taps."""
+        d = self.files(lectures=True)
+        with open(os.path.join(d, "LECTURES.CSV"), encoding="utf-8", newline="") as f:
+            rows, skipped = D.parse_lectures(f.read())
+        self.assertEqual(skipped, 0)
+        self.assertEqual([(m, t) for _, m, t in rows], [("EN2090", "Lecture 1"), ("EN2090", "Lecture 2")],
+                         "the firmware numbers the name on")
+        data = tempfile.mkdtemp(prefix="att-c2l-")
+        self.addCleanup(shutil.rmtree, data, True)
+        db = D.Database(os.path.join(data, "a.db"))
+        self.addCleanup(db.close)
+        a = app.App(db, d, data)
+        s = a.refresh()
+        self.assertEqual(s["sync"]["new"], 60)
+        self.assertEqual(s["sync"]["lectures"], 2)
+        lecs = {l["title"]: l for l in db.list_lectures()}
+        self.assertEqual(set(lecs), {"Lecture 1", "Lecture 2"})
+        self.assertEqual(lecs["Lecture 1"]["end_ts"], rows[1][0], "lecture 1 ends where lecture 2 starts")
+        self.assertEqual(db.current_lecture()["title"], "Lecture 2", "the newest is the one running")
+        # Records 30..44 fall in lecture 1 and 45..59 in lecture 2: 15 taps each, cards 1000..1028.
+        for title in ("Lecture 1", "Lecture 2"):
+            self.assertEqual(lecs[title]["counts"]["taps"], 5, title + ": 5 distinct cards")
+        self.assertTrue(a.import_everything(), "everything read: the device may be cleared")
 
     def test_a_full_log_is_read_whole(self):
         d = self.files(big=True)
