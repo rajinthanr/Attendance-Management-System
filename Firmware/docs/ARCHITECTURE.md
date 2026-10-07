@@ -1,8 +1,8 @@
 # Card Attendance System — firmware architecture
 
-Target: **STM32L432KCU6** (Cortex-M4F, 256 kB flash, 64 kB SRAM, UFQFPN32).
-The 128 kB STM32L432KBU6 cannot run this firmware as it is: the config page and
-the log live in the upper 128 kB (see "Board notes").
+Target: **STM32L432KBU6** (Cortex-M4F, 128 kB flash, 64 kB SRAM, UFQFPN32).
+The code and the attendance data share the 128 kB of flash: code in the first
+72 kB, the config page and log in the last 56 kB (see "Flash map").
 
 ## The two levels
 
@@ -250,17 +250,27 @@ size and programming granularity being identical removes read-modify-write
 from the log entirely: a power loss can only lose the record being written,
 never corrupt one already stored.
 
-### Flash map — top 128 kB (`0x08020000`)
+### Flash map — 128 kB, code then data
 
 ```
-page  0        config: device ID
-pages 1..8     unused (held a registered card list until 2026-10)
-pages 9..63    attendance log, 55 pages x 254 records = 13 970 records
+0x08000000  pages  0..35   code, 72 kB      (about 60 kB at -Og, 50 kB at -Os)
+0x08012000  page  36       config: device ID              (region page 0)
+0x08012800  pages 37..63   attendance log, 27 pages x 254 = 6 858 records
+                                                        (region pages 1..27)
 ```
 
-The linker script's `FLASH` region was shortened to 128 kB and an `NVDATA`
-region added, so an image that would overlap the log fails to link instead of
-erasing records at run time.
+The linker script (`STM32L432KBUX_FLASH.ld`) gives `FLASH` 72 kB and the
+rest to an `NVDATA` region, so an image that would overlap the log fails to
+link instead of erasing records at run time. `ASSERT`s in the script check
+that the two regions tile the 128 kB, and `_Static_assert`s in `bsp_flash.c`
+check `BSP_FLASH_BASE` / `BSP_FLASH_SIZE` against `NV_REGION_BYTES`. -O0
+(about 97 kB) does not fit, so the CubeIDE Debug configuration builds at -Og.
+
+Firmware for the earlier 256 kB layout kept its data at `0x08020000`, which the
+KB does not specify (it may read back on a given chip, untested). This layout
+reads none of it: import a unit's log with the app before reflashing, and set
+its device ID again afterwards. Old code left in the region by a reflash is no
+valid config (no magic) and no valid log page, and `log_init()` erases it.
 
 The config page is one 32-byte `nv_config_t`: magic `"CAS1"`, `format_version` 4,
 `device_id`, and words that are written 0 and ignored (`old_card_count` and
@@ -470,8 +480,8 @@ then             the lecture files
 
 One sector per cluster and 16 root entries, seven of them the device's own (the
 volume label, the five files and the folder). A full log appears twice, in
-`ATTEND.CSV` and in the lecture files: 13 970 rows at 32 bytes is about 874
-clusters each, about 1750 with the lecture list and the directory. The volume
+`ATTEND.CSV` and in the lecture files: 6 858 rows at 32 bytes is about 429
+clusters each, about 860 with the lecture list and the directory. The volume
 may have at most 4084 data clusters (`FAT12_MAX_CLUSTERS`), the most a FAT12
 volume can have before a host reads it as FAT16, so the FAT has 4096 entries,
 12 sectors a copy. The FAT (6 kB) and root directory are real RAM tables that the
@@ -487,7 +497,8 @@ room; neither can touch the log.
 `SETTINGS.CSV`, `STATUS.TXT` and the volume serial can show it. The FAT, the
 root directory, the marker table (4.5 kB) and the lecture-file table (3 kB)
 live in SRAM2. The ARM build uses about 22.3 kB (46 %) of the 48 kB main RAM
-block, 14 kB (88 %) of the 16 kB SRAM2, and 60 kB of the 128 kB code region.
+block, 14 kB (88 %) of the 16 kB SRAM2, and 60.3 kB (84 %) of the 72 kB code
+region.
 
 The record count is latched at attach. A host that saw the file size change
 mid-copy would produce a truncated CSV. Nothing is recorded during a USB
@@ -867,10 +878,9 @@ prints; with neither, Print opens the page in the browser, then Save as PDF).
 - **PA0 is the power button**, active low to ground; it is WKUP1, and while
   running its edges (EXTI0) wake the loop, which samples the level.
 - USB is crystal-less: HSI48 trimmed by the CRS against the host's SOF.
-- **The MCU must be the 256 kB STM32L432KC.** The schematic value and the JLCPCB
-  production BOM (`PCB/production/bom.csv`) give U4 as STM32L432KBUx, the
-  128 kB part, which has no flash at `0x08020000`. Read the fitted part's flash
-  size at `0x1FFF75E0` (256 or 128) before trusting a board.
+- **The MCU is the 128 kB STM32L432KB.** The flash-size word at `0x1FFF75E0`
+  reads 128 on the bench unit. A 256 kB KC would run this firmware unchanged,
+  using only the bottom 128 kB.
 
 Full pin map: `Bsp/Inc/bsp_board.h`.
 

@@ -6,7 +6,7 @@
  * another PCB revision is a change to this file plus the .c files that use it.
  * Nothing in App/ includes this.
  *
- * Target: STM32L432KCU6, UFQFPN32, 256 kB flash / 64 kB SRAM.
+ * Target: STM32L432KBU6, UFQFPN32, 128 kB flash / 64 kB SRAM.
  *
  *  Pin   Signal            Function
  *  ----  ----------------  ---------------------------------------------------
@@ -149,13 +149,15 @@
 /* ------------------------------------------------------------------------ */
 
 /**
- * Data lives in the top 128 kB. The linker script keeps code below this;
- * BSP_FLASH_BASE must match the FLASH length in STM32L432KCUX_FLASH.ld.
+ * Data lives in the last 56 kB of the KB's 128 kB (pages 36-63); code has the
+ * first 72 kB. BSP_FLASH_BASE must match the NVDATA origin in
+ * STM32L432KBUX_FLASH.ld, and BSP_FLASH_SIZE NV_REGION_BYTES in nv_layout.h
+ * (bsp_flash.c checks the second at compile time).
  */
-#define BSP_FLASH_BASE          0x08020000u
-#define BSP_FLASH_SIZE          0x00020000u             /* 128 kB */
+#define BSP_FLASH_BASE          0x08012000u
+#define BSP_FLASH_SIZE          0x0000E000u             /* 56 kB, 28 pages */
 #define BSP_FLASH_PAGE_SIZE     2048u
-#define BSP_FLASH_FIRST_PAGE    64u                     /* page index in bank 1 */
+#define BSP_FLASH_FIRST_PAGE    36u                     /* page index in bank 1 */
 
 /* ------------------------------------------------------------------------ */
 /* RTC backup registers                                                     */
