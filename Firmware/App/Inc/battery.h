@@ -44,4 +44,12 @@ uint32_t batt_millivolts(const app_adc_sample_t *s);
 /** Classify millivolts against the thresholds in app_config.h. */
 batt_state_t batt_classify(uint32_t millivolts);
 
+/**
+ * Rough state of charge, 0-100 %, from the cell voltage: a typical Li-ion
+ * discharge curve at light load, with 0 % at APP_BATT_CUTOFF_MV (where the
+ * unit switches itself off). On charge the voltage reads high, so the figure
+ * does too. 0 mV gives 0.
+ */
+uint8_t batt_percent(uint32_t millivolts);
+
 #endif /* BATTERY_H */

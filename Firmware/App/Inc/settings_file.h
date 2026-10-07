@@ -11,14 +11,9 @@
  *   #MODULE,EN2090
  *   #LECTURE,Circuits Lecture 4
  *   #DEVICE,0000012345
- *   #CARDS,3
- *   0000000123
- *   0000000456
- *   0000000789
  *
- * The card list is numbers only, one per line, strictly ascending. It is the
- * registered cards the device compares a tap with, to show green for a known
- * card and red for an unknown one (both are recorded).
+ * There is no card list: the device records every card, and the PC app alone
+ * decides which ones are registered.
  *
  * Rules (checked before anything is applied):
  *   - CRLF, LF or lone CR line ends; a UTF-8 byte-order mark is skipped.
@@ -38,13 +33,8 @@
  *     companion app sends it with a new lecture, once it has imported the
  *     taps; renaming the lecture alone never clears anything.
  *   - A comma or quote inside a name becomes a space; quoted values work.
- *   - "#CARDS,<n>" announces a card list: the n lines after it, one number each
- *     (decimal or 0x hex; anything after a comma is ignored). The numbers must
- *     be non-zero, below 0xFFFFFF00 and strictly ascending, and there must be
- *     exactly n of them, at most NV_CARDS_MAX. Any other count or order
- *     refuses the whole file, so a truncated copy can never become the list.
- *     A file with no #CARDS line leaves the stored list alone; "#CARDS,0"
- *     clears it, after which every card counts as known.
+ *   - Any other '#' line is a comment. That includes "#CARDS" from an older
+ *     app: it and the numbers after it are ignored.
  */
 #ifndef SETTINGS_FILE_H
 #define SETTINGS_FILE_H
@@ -61,8 +51,7 @@ typedef enum {
     SETF_ERR_EMPTY,       /**< A zero-length file: the host is mid-copy, or made a blank one. */
     SETF_ERR_TOO_LARGE,   /**< Bigger than SETF_MAX_BYTES. */
     SETF_ERR_FILE,        /**< The host's file system image was unusable. */
-    SETF_ERR_FLASH,       /**< Storing the device ID or card list failed. */
-    SETF_ERR_CARDS        /**< The card list is malformed; see @c bad_card_line. */
+    SETF_ERR_FLASH        /**< Storing the device ID failed. */
 } setf_status_t;
 
 /** Byte source: the byte at @p offset, or -1 at or past the end. */
@@ -83,27 +72,7 @@ typedef struct {
     bool     clear_log;     /**< A #CLEARLOG line was present. */
     char     module[SESS_MODULE_MAX + 1u];
     char     lecture[SESS_LECTURE_MAX + 1u];
-
-    bool     has_cards;     /**< A #CARDS line was present (and the list valid). */
-    uint32_t card_count;    /**< Numbers in the list. */
-    uint32_t card_crc;      /**< CRC-32 over them, as devcfg_set_cards() wants it. */
-    uint32_t bad_card_line; /**< 1-based line of the first bad number; 0 = count problem. */
 } setf_report_t;
-
-/** Source of card numbers to print: the next one in ascending order, or false at the end. */
-typedef bool (*setf_card_next_fn)(void *ctx, uint32_t *id);
-
-/** Walks the numbers of a file that setf_scan() accepted. */
-typedef struct {
-    setf_get_fn get;
-    void       *ctx;
-    uint32_t    size;
-    uint32_t    pos;
-    bool        in_cards;
-} setf_card_iter_t;
-
-void setf_cards_begin(setf_card_iter_t *it, setf_get_fn get, void *ctx, uint32_t size);
-bool setf_cards_next(setf_card_iter_t *it, uint32_t *id);
 
 /**
  * Render the file shown to the host.
@@ -111,12 +80,10 @@ bool setf_cards_next(setf_card_iter_t *it, uint32_t *id);
  * @param module     Current session module (NULL = empty).
  * @param lecture    Current session lecture.
  * @param device_id  Printed on #DEVICE when non-zero.
- * @param n_cards    Printed on #CARDS, followed by that many numbers from @p next.
- * @return bytes written, or 0 if @p cap is too small or @p next ran dry.
+ * @return bytes written, or 0 if @p cap is too small.
  */
 uint32_t setf_render(char *buf, uint32_t cap, const app_datetime_t *now,
-                     const char *module, const char *lecture, uint32_t device_id,
-                     uint32_t n_cards, setf_card_next_fn next, void *next_ctx);
+                     const char *module, const char *lecture, uint32_t device_id);
 
 /** Parse @p size bytes. Never touches flash; always fills @p rep. */
 void setf_scan(setf_get_fn get, void *ctx, uint32_t size, setf_report_t *rep);

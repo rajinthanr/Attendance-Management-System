@@ -21,10 +21,15 @@ typedef enum {
     APP_EVT_BUTTON_HOLD,  /**< Power button still held, past APP_BTN_LONG_MS. */
     APP_EVT_BUTTON_LONG,  /**< Released between APP_BTN_LONG_MS and APP_BTN_OFF_MS: new lecture. */
     APP_EVT_BUTTON_OFF,   /**< Power button held past APP_BTN_OFF_MS. */
+    APP_EVT_BUTTON_DOUBLE, /**< Two quick taps: bring the drive back. */
     APP_EVT_INACTIVITY,   /**< No activity for APP_INACTIVITY_MS. */
     APP_EVT_USB_ATTACH,   /**< VBUS appeared (debounced). */
     APP_EVT_USB_DETACH,   /**< VBUS went away (debounced). */
     APP_EVT_USB_ACTIVITY, /**< Host touched the emulated volume (USB ISR). */
+    APP_EVT_NFC_WAKE,     /**< The reader's wake-up mode saw the antenna
+                               amplitude change (EXTI1 ISR). */
+    APP_EVT_INPUT_EDGE,   /**< The button or VBUS changed (EXTI0 / EXTI9 ISR):
+                               nothing to do but run a pass, which samples them. */
     APP_EVT_LOW_BATTERY   /**< Cell below cutoff on consecutive samples. */
 } app_event_t;
 

@@ -42,6 +42,16 @@ grep -q '^#LECTURE,Lecture 1' "$WORK/settings.csv" || fail "SETTINGS.CSV shows t
 grep -q '^#DEVICE,0012648430' "$WORK/settings.csv" || fail "SETTINGS.CSV shows the device id"
 cat "$WORK/status.txt"
 
+step "the LECTURES folder: one CSV per lecture, long names"
+mdir -i "$IMG" ::LECTURES
+mcopy -i "$IMG" "::LECTURES/L001_2026-10-06_09-48.csv" "$WORK/l001.csv" || fail "lecture 1's file by its long name"
+mcopy -i "$IMG" "::LECTURES/L000.CSV" "$WORK/l000.csv" || fail "the taps before it, by the 8.3 alias"
+grep -q '^DATE,TIME,CARD_ID ' "$WORK/l001.csv" || fail "lecture file header"
+[ "$(wc -l < "$WORK/l001.csv")" -eq 31 ] || fail "lecture 1 should have a header and 30 rows"
+[ "$(wc -l < "$WORK/l000.csv")" -eq 31 ] || fail "L000 should have a header and the 30 taps before the lecture"
+mcopy -i "$IMG" ::LASTCARD.TXT "$WORK/lastcard.txt"
+grep -q '^Taps    : 0' "$WORK/lastcard.txt" || fail "LASTCARD.TXT starts at no taps"
+
 step "an untouched image changes nothing"
 "$WORK/vol_image" apply "$IMG" | tee "$WORK/out.txt"
 grep -q 'outcome=0' "$WORK/out.txt" || fail "an untouched image must not apply anything"

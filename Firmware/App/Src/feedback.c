@@ -29,13 +29,6 @@ static const fb_step_t k_duplicate[] = {
     { 0u,          0u }
 };
 
-/* A card that is not on the registered list: red and one long buzz. It is
- * still recorded, so the PC can offer to register it. */
-static const fb_step_t k_unknown[] = {
-    { RED | VIB, APP_FB_UNKNOWN_VIB_MS },
-    { 0u,        0u }
-};
-
 /* Settings import finished. Two pulses and a long green hold for success;
  * three red pulses for a refusal, so the two cannot be mistaken for each other
  * across a room. */
@@ -131,7 +124,6 @@ uint16_t fb_start(feedback_t *fb, fb_pattern_t pattern)
     switch (pattern) {
     case FB_ACCEPTED:    USE_TABLE(fb, k_accepted);  break;
     case FB_DUPLICATE:   USE_TABLE(fb, k_duplicate); break;
-    case FB_UNKNOWN:     USE_TABLE(fb, k_unknown);   break;
     case FB_LOW_BATTERY: USE_TABLE(fb, s_lowbatt);   break;
     case FB_ERROR:       USE_TABLE(fb, s_error);     break;
     case FB_STATUS_OK:   USE_TABLE(fb, s_status);    break;

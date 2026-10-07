@@ -3,13 +3,15 @@
  * @brief   Level 1 (HAL) — sleep modes, brown-out detection, boot cause.
  *
  * The two depths the application asks for map onto:
- *   plat_sleep_idle()   Sleep    core clock gated until the next interrupt
+ *   plat_sleep_until()  Sleep    core clock gated until the next interrupt
+ *                       Stop 2   when allowed and long enough; LPTIM1 wakes it
  *   plat_sleep_deep()   Standby  SRAM lost, only the WKUP pin gets out
  *
- * Stop 2 comes back with the move to interrupts: in polling mode the loop
- * needs SysTick, which Stop 2 halts.
+ * SysTick halts in Stop 2, so stop2_for() measures the sleep on LPTIM1 (LSE)
+ * and adds it to HAL's tick: plat_uptime_ms() never notices the gap.
  */
 #include "bsp.h"
+#include "app_debug.h"
 #include "app_events.h"
 
 static app_boot_cause_t s_boot_cause;
@@ -24,8 +26,47 @@ static void pvd_off(void)
     MODIFY_REG(PWR->CR2, PWR_CR2_PLS, PWR_PVDLEVEL_0);
 }
 
+/**
+ * Every pass of ST's SWD flash loader (STM32CubeProgrammer, and CubeIDE
+ * through the ST-LINK GDB server) toggles FLASH_SR.PEMPTY: writing 1 to it
+ * flips it, and the loader clears status flags with a mask that includes it.
+ * Measured on the board: 0 before programming, 1 after, 0 after a second
+ * pass. While it is set, every reset that is not a power-on boots the system
+ * bootloader (DFU), since the chip re-reads it only at power-on or option-byte
+ * reload; address 0 then maps the bootloader, so a program a debugger starts
+ * after such a reset takes its interrupts from the bootloader's vectors; and
+ * the HAL takes the flag for a flash error, failing the next log write.
+ *
+ * So, first thing in main(): point VTOR at our own vector table, whatever is
+ * mapped at 0, and flip the flag back (we are running from main flash, so it
+ * is not empty).
+ */
+void bsp_early_init(void)
+{
+    SCB->VTOR = FLASH_BASE;
+    __DSB();
+    __ISB();
+    if ((FLASH->SR & FLASH_SR_PEMPTY) != 0u) {
+        FLASH->SR = FLASH_SR_PEMPTY;
+        dbg_pempty_cleared = 1u;
+    }
+}
+
 void bsp_power_init(void)
 {
+#if defined(DEBUG)
+    /* Debug builds (CubeIDE's Debug configuration defines DEBUG): keep the
+     * debug clocks running in Sleep, Stop 2 and Standby, so a debugger stays
+     * connected if the part enters them. It costs current in those modes, so
+     * release builds leave it off. A session that enables halting debug
+     * (CubeIDE's) keeps the loop awake anyway, see plat_sleep_until(); a probe
+     * hot-plugged without it can still read zeros while the core sleeps, so
+     * halt it for a moment to read. */
+    HAL_DBGMCU_EnableDBGSleepMode();
+    HAL_DBGMCU_EnableDBGStopMode();
+    HAL_DBGMCU_EnableDBGStandbyMode();
+#endif
+
     /* Latch why we booted before the flags are cleared; the application uses
      * this to tell a Standby wake from a cold start. */
     if (__HAL_PWR_GET_FLAG(PWR_FLAG_SB) != RESET) {
@@ -133,9 +174,47 @@ static void sleep_release(uint32_t saved_primask)
     }
 }
 
-void plat_sleep_idle(plat_idle_pred_t still_idle)
+#if BSP_ENABLE_STOP2
+/** Fraction of a millisecond carried between Stop 2 sleeps, in LSE ticks * 1000. */
+static uint32_t s_stop_carry;
+
+/**
+ * Stop 2 for up to @p ms, interrupts masked by the caller. LPTIM1 ends it, or
+ * an EXTI line (button, VBUS, reader) does sooner. SysTick does not run in
+ * Stop 2, so the time slept, measured on LPTIM1, is added to HAL's tick.
+ */
+static bool stop2_for(uint32_t ms)
+{
+    uint32_t start, elapsed, scaled;
+
+    if (ms > BSP_STOP2_MAX_MS) {
+        ms = BSP_STOP2_MAX_MS;
+    }
+    start = bsp_lptim_count();
+    if (!bsp_lptim_wake_in((ms * BSP_LSE_HZ) / 1000u)) {
+        return false;   /* nothing would end the sleep: use Sleep mode */
+    }
+
+    HAL_SuspendTick();
+    HAL_PWREx_EnterSTOP2Mode(PWR_STOPENTRY_WFI);
+    /* Awake again, on MSI at the range it had (STOPWUCK = MSI), which is the
+     * scanning clock: the PLL is never on outside USB sessions. */
+    HAL_ResumeTick();
+
+    elapsed = (bsp_lptim_count() - start) & 0xFFFFu;
+    scaled = (elapsed * 1000u) + s_stop_carry;
+    uwTick += scaled / BSP_LSE_HZ;
+    s_stop_carry = scaled % BSP_LSE_HZ;
+    return true;
+}
+#endif
+
+void plat_sleep_until(uint32_t wake_ms, bool deep, plat_idle_pred_t still_idle)
 {
     uint32_t primask;
+    int32_t ahead;
+
+    bsp_input_rearm();
 
     /* With a debugger attached the core stays awake, as the bring-up loop
      * did. Reads the debugger makes while the core sits in WFI can come back
@@ -146,6 +225,26 @@ void plat_sleep_idle(plat_idle_pred_t still_idle)
     }
 
     if (!sleep_arm(still_idle, &primask)) {
+        return;
+    }
+    /* An edge the loop has not seen, from before bsp_input_rearm(): its event
+     * was not posted, so the predicate cannot know. */
+    if (bsp_input_changed()) {
+        sleep_release(primask);
+        return;
+    }
+
+    ahead = (int32_t)(wake_ms - HAL_GetTick());
+#if BSP_ENABLE_STOP2
+    if (deep && ahead >= (int32_t)BSP_STOP2_MIN_MS && bsp_lptim_ok() && stop2_for((uint32_t)ahead)) {
+        sleep_release(primask);
+        return;
+    }
+#else
+    (void)deep;
+#endif
+    if (ahead <= 0) {
+        sleep_release(primask);
         return;
     }
 

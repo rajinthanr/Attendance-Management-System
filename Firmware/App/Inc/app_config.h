@@ -49,6 +49,28 @@
  *  then the same card is not reported again, however many polls see it. */
 #define APP_NFC_REMOVE_MISSES           (3u)
 
+/** 1: between cards the reader sits in its own wake-up mode and interrupts
+ *  on PB1 when something changes the antenna; it polls only from a wake-up
+ *  until the field is empty again. 0: poll every APP_NFC_POLL_MS for ever. */
+#define APP_NFC_USE_WAKEUP              (1u)
+
+/** Wake-up mode measurement interval: the longest a card waits before the
+ *  reader notices it. The chip offers 10-80 ms and 100-800 ms. */
+#define APP_NFC_WAKE_PERIOD_MS          (100u)
+
+/** Longest the main loop sleeps with nothing due. Each wake is cheap; this
+ *  only bounds how stale the dbg_* globals can get. */
+#define APP_SLEEP_MAX_MS                (1000u)
+
+/** Wake-up mode trigger window: counts either side of the reference that do
+ *  not wake the reader. It starts at the minimum and widens by one after each
+ *  false wake-up beyond the first in a row (the first one corrects the
+ *  reference instead), up to the maximum; it narrows by one again after
+ *  APP_NFC_WAKE_RELAX_AFTER wake-ups in a row that found a card. */
+#define APP_NFC_WAKE_DELTA_MIN          (2u)
+#define APP_NFC_WAKE_DELTA_MAX          (10u)
+#define APP_NFC_WAKE_RELAX_AFTER        (20u)
+
 /** Retry interval when the reader failed to initialise. */
 #define APP_NFC_RETRY_MS                (5000u)
 
@@ -57,9 +79,6 @@
 #define APP_NFC_SUPPLY_3V3_BELOW_MV     (3500u)
 #define APP_NFC_SUPPLY_5V_ABOVE_MV      (3600u)
 
-/** Record cards even when no student list has been provisioned. With 0, an
- *  unprovisioned unit rejects every card as unknown. */
-#define APP_ACCEPT_ALL_WHEN_NO_LIST     (1u)
 
 /* ------------------------------------------------------------------------ */
 /* Button policy                                                            */
@@ -74,6 +93,10 @@
 /** Hold this long to power off instead; no lecture is started. */
 #define APP_BTN_OFF_MS                  (5000u)
 
+/** Two taps whose releases are this close are a double press: with the cable
+ *  in and the drive ejected, it brings the drive back. */
+#define APP_BTN_DOUBLE_MS               (600u)
+
 /** Give up waiting for the button to be released before Standby. */
 #define APP_BTN_RELEASE_TIMEOUT_MS      (10000u)
 
@@ -85,7 +108,6 @@
 #define APP_FB_ACCEPT_LED_MS            (250u)
 #define APP_FB_DUPLICATE_PULSE_MS       (60u)
 #define APP_FB_DUPLICATE_GAP_MS         (90u)
-#define APP_FB_UNKNOWN_VIB_MS           (450u)
 #define APP_FB_LOWBATT_BLINK_MS         (150u)
 #define APP_FB_LOWBATT_BLINKS           (5u)
 #define APP_FB_ERROR_BLINK_MS           (100u)

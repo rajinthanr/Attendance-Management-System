@@ -6,12 +6,13 @@
  * runs on a workstation with no STM32 headers anywhere, so the log format,
  * the card protocol and the FAT image can be tested at desk speed.
  *
- * Time only moves when the code under test sleeps: every plat_sleep_idle()
+ * Time only moves when the code under test sleeps: every plat_sleep_until()
  * adds a millisecond, so N passes of app_task() are N ms of device time.
  */
 #include "host_platform.h"
 #include "platform_if.h"
 #include "app_debug.h"
+#include "app_events.h"
 #include "nv_layout.h"
 #include "crc.h"
 #include "timeutil.h"
@@ -59,15 +60,25 @@ volatile uint32_t dbg_nfc_errors;
 volatile uint32_t dbg_nfc_collisions;
 volatile uint32_t dbg_nfc_last_irq;
 volatile uint32_t dbg_nfc_irq_pin_misses;
+volatile bool     dbg_nfc_armed;
+volatile uint32_t dbg_nfc_wakeups;
+volatile uint32_t dbg_nfc_false_wakes;
+volatile uint8_t  dbg_nfc_wake_raw;
+volatile uint32_t dbg_nfc_wake_irq;
+volatile int16_t  dbg_nfc_wake_offset;
+volatile uint8_t  dbg_nfc_wake_delta;
 volatile uint8_t  dbg_state;
 volatile uint8_t  dbg_boot_cause;
 volatile uint32_t dbg_uptime_ms;
+volatile uint32_t dbg_sleep_ms;
+volatile uint8_t  dbg_lptim_fault;
+volatile uint8_t  dbg_pempty_cleared;
 volatile bool     dbg_vbus;
 volatile bool     dbg_usb_host;
 volatile uint32_t dbg_records_ram;
 volatile uint32_t dbg_records_flash;
 volatile uint32_t dbg_records_free;
-volatile uint32_t dbg_students;
+volatile uint8_t  dbg_battery_percent;
 volatile app_datetime_t dbg_now;
 volatile app_datetime_t dbg_set_time;
 volatile bool     dbg_set_time_request;
@@ -87,6 +98,13 @@ bool     host_nfc_init_ok = true;
 bool     host_nfc_field;
 bool     host_nfc_powered_down;
 bool     host_nfc_collision;
+bool     host_nfc_wakeup;
+uint8_t  host_nfc_wake_ref;
+uint8_t  host_nfc_wake_delta;
+int      host_nfc_wu_offset;    /* the wake-up reading minus Measure amplitude */
+uint32_t host_nfc_misuse;
+static uint8_t s_wu_raw;        /* the wake-up mode's last reading */
+static bool s_wake_irq_armed;   /* EXTI1 unmasked, one shot */
 bool     host_card_present;
 
 static uint8_t s_uid[10];
@@ -136,7 +154,32 @@ bool plat_button_pressed(void) { return host_button; }
 bool plat_usb_vbus_present(void) { return host_vbus; }
 
 /* ---- power ---- */
-void plat_sleep_idle(plat_idle_pred_t p) { (void)p; host_ms++; }
+uint32_t host_sleep_wake;
+bool     host_sleep_deep;
+
+void plat_sleep_until(uint32_t wake_ms, bool deep, plat_idle_pred_t p)
+{
+    /* Always a millisecond, whatever was asked, so the tests can change an
+     * input between any two passes. What was asked is kept for them to check. */
+    (void)p;
+    host_sleep_wake = wake_ms;
+    host_sleep_deep = deep;
+    host_ms++;
+    /* The reader's wake-up mode measures every millisecond here: a card on
+     * the antenna moves the amplitude, and so does a reference that does not
+     * match the wake-up measurement's own counts. Either posts once, as the
+     * EXTI1 handler does. */
+    if (host_nfc_wakeup) {
+        int amp = (host_card_present ? 100 : 120) + host_nfc_wu_offset;
+        int d = amp - (int)host_nfc_wake_ref;
+
+        s_wu_raw = (uint8_t)amp;
+        if (s_wake_irq_armed && (d > (int)host_nfc_wake_delta || -d > (int)host_nfc_wake_delta)) {
+            s_wake_irq_armed = false;
+            app_event_post(APP_EVT_NFC_WAKE);
+        }
+    }
+}
 
 void plat_sleep_deep(void)
 {
@@ -195,13 +238,28 @@ bool plat_nfc_init(bool supply_3v3, uint8_t *chip_id)
     *chip_id = host_nfc_init_ok ? 0x2Au : 0x00u;
     host_nfc_powered_down = false;
     host_nfc_field = false;
+    host_nfc_wakeup = false;
+    s_wake_irq_armed = false;
     return host_nfc_init_ok;
 }
 
-bool plat_nfc_set_supply(bool supply_3v3) { (void)supply_3v3; return true; }
+/** The chip takes no commands in wake-up mode: its oscillator is off. */
+static bool nfc_misused(void)
+{
+    if (host_nfc_wakeup) {
+        host_nfc_misuse++;
+        return true;
+    }
+    return false;
+}
+
+bool plat_nfc_set_supply(bool supply_3v3) { (void)supply_3v3; return !nfc_misused(); }
 
 void plat_nfc_field(bool on)
 {
+    if (nfc_misused()) {
+        return;
+    }
     host_nfc_field = on;
     if (!on) {
         s_card_ready = false;   /* no field, no power: the card resets */
@@ -210,6 +268,9 @@ void plat_nfc_field(bool on)
 
 plat_nfc_status_t plat_nfc_reqa(uint8_t atqa[2])
 {
+    if (nfc_misused()) {
+        return PLAT_NFC_IO_ERROR;
+    }
     if (!host_nfc_field || !host_card_present) {
         return PLAT_NFC_TIMEOUT;
     }
@@ -262,8 +323,44 @@ plat_nfc_status_t plat_nfc_transceive(const uint8_t *tx, uint8_t tx_len,
     return PLAT_NFC_TIMEOUT;
 }
 
-bool plat_nfc_measure_amplitude(uint8_t *raw) { *raw = 120u; return true; }
-void plat_nfc_power_down(void) { host_nfc_powered_down = true; host_nfc_field = false; }
+bool plat_nfc_measure_amplitude(uint8_t *raw)
+{
+    if (nfc_misused()) {
+        return false;
+    }
+    *raw = host_card_present ? 100u : 120u;
+    return true;
+}
+
+bool plat_nfc_wakeup_arm(uint8_t reference, uint8_t delta, uint16_t period_ms)
+{
+    (void)period_ms;
+    host_nfc_wake_delta = delta;
+    s_wu_raw = 0u;
+    if (host_nfc_field) {
+        host_nfc_misuse++;   /* Level 2 turns the field off first */
+    }
+    host_nfc_wakeup = true;
+    host_nfc_wake_ref = reference;
+    s_wake_irq_armed = true;
+    return true;
+}
+
+bool plat_nfc_wakeup_disarm(uint8_t *last_raw)
+{
+    *last_raw = host_nfc_wakeup ? s_wu_raw : 0u;
+    host_nfc_wakeup = false;
+    s_wake_irq_armed = false;
+    return true;
+}
+
+void plat_nfc_power_down(void)
+{
+    host_nfc_powered_down = true;
+    host_nfc_field = false;
+    host_nfc_wakeup = false;
+    s_wake_irq_armed = false;
+}
 
 /* ---- flash ---- */
 uint32_t plat_flash_page_size(void) { return NV_PAGE_SIZE; }

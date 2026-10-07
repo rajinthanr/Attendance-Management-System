@@ -254,7 +254,7 @@ static char *attend_text(uint32_t *len)
     int32_t n;
     char *buf;
 
-    usbs_begin(&g_ls, &(device_cfg_t){ true, 0xC0FFEEu, 0u, 0u }, &k_now);
+    usbs_begin(&g_ls, &(device_cfg_t){ true, 0xC0FFEEu }, &k_now);
     hf_mount(&g_hf);
     buf = (char *)malloc(1024u * 1024u);
     n = hf_read(&g_hf, HF_ATTEND, (uint8_t *)buf, 1024u * 1024u - 1u);
@@ -354,8 +354,8 @@ static void test_export_with_markers(void)
     flush_all();
     t = attend_text(&len);
     CHECK(len == csv_size(0u), "only markers: a header and nothing else");
-    CHECK(usbs_sector_count() == FAT12_DATA_START_LBA + 1u + USBS_SETTINGS_CLUSTERS + 1u + 1u,
-          "one ATTEND cluster, one LECTURES cluster");
+    CHECK(usbs_sector_count() == FAT12_DATA_START_LBA + 1u + USBS_SETTINGS_CLUSTERS + 1u + 1u + 1u + 1u + 2u,
+          "LASTCARD, one ATTEND cluster, one LECTURES cluster, the folder and two header-only lecture files");
     free(t);
 
     /* An orphaned text record (a marker whose header was lost) is skipped, not shown. */
@@ -457,7 +457,7 @@ static void test_export_with_markers(void)
             if ((i % 1000u) == 999u) { flush_all(); }
         }
         flush_all();
-        usbs_begin(&g_ls, &(device_cfg_t){ true, 0xC0FFEEu, 0u, 0u }, &k_now);
+        usbs_begin(&g_ls, &(device_cfg_t){ true, 0xC0FFEEu }, &k_now);
         CHECK(usbs_file_size() == csv_size(total_rows), "near-full log: %u rows (%u)", total_rows, usbs_file_size());
         CHECK(fat12_cluster_count(usbs_sector_count()) < 2047u, "within the FAT (%u clusters)", fat12_cluster_count(usbs_sector_count()));
         CHECK(fat12_cluster_count(usbs_sector_count()) > 800u, "and it really is a large volume");
@@ -486,7 +486,7 @@ static usbs_result_t import_text(const char *directives)
 
 static void begin(void)
 {
-    usbs_begin(&g_ls, &(device_cfg_t){ true, 0xC0FFEEu, 0u, 0u }, &k_now);
+    usbs_begin(&g_ls, &(device_cfg_t){ true, 0xC0FFEEu }, &k_now);
     hf_mount(&g_hf);
 }
 
@@ -668,7 +668,7 @@ static char *lectures_text(uint32_t *len)
     int32_t n;
     char *buf;
 
-    usbs_begin(&g_ls, &(device_cfg_t){ true, 0xC0FFEEu, 0u, 0u }, &k_now);
+    usbs_begin(&g_ls, &(device_cfg_t){ true, 0xC0FFEEu }, &k_now);
     hf_mount(&g_hf);
     buf = (char *)malloc(256u * 1024u);
     n = hf_read(&g_hf, HF_LECTURES, (uint8_t *)buf, 256u * 1024u - 1u);

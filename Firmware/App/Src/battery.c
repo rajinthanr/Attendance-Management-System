@@ -81,3 +81,26 @@ batt_state_t batt_classify(uint32_t millivolts)
     }
     return BATT_OK;
 }
+
+uint8_t batt_percent(uint32_t mv)
+{
+    /* Millivolts and percent at points along the curve; linear in between. */
+    static const uint16_t k_mv[]  = { APP_BATT_CUTOFF_MV, 3600u, 3700u, 3750u, 3800u, 3850u,
+                                      3900u, 3950u, 4000u, 4050u, 4100u, 4150u, 4200u };
+    static const uint8_t  k_pct[] = { 0u, 5u, 15u, 25u, 40u, 55u, 63u, 70u, 78u, 85u, 91u, 96u, 100u };
+    const uint32_t n = (uint32_t)(sizeof(k_mv) / sizeof(k_mv[0]));
+    uint32_t i;
+
+    if (mv <= k_mv[0]) {
+        return 0u;
+    }
+    for (i = 1u; i < n; i++) {
+        if (mv < k_mv[i]) {
+            uint32_t span = (uint32_t)k_mv[i] - k_mv[i - 1u];
+            uint32_t rise = (uint32_t)k_pct[i] - k_pct[i - 1u];
+
+            return (uint8_t)(k_pct[i - 1u] + (((mv - k_mv[i - 1u]) * rise) / span));
+        }
+    }
+    return 100u;
+}

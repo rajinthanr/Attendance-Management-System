@@ -45,15 +45,19 @@ void test_fsm(void)
     read_status(&h, status);
     CHECK(strstr(status, "Last tap     : 0000777777 at 2026-09-10 13:01:00") != NULL, "status shows the last tap [%s]", status);
 
-    /* The reader is off while the cable is in. */
+    /* A card read while the cable is in goes to the PC, not into the log. */
     {
         uint32_t before = dbg_card_count;
         const uint8_t uid[4] = { 0u, 0u, 0x0Fu, 0xA0u };
 
         host_card_set(uid, 4u, 0x08u);
         run_ms(600u);
-        CHECK(dbg_card_count == before, "no scanning during a USB session");
+        CHECK(dbg_card_count == before + 1u && dbg_scan_result == (uint8_t)APP_SCAN_ENROLLED,
+              "read during a USB session, for registering");
         host_card_present = false;
+        run_ms(1000u);
+        read_attend(&h, csv, sizeof(csv));
+        CHECK(rows_in(csv) == 3u && strstr(csv, "0000004000") == NULL, "and not logged");
     }
 
     /* Start a lecture, in one edit. */
@@ -383,9 +387,19 @@ void test_fsm_lectures(void)
           "green with the motor on release: lecture started (outputs %u)", p.after_release);
     CHECK(app_state() == ST_IDLE, "and the unit keeps scanning");
     CHECK(tap(1000u, 20u) == APP_SCAN_ACCEPTED, "the same card signs in to the new lecture");
+
+    /* The last card of one lecture, tapped again straight after a new one is
+     * started from the button: inside the 10 s repeat window, but a new
+     * lecture, so it counts. */
+    CHECK(tap(1007u, 30u) == APP_SCAN_ACCEPTED, "the last card of lecture 1");
+    p = press(APP_BTN_LONG_MS + 300u);
+    CHECK((p.after_release & FB_GREEN_BIT) != 0u, "lecture 2 started a few seconds later");
+    CHECK(tap(1007u, 34u) == APP_SCAN_ACCEPTED, "that card signs in to lecture 2 at once");
+    CHECK(tap(1007u, 36u) == APP_SCAN_DUPLICATE, "and only once");
     plug();
-    CHECK(read_lectures(&h, csv, sizeof(csv)) == 1u, "one lecture on LECTURES.CSV");
+    CHECK(read_lectures(&h, csv, sizeof(csv)) == 2u, "two lectures on LECTURES.CSV");
     CHECK(strstr(csv, ",,Lecture 1 ") != NULL, "named Lecture 1, no module [%.60s]", &csv[CSV_LECTURE_ROW_BYTES]);
+    CHECK(strstr(csv, ",,Lecture 2 ") != NULL, "then Lecture 2");
 
     /* ---- a lecture named by the PC, then two more from the button ---- */
     snprintf(csv, sizeof(csv), "#MODULE,EN2090\r\n#LECTURE,Circuits Lecture 4\r\n");
@@ -405,12 +419,12 @@ void test_fsm_lectures(void)
     CHECK(app_state() == ST_IDLE, "a 4.5 s hold is still a lecture, not a power-off");
     CHECK(tap(1000u, 7300u) == APP_SCAN_ACCEPTED, "lecture 6: signed in");
 
-    /* ---- held to 5 s: off, and no lecture (four, not five, below) ---- */
+    /* ---- held to 5 s: off, and no lecture (five, not six, below) ---- */
     power_cycle();
 
     /* ---- what the PC sees ---- */
     plug();
-    CHECK(read_lectures(&h, csv, sizeof(csv)) == 4u, "four lectures in all");
+    CHECK(read_lectures(&h, csv, sizeof(csv)) == 5u, "five lectures in all");
     CHECK(strstr(csv, ",EN2090,Circuits Lecture 4 ") != NULL, "lecture 4 as the PC named it");
     /* Stamped on release, so a few seconds after the hold began. */
     CHECK(strstr(csv, "2026-09-10,14:00:03,EN2090,Circuits Lecture 5 ") != NULL, "lecture 5, numbered on");
@@ -418,7 +432,7 @@ void test_fsm_lectures(void)
     read_status(&h, csv);
     CHECK(strstr(csv, "Lecture      : EN2090 / Circuits Lecture 6") != NULL, "STATUS.TXT shows the newest");
     read_attend(&h, csv, sizeof(csv));
-    CHECK(rows_in(csv) == 6u, "ATTEND.CSV: the 6 recorded taps, no marker rows (%u)", rows_in(csv));
+    CHECK(rows_in(csv) == 8u, "ATTEND.CSV: the 8 recorded taps, no marker rows (%u)", rows_in(csv));
 
     /* ---- plugged in, the drive is up: a long press only ends the drive session ---- */
     p = press(APP_BTN_LONG_MS + 300u);
@@ -426,6 +440,189 @@ void test_fsm_lectures(void)
     host_vbus = false;
     run_ms(300u);
     plug();
-    CHECK(read_lectures(&h, csv, sizeof(csv)) == 4u, "no lecture was started from the drive session");
+    CHECK(read_lectures(&h, csv, sizeof(csv)) == 5u, "no lecture was started from the drive session");
     (void)unplug();
+}
+
+/** The reader sleeps in its wake-up mode between cards and leaves it for
+ *  everything the chip cannot do there. */
+void test_fsm_wakeup(void)
+{
+    uint32_t misuse = host_nfc_misuse;
+    uint32_t wakeups;
+    bool left = false;
+    uint32_t i;
+
+    printf("fsm reader wake-up\n");
+
+    boot_fresh();
+    CHECK(dbg_nfc_armed && host_nfc_wakeup, "an idle reader waits in wake-up mode");
+    wakeups = dbg_nfc_wakeups;
+    CHECK(tap(1000u, 10u) == APP_SCAN_ACCEPTED, "a card wakes the reader and is read");
+    CHECK(dbg_nfc_wakeups == wakeups + 1u, "through one wake-up (%u)", (unsigned)dbg_nfc_wakeups);
+    CHECK(dbg_nfc_armed && host_nfc_wakeup, "armed again once the card has gone");
+    CHECK(dbg_nfc_false_wakes == 0u, "no false wake-ups");
+
+    /* A button tap plays a pattern, and the reader pauses for patterns. */
+    host_button = true;
+    run_ms(150u);
+    host_button = false;
+    for (i = 0u; i < 500u; i++) {
+        app_task();
+        left = left || !host_nfc_wakeup;
+    }
+    CHECK(left, "out of wake-up mode while a pattern plays");
+    run_ms(2000u);
+    CHECK(host_nfc_wakeup, "and back in afterwards");
+
+    /* Under 3.5 V the reader changes supply mode, which needs Ready mode. */
+    host_adc_vbat_counts = 1560u;   /* about 3.46 V */
+    run_ms(APP_BATT_SAMPLE_MS + 500u);
+    CHECK(dbg_nfc_supply_3v3 && dbg_nfc_ready, "3.3 V supply mode, reader still up");
+    CHECK(host_nfc_wakeup, "armed again after the change");
+    host_adc_vbat_counts = 1751u;
+    run_ms(APP_BATT_SAMPLE_MS + 500u);
+    CHECK(!dbg_nfc_supply_3v3 && host_nfc_wakeup, "and back");
+
+    /* The reader keeps running with the drive up, for registering cards. */
+    plug();
+    run_ms(500u);
+    CHECK(host_nfc_wakeup && dbg_nfc_armed, "armed with the drive up too");
+    (void)unplug();
+    run_ms(1500u);
+    CHECK(host_nfc_wakeup, "armed again once the cable is out");
+    CHECK(tap(1007u, 100u) == APP_SCAN_ACCEPTED, "and still reading cards");
+
+    CHECK(host_nfc_misuse == misuse, "no command sent to the reader in wake-up mode (%u)",
+          (unsigned)(host_nfc_misuse - misuse));
+}
+
+/** Between events the loop asks to sleep until its next deadline, deeply. */
+void test_fsm_sleep(void)
+{
+    uint32_t i, longest = 0u;
+    bool deep = true;
+
+    printf("fsm sleep\n");
+
+    boot_fresh();
+    run_ms(5000u);   /* the power-on pattern and the first battery sample are over */
+    for (i = 0u; i < 4000u; i++) {
+        app_task();
+        deep = deep && host_sleep_deep;
+        if ((host_sleep_wake - host_ms) > longest) {
+            longest = host_sleep_wake - host_ms;
+        }
+    }
+    CHECK(deep, "idle with the reader armed: Stop 2 allowed throughout");
+    /* The pass's own millisecond is already gone when it is measured here. */
+    CHECK(longest >= APP_SLEEP_MAX_MS - 1u && longest < APP_SLEEP_MAX_MS, "long sleeps between heartbeats (%u ms)",
+          longest);
+    CHECK(dbg_nfc_armed, "the reader waits for its interrupt meanwhile");
+
+    /* A pattern plays: wake for each step of it. */
+    host_button = true;
+    run_ms(100u);
+    CHECK((int32_t)(host_sleep_wake - host_ms) <= (int32_t)APP_BTN_LONG_MS,
+          "a held button wakes the loop by its hold threshold");
+    host_button = false;
+    run_ms(APP_BTN_DEBOUNCE_MS + 5u);
+    CHECK((int32_t)(host_sleep_wake - host_ms) < 500, "a pattern's steps are short (%d ms)",
+          (int)(host_sleep_wake - host_ms));
+    run_ms(3000u);
+
+    /* A card held: the poll runs on its own 100 ms deadlines. */
+    {
+        const uint8_t uid[4] = { 0u, 0u, 0x03u, 0xE8u };
+
+        host_card_set(uid, 4u, 0x08u);
+        run_ms(50u);
+        CHECK((int32_t)(host_sleep_wake - host_ms) <= (int32_t)APP_NFC_POLL_MS, "polling while a card is there");
+        host_card_present = false;
+        run_ms(3000u);
+    }
+
+    /* Plugged in: no Stop 2, the loop runs every millisecond for USB. */
+    plug();
+    app_task();
+    CHECK(!host_sleep_deep && host_sleep_wake == host_ms, "USB: a millisecond at a time, no Stop 2");
+    (void)unplug();
+    run_ms(3000u);
+    app_task();
+    CHECK(host_sleep_deep, "deep again once unplugged");
+}
+
+/** Ejected with the cable in: a double press brings the drive back. */
+void test_fsm_double_press(void)
+{
+    printf("fsm double press\n");
+
+    boot_fresh();
+    plug();
+    host_usb_ejected = true;
+    (void)until_scanning();
+    CHECK(host_vbus && app_state() == ST_IDLE, "ejected, cable in, taking attendance");
+
+    /* One tap only shows the battery. */
+    host_button = true;  run_ms(80u);
+    host_button = false; run_ms(1500u);
+    CHECK(app_state() == ST_IDLE && !host_usb_started, "a single tap leaves the drive away");
+
+    /* Two quick taps: the drive comes back. */
+    host_button = true;  run_ms(80u);
+    host_button = false; run_ms(150u);
+    host_button = true;  run_ms(80u);
+    host_button = false; run_ms(300u);
+    CHECK(app_state() == ST_USB && host_usb_started, "a double press brings the drive back");
+    (void)unplug();
+
+    /* On battery a double press is just two battery displays. */
+    host_button = true;  run_ms(80u);
+    host_button = false; run_ms(150u);
+    host_button = true;  run_ms(80u);
+    host_button = false; run_ms(300u);
+    CHECK(app_state() == ST_IDLE && !host_usb_started, "no cable: nothing to bring back");
+}
+
+/**
+ * The board's case: the chip's wake-up measurement reads 8 counts above
+ * Measure amplitude, so a reference taken with the command wakes the reader
+ * at once, every time. It must learn the offset, then widen the window only
+ * for noise, and still wake for a card.
+ */
+void test_fsm_wake_learning(void)
+{
+    uint32_t f0, i;
+
+    printf("fsm wake-up learning\n");
+
+    host_nfc_wu_offset = 8;
+    boot_fresh();
+    run_ms(3000u);
+    f0 = dbg_nfc_false_wakes;
+    CHECK(f0 >= 1u && f0 <= 2u, "one false wake-up to learn from (%u)", (unsigned)f0);
+    CHECK(dbg_nfc_wake_offset == 8 && dbg_nfc_wake_delta == APP_NFC_WAKE_DELTA_MIN,
+          "offset learned (%d), window untouched (%u)", (int)dbg_nfc_wake_offset, dbg_nfc_wake_delta);
+    run_ms(20000u);
+    CHECK(dbg_nfc_false_wakes == f0 && dbg_nfc_armed, "then it stays asleep (%u false)",
+          (unsigned)dbg_nfc_false_wakes);
+    CHECK(tap(1000u, 60u) == APP_SCAN_ACCEPTED, "and a card still wakes it");
+
+    /* Noise: the reading wanders by 4 counts. The window widens until it
+     * no longer wakes for that, and no further. */
+    for (i = 0u; i < 40u; i++) {
+        host_nfc_wu_offset = ((i & 1u) != 0u) ? 12 : 8;
+        run_ms(500u);
+    }
+    CHECK(dbg_nfc_wake_delta >= 4u && dbg_nfc_wake_delta <= 5u, "window widened to the noise (%u)",
+          dbg_nfc_wake_delta);
+    f0 = dbg_nfc_false_wakes;
+    for (i = 0u; i < 20u; i++) {
+        host_nfc_wu_offset = ((i & 1u) != 0u) ? 12 : 8;
+        run_ms(500u);
+    }
+    CHECK(dbg_nfc_false_wakes <= f0 + 1u, "and then the noise no longer wakes it (%u more)",
+          (unsigned)(dbg_nfc_false_wakes - f0));
+    CHECK(tap(1007u, 120u) == APP_SCAN_ACCEPTED, "a card still does");
+    host_nfc_wu_offset = 0;
 }

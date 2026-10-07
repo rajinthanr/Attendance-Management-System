@@ -30,10 +30,14 @@ bool dedup_check_and_mark(dedup_t *d, uint32_t id, app_epoch_t now)
          * the clock) produces a huge delta and simply falls through as "not a
          * duplicate" rather than suppressing a real scan forever. */
         app_epoch_t age = now - d->seen[i];
-        bool duplicate = (age < (app_epoch_t)APP_DEDUP_WINDOW_S);
 
+        if (age < (app_epoch_t)APP_DEDUP_WINDOW_S) {
+            /* Keep the first time: a retry must not restart the window, or a
+             * student tapping again and again is held off for good. */
+            return true;
+        }
         d->seen[i] = now;
-        return duplicate;
+        return false;
     }
 
     /* Not present: take a free slot, else evict round-robin. Round-robin is

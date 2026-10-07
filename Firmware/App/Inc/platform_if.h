@@ -14,9 +14,11 @@
  *     only moves bytes and toggles pins.
  *   - Level 1 never calls into Level 2 except through app_event_post().
  *
- * The firmware currently runs in polling mode: Level 2 samples every input
- * from the main loop and keeps time with plat_uptime_ms(). The only interrupts
- * in use are SysTick (behind plat_uptime_ms) and the USB peripheral.
+ * Level 2 samples the inputs from the main loop and keeps time with
+ * plat_uptime_ms(). Interrupts wake that loop: the button and VBUS edges
+ * (APP_EVT_INPUT_EDGE), the reader's wake-up (APP_EVT_NFC_WAKE), the USB
+ * peripheral, and LPTIM1 at the end of a plat_sleep_until(). SysTick keeps
+ * the millisecond count while the core is running.
  */
 #ifndef PLATFORM_IF_H
 #define PLATFORM_IF_H
@@ -58,17 +60,27 @@ bool plat_usb_vbus_present(void);
 typedef bool (*plat_idle_pred_t)(void);
 
 /**
- * Core halted until the next interrupt (STM32 Sleep mode). SysTick fires every
- * millisecond, so in polling mode this paces the main loop at 1 kHz. With a
- * debugger attached it returns at once instead, so the debugger's reads of
- * the dbg_* globals are never made while the core sleeps.
+ * Halt the core until @p wake_ms (plat_uptime_ms() time) or an interrupt,
+ * whichever comes first. Level 2 works out @p wake_ms: the soonest moment any
+ * of its timers needs the loop.
+ *
+ * With @p deep set the BSP may use Stop 2, for a sleep long enough to be worth
+ * it: SysTick stops, LPTIM1 on the LSE wakes the part at @p wake_ms, and the
+ * uptime is advanced by the time spent. The button, VBUS and the reader's
+ * wake-up are EXTI lines and wake it early. Level 2 sets @p deep only when
+ * nothing needs the fast clock (no USB session). Otherwise, and for short
+ * sleeps, it is Sleep mode, from which SysTick wakes it within a millisecond.
+ *
+ * With a debugger attached it returns at once instead, so the debugger's reads
+ * of the dbg_* globals are never made while the core sleeps.
  *
  * @p still_idle is re-tested with interrupts masked, immediately before the
  * core is halted, so an event posted from an interrupt between the caller's
  * check and the sleep instruction cannot be slept through. NULL sleeps
- * unconditionally.
+ * unconditionally. A button or VBUS edge since the caller last sampled them
+ * also keeps it awake.
  */
-void plat_sleep_idle(plat_idle_pred_t still_idle);
+void plat_sleep_until(uint32_t wake_ms, bool deep, plat_idle_pred_t still_idle);
 
 /**
  * "Off": STM32 Standby. RAM is lost and the only wake source is the power
@@ -149,6 +161,36 @@ plat_nfc_status_t plat_nfc_transceive(const uint8_t *tx, uint8_t tx_len,
 
 /** Raw A/D reading of the antenna amplitude (13.02 mVpp per count on RFI). */
 bool plat_nfc_measure_amplitude(uint8_t *raw);
+
+/**
+ * Enter the reader's wake-up mode (DS12484 §4.2.4): oscillator off, field
+ * off, and every @p period_ms the chip briefly drives the antenna on its own
+ * RC timer and measures the amplitude. A reading that differs from
+ * @p reference by more than @p delta counts raises the IRQ pin, and the BSP
+ * posts APP_EVT_NFC_WAKE from the interrupt, once: arm again for the next one.
+ *
+ * @param reference  The amplitude to compare with, in the chip's wake-up
+ *                   measurement's own counts. Level 2 derives it from a
+ *                   plat_nfc_measure_amplitude() reading taken with no card in
+ *                   the field, corrected by what the wake-up mode reported.
+ * @param delta      Counts either side of @p reference that do not wake (1-15).
+ * @param period_ms  Wanted measurement interval; the chip has 10-80 ms in
+ *                   10 ms steps and 100-800 ms in 100 ms steps, and the BSP
+ *                   takes the nearest one not longer than asked.
+ * @return true when the reader is in wake-up mode and the interrupt armed.
+ */
+bool plat_nfc_wakeup_arm(uint8_t reference, uint8_t delta, uint16_t period_ms);
+
+/**
+ * Leave wake-up mode for Ready mode (oscillator on, field off), disarming the
+ * interrupt. Waits for the oscillator, about a millisecond. Harmless when the
+ * reader is not in wake-up mode.
+ *
+ * @param last_raw  Receives the wake-up mode's own last amplitude reading (the
+ *                  value it compared with the reference), or 0 when it made
+ *                  none or the reader was not in wake-up mode.
+ */
+bool plat_nfc_wakeup_disarm(uint8_t *last_raw);
 
 /** Put the reader into its power-down mode. plat_nfc_init() wakes it again. */
 void plat_nfc_power_down(void);

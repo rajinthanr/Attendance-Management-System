@@ -1,25 +1,28 @@
 /**
  * @file    app_fsm.c
- * @brief   Level 2 (logic) — application state machine, polling mode.
+ * @brief   Level 2 (logic) — application state machine.
  *
  * Structure
  * ---------
- * app_task() is one pass of a super-loop, run about once a millisecond:
+ * app_task() is one pass of a super-loop, run whenever something is due:
  *
  *   sample button and VBUS     debounced here, posted as events
  *   step the feedback pattern  LEDs and motor, timed against the uptime
- *   run the current state      poll the reader, sample the battery, flush
- *   handle queued events       button, USB, inactivity, low battery
+ *   run the current state      run the reader, sample the battery, flush
+ *   handle queued events       button, USB, inactivity, low battery, reader
+ *                              wake-up
  *   drive the idle indicator   only while no pattern is playing
  *   publish dbg_* globals      for Live Expressions
- *   sleep until next SysTick
+ *   sleep until the next deadline (next_wake()), in Stop 2 when idle
  *
  * Nothing blocks. The reader's 5 ms field guard is a timestamp, not a delay,
  * so the button and USB stay responsive while a poll is in progress.
  *
- * Moving to interrupts later means posting the same events from ISRs and
- * replacing the reader poll with the ST25R3916 wake-up interrupt; the
- * handlers below stay as they are.
+ * The reader is interrupt driven when APP_NFC_USE_WAKEUP is set: between
+ * cards the ST25R3916 watches the antenna itself and its IRQ (PB1, EXTI1)
+ * posts APP_EVT_NFC_WAKE; card_reader.c polls only from then until the field
+ * is empty again. The button and VBUS interrupt too, only to wake the loop
+ * (APP_EVT_INPUT_EDGE); their levels are still sampled and debounced here.
  */
 #include <string.h>
 
@@ -105,6 +108,13 @@ static app_epoch_t now_epoch(void) {
 static void touch_activity(void) { g.last_activity = g.now; }
 
 static bool queue_still_empty(void) { return !app_event_pending(); }
+
+/** Bring @p *soonest forward to @p at, if that is sooner. Wrap safe. */
+static void sooner(uint32_t *soonest, uint32_t at) {
+  if ((int32_t)(at - *soonest) < 0) {
+    *soonest = at;
+  }
+}
 
 /* ------------------------------------------------------------------------ */
 /* Feedback and indicator                                                   */
@@ -243,10 +253,15 @@ static void sample_battery(void) {
   g.batt = batt_classify(mv);
   dbg_battery_mv = mv;
   dbg_battery_state = (uint8_t)g.batt;
+  dbg_battery_percent = batt_percent(mv);
+  usbs_set_battery(mv, dbg_battery_percent);
 
   bool want_3v3 = nfc_supply_3v3_for(mv, g.nfc_3v3);
   if (want_3v3 != g.nfc_3v3) {
     g.nfc_3v3 = want_3v3;
+    /* The regulator adjustment needs Ready mode, not wake-up mode. run_idle()
+     * enables the reader again, and it re-arms against the new amplitude. */
+    cr_enable(&g.reader, false, g.now);
     if (g.nfc_ready && !plat_nfc_set_supply(want_3v3)) {
       g.nfc_ready = false; /* retried by run_idle() */
       g.next_nfc_retry = g.now;
@@ -272,28 +287,8 @@ static void sample_battery(void) {
 /* Card handling                                                            */
 /* ------------------------------------------------------------------------ */
 
-/**
- * Flow chart: "ID in student list?" The list holds card numbers only; who a
- * card belongs to is the PC's business. A card that is not on it is still
- * recorded (the PC learns of new cards that way) but gets the red pattern.
- */
-static bool student_allowed(uint32_t id) {
-  if (g.cfg.card_count == 0u) {
-    return APP_ACCEPT_ALL_WHEN_NO_LIST != 0u;
-  }
-  return cards_is_known(&g.cfg, id);
-}
-
-/** "Load config from flash": the device ID and the registered cards. */
-static void load_config(void) {
-  devcfg_load(&g.cfg);
-
-  /* A list that fails its CRC is no list: better that every card shows green
-   * than that every card shows red because a page was damaged. */
-  if (g.cfg.card_count > 0u && !cards_verify(&g.cfg)) {
-    g.cfg.card_count = 0u;
-  }
-}
+/** "Load config from flash": the device ID. */
+static void load_config(void) { devcfg_load(&g.cfg); }
 
 static void publish_card(const iso14443a_card_t *card, uint32_t id) {
   uint8_t i;
@@ -309,7 +304,11 @@ static void publish_card(const iso14443a_card_t *card, uint32_t id) {
   dbg_card_count++;
 }
 
-/** Flow chart: the decision chain from "Valid ID?" to "RAM buffer >= 80 %". */
+/**
+ * Flow chart: the decision chain from "Valid ID?" to "RAM buffer >= 80 %".
+ * The device keeps no list of registered cards: every new card is recorded
+ * and shows green. Whether it belongs to a student is the PC app's business.
+ */
 static void handle_card(const iso14443a_card_t *card) {
   uint32_t id = card_id_from_uid(card->uid, card->uid_len);
   app_epoch_t stamp = now_epoch();
@@ -344,16 +343,9 @@ static void handle_card(const iso14443a_card_t *card) {
 
     if (rb_push(&g.rb, &rec)) {
       g.last_record = g.now;
-      if (student_allowed(id)) {
-        g.stats.scans_accepted++;
-        result = APP_SCAN_ACCEPTED;
-        begin_feedback(FB_ACCEPTED);
-      } else {
-        /* Recorded all the same, so the PC can offer to register the card. */
-        g.stats.scans_unknown++;
-        result = APP_SCAN_UNKNOWN;
-        begin_feedback(FB_UNKNOWN);
-      }
+      g.stats.scans_accepted++;
+      result = APP_SCAN_ACCEPTED;
+      begin_feedback(FB_ACCEPTED);
     } else {
       g.stats.records_dropped++;
       result = APP_SCAN_STORAGE_FULL;
@@ -368,6 +360,21 @@ static void handle_card(const iso14443a_card_t *card) {
   }
 
   dbg_scan_result = (uint8_t)result;
+}
+
+/**
+ * A card read while the drive is up is not attendance: it is someone at the
+ * PC registering a card. It goes to LASTCARD.TXT for the app to pick up, and
+ * nothing is logged.
+ */
+static void enrol_card(const iso14443a_card_t *card) {
+  uint32_t id = card_id_from_uid(card->uid, card->uid_len);
+
+  publish_card(card, id);
+  usbs_set_last_card(id, card->uid, card->uid_len);
+  g.stats.scans_enrolled++;
+  dbg_scan_result = (uint8_t)APP_SCAN_ENROLLED;
+  begin_feedback(FB_ACCEPTED);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -429,7 +436,8 @@ static void usb_attach(void) {
     return;
   }
 
-  cr_enable(&g.reader, false, g.now);
+  /* The reader stays on: a card tapped now is registered at the PC, not
+   * logged (run_usb()). */
   fb_cancel(&g.fb);
   g.outputs = OUTPUTS_UNKNOWN;
 
@@ -461,6 +469,11 @@ static void start_session(const char *module, const char *lecture) {
     (void)rb_push(&g.rb, &recs[i]);
   }
   flush_to_flash();
+
+  /* Everyone signs in afresh, including whoever tapped in the last seconds
+   * of the lecture before: the 10 s repeat window belongs to that lecture.
+   * Repeats within this one are sess_card_seen()'s job. */
+  dedup_init(&g.dedup);
 }
 
 /**
@@ -518,8 +531,7 @@ static void usb_leave(void) {
     /* Read it back before claiming success: this proves what the next boot
      * will load. A mismatch shows red, the same as a refusal. */
     load_config();
-    if (!g.cfg.valid || g.cfg.device_id != res.device_id ||
-        (res.cards_set && g.cfg.card_count != res.card_count)) {
+    if (!g.cfg.valid || g.cfg.device_id != res.device_id) {
       res.outcome = USBS_IMPORT_FAILED;
     }
   }
@@ -544,6 +556,8 @@ static void usb_finish(void) {
 }
 
 static void run_usb(void) {
+  iso14443a_card_t card;
+
   touch_activity();
 
   if (plat_usb_configured()) {
@@ -552,6 +566,17 @@ static void run_usb(void) {
     /* Power without a host: a charger. Charge and keep scanning. */
     usb_finish();
     return;
+  }
+
+  /* Cards are registered only once a host is there to see LASTCARD.TXT. Until
+   * then the reader waits: on a charger, a card held through those seconds is
+   * read as attendance when the session ends, not shown to nobody. */
+  if (!g.nfc_ready && due(g.next_nfc_retry)) {
+    start_reader();
+  }
+  cr_enable(&g.reader, g.nfc_ready && g.usb_host && !fb_is_active(&g.fb), g.now);
+  if (cr_task(&g.reader, g.now, &card)) {
+    enrol_card(&card);
   }
 
   /* The host ejected the drive: its writes are flushed, so apply them and
@@ -595,7 +620,9 @@ static void run_idle(void) {
   if (!cr_busy(&g.reader)) {
     if (due(g.next_battery) && !fb_is_active(&g.fb)) {
       sample_battery();
-      if (g.nfc_ready) {
+      /* Armed, the chip measures the amplitude itself and the reference
+       * stands in for this reading (publish_status()). */
+      if (g.nfc_ready && !cr_armed(&g.reader)) {
         uint8_t amplitude = 0u;
         if (plat_nfc_measure_amplitude(&amplitude)) {
           dbg_nfc_amplitude = amplitude;
@@ -617,6 +644,57 @@ static void run_idle(void) {
 }
 
 /* ------------------------------------------------------------------------ */
+/* Sleep                                                                    */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * The soonest moment anything needs this loop again, so it can sleep until
+ * then: every timer here is a deadline, and the interrupts (button, VBUS,
+ * reader wake-up, USB) wake it for the rest. @p deep says whether the BSP may
+ * use Stop 2: not during a USB session, which needs the fast clock, and not
+ * while switching off.
+ */
+static uint32_t next_wake(bool *deep) {
+  uint32_t soonest = g.now + APP_SLEEP_MAX_MS;
+  uint32_t at;
+
+  *deep = (g.state == ST_IDLE);
+  if (g.state != ST_IDLE) {
+    return g.now + 1u;
+  }
+
+  if (fb_is_active(&g.fb)) {
+    sooner(&soonest, g.fb_deadline);
+  } else {
+    /* The heartbeat's next edge, on or off. */
+    uint32_t phase = g.now % APP_IND_IDLE_PERIOD_MS;
+
+    sooner(&soonest, g.now + ((phase < APP_IND_IDLE_ON_MS) ? (APP_IND_IDLE_ON_MS - phase)
+                                                           : (APP_IND_IDLE_PERIOD_MS - phase)));
+  }
+  if (btn_next_ms(&g.btn, &at)) {
+    sooner(&soonest, at);
+  }
+  if (g.vbus_raw != g.vbus) {
+    sooner(&soonest, g.vbus_changed + APP_VBUS_DEBOUNCE_MS);
+  }
+  if (cr_next_ms(&g.reader, &at)) {
+    sooner(&soonest, at);
+  }
+  if (!g.nfc_ready) {
+    sooner(&soonest, g.next_nfc_retry);
+  }
+  sooner(&soonest, g.next_battery);
+  if (rb_count(&g.rb) > 0u) {
+    sooner(&soonest, g.last_record + APP_FLUSH_IDLE_MS);
+  }
+  if (!g.vbus) {
+    sooner(&soonest, g.last_activity + APP_INACTIVITY_MS);
+  }
+  return soonest;
+}
+
+/* ------------------------------------------------------------------------ */
 /* Inputs                                                                   */
 /* ------------------------------------------------------------------------ */
 
@@ -635,6 +713,9 @@ static void poll_button(void) {
     break;
   case BTN_OFF:
     app_event_post(APP_EVT_BUTTON_OFF);
+    break;
+  case BTN_DOUBLE:
+    app_event_post(APP_EVT_BUTTON_DOUBLE);
     break;
   case BTN_NONE:
   default:
@@ -686,6 +767,15 @@ static void publish_status(void) {
   dbg_nfc_polls = g.reader.polls;
   dbg_nfc_errors = g.reader.errors;
   dbg_nfc_collisions = g.reader.collisions;
+  dbg_nfc_armed = cr_armed(&g.reader);
+  dbg_nfc_wakeups = g.reader.wakeups;
+  dbg_nfc_false_wakes = g.reader.false_wakes;
+  dbg_nfc_wake_raw = g.reader.wake_raw;
+  dbg_nfc_wake_offset = g.reader.offset;
+  dbg_nfc_wake_delta = g.reader.delta;
+  if (cr_armed(&g.reader)) {
+    dbg_nfc_amplitude = g.reader.reference;
+  }
 
   if (due(g.next_clock)) {
     app_datetime_t dt;
@@ -718,12 +808,11 @@ void app_init(void) {
   rb_init(&g.rb);
   dedup_init(&g.dedup);
   fb_init(&g.fb);
-  cr_init(&g.reader);
+  cr_init(&g.reader, APP_NFC_USE_WAKEUP != 0u);
   btn_init(&g.btn, plat_button_pressed(), g.now);
 
   /* "Load student list & config from flash" */
   load_config();
-  dbg_students = g.cfg.card_count;
 
   log_init(&g.log);
 
@@ -799,6 +888,17 @@ void app_dispatch(app_event_t evt) {
     }
     break;
 
+  case APP_EVT_BUTTON_DOUBLE:
+    /* The drive was ejected (or the PC was taken for a charger) and the cable
+     * is still in: bring the drive back, as a replug would, so the PC can
+     * read the device again. The first tap already ended any USB session. */
+    if (g.state == ST_IDLE && g.vbus && g.usb_hold_off) {
+      touch_activity();
+      g.usb_hold_off = false;
+      usb_attach();
+    }
+    break;
+
   case APP_EVT_INACTIVITY:
     if (g.state == ST_IDLE) {
       begin_shutdown(FB_POWER_OFF);
@@ -814,6 +914,16 @@ void app_dispatch(app_event_t evt) {
     if (g.state == ST_USB) {
       usb_leave();
     }
+    break;
+
+  case APP_EVT_INPUT_EDGE:
+    /* The button or VBUS moved. The pass that follows samples them. */
+    break;
+
+  case APP_EVT_NFC_WAKE:
+    /* Something changed the antenna: poll until the field is empty again.
+     * Not activity in itself; only a card read keeps the unit on. */
+    cr_wake(&g.reader, g.now);
     break;
 
   case APP_EVT_USB_ACTIVITY:
@@ -869,7 +979,13 @@ void app_task(void) {
   drive_indicator();
   publish_status();
 
-  plat_sleep_idle(queue_still_empty);
+  {
+    bool deep;
+    uint32_t wake = next_wake(&deep);
+
+    dbg_sleep_ms = (uint32_t)((int32_t)(wake - g.now) > 0 ? (wake - g.now) : 0u);
+    plat_sleep_until(wake, deep, queue_still_empty);
+  }
 }
 
 app_state_t app_state(void) { return g.state; }

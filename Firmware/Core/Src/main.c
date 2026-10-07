@@ -99,17 +99,27 @@ volatile uint32_t dbg_nfc_errors = 0u;
 volatile uint32_t dbg_nfc_collisions = 0u;
 volatile uint32_t dbg_nfc_last_irq = 0u;
 volatile uint32_t dbg_nfc_irq_pin_misses = 0u;
+volatile bool     dbg_nfc_armed = false;
+volatile uint32_t dbg_nfc_wakeups = 0u;
+volatile uint32_t dbg_nfc_false_wakes = 0u;
+volatile uint8_t  dbg_nfc_wake_raw = 0u;
+volatile uint32_t dbg_nfc_wake_irq = 0u;
+volatile int16_t  dbg_nfc_wake_offset = 0;
+volatile uint8_t  dbg_nfc_wake_delta = 0u;
 
 /* System */
 volatile uint8_t  dbg_state = 0u;
 volatile uint8_t  dbg_boot_cause = 0u;
 volatile uint32_t dbg_uptime_ms = 0u;
+volatile uint32_t dbg_sleep_ms = 0u;
+volatile uint8_t  dbg_lptim_fault = 0u;
+volatile uint8_t  dbg_pempty_cleared = 0u;
 volatile bool     dbg_vbus = false;
 volatile bool     dbg_usb_host = false;
 volatile uint32_t dbg_records_ram = 0u;
 volatile uint32_t dbg_records_flash = 0u;
 volatile uint32_t dbg_records_free = 0u;
-volatile uint32_t dbg_students = 0u;
+volatile uint8_t  dbg_battery_percent = 0u;
 volatile app_datetime_t dbg_now = { 0u, 0u, 0u, 0u, 0u, 0u };
 
 /* Written from the debugger to set the RTC */
@@ -146,7 +156,9 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
+  /* Before anything can interrupt: own the vector table and clear a stale
+   * "flash is empty" flag. See bsp_early_init(). */
+  bsp_early_init();
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -194,8 +206,10 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-    /* One pass: sample the inputs, poll the reader, run the timers and the
-     * feedback pattern, then sleep until the next SysTick. */
+    /* One pass: sample the inputs, run the reader, the timers and the
+     * feedback pattern, then sleep until the next deadline (Stop 2 when idle
+     * on battery). The reader, button, VBUS, USB and LPTIM1 interrupts end
+     * the sleep early. */
     app_task();
   }
   /* USER CODE END 3 */
@@ -716,10 +730,27 @@ static void MX_GPIO_Init(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
+  /* A HAL call failed, almost always during start-up: most likely the
+   * 32 kHz crystal did not start in time. Say so with a fast red blink rather
+   * than a silent, dead-looking unit. Registers only, since the GPIO may not
+   * be set up yet; SWD (PA13/PA14) is left alone so a debugger can attach. */
   __disable_irq();
+  RCC->AHB2ENR |= RCC_AHB2ENR_GPIOAEN;
+  (void)RCC->AHB2ENR;
+  LED_GREEN_GPIO_Port->BSRR = (uint32_t)LED_GREEN_Pin << 16;
+  {
+    const uint32_t pos = (uint32_t)__builtin_ctz(LED_RED_Pin);
+
+    LED_RED_GPIO_Port->MODER = (LED_RED_GPIO_Port->MODER & ~(3u << (pos * 2u))) | (1u << (pos * 2u));
+  }
   while (1)
   {
+    volatile uint32_t i;
+
+    LED_RED_GPIO_Port->ODR ^= LED_RED_Pin;
+    for (i = 0u; i < 100000u; i++)
+    {
+    }
   }
   /* USER CODE END Error_Handler_Debug */
 }

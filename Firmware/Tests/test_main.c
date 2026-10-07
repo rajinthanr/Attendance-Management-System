@@ -226,7 +226,8 @@ static void test_dedup(void)
     dedup_init(&d);
     CHECK(!dedup_check_and_mark(&d, 111u, 1000u), "first sight is not a dup");
     CHECK(dedup_check_and_mark(&d, 111u, 1005u), "inside 10 s");
-    CHECK(dedup_check_and_mark(&d, 111u, 1014u), "window slides on each touch");
+    CHECK(!dedup_check_and_mark(&d, 111u, 1014u), "a retry does not restart the window");
+    CHECK(dedup_check_and_mark(&d, 111u, 1020u), "the window runs from the last tap that counted");
     CHECK(!dedup_check_and_mark(&d, 111u, 1030u), "outside 10 s");
 
     /* Two cards alternating: a single last-seen slot would fail this. */
@@ -255,6 +256,20 @@ static void test_battery(void)
 
     CHECK(batt_classify(3400u) == BATT_WARN, "warn band");
     CHECK(batt_classify(3200u) == BATT_CRITICAL, "critical band");
+    CHECK(batt_percent(0u) == 0u && batt_percent(APP_BATT_CUTOFF_MV) == 0u, "0 %% at the cutoff");
+    CHECK(batt_percent(4200u) == 100u && batt_percent(4350u) == 100u, "100 %% full, and above");
+    CHECK(batt_percent(3825u) == 47u, "between points it is linear (%u)", batt_percent(3825u));
+    {
+        uint32_t v;
+        uint8_t last = 0u;
+        bool rising = true;
+
+        for (v = 3000u; v <= 4300u; v += 5u) {
+            rising = rising && (batt_percent(v) >= last);
+            last = batt_percent(v);
+        }
+        CHECK(rising, "never falls as the voltage rises");
+    }
 
     /* Divider ratio against the schematic: 4.2 V full and 3.3 V cutoff. */
     s.vbat_counts = 1895u;   /* 4.2 V * 2.7 / 7.4 = 1532 mV at the node */
@@ -310,6 +325,7 @@ static void test_iso14443a(void)
     iso14443a_card_t card;
     printf("iso14443a\n");
 
+    host_nfc_wakeup = false;
     host_nfc_field = true;
     host_nfc_collision = false;
 
@@ -370,8 +386,9 @@ static void test_card_reader(void)
     uint8_t i;
 
     printf("card reader\n");
+    host_nfc_wakeup = false;
     host_card_present = false;
-    cr_init(&cr);
+    cr_init(&cr, false);
     cr_enable(&cr, true, t);
 
     CHECK(!cr_task(&cr, t, &card) && host_nfc_field, "field on first");
@@ -416,6 +433,89 @@ static void test_card_reader(void)
     host_card_present = false;
 }
 
+/** Run the reader until one more poll has finished; true if it read a card. */
+static bool reader_poll_once(card_reader_t *cr, uint32_t *t, iso14443a_card_t *card)
+{
+    uint32_t polls = cr->polls;
+    uint32_t end = *t + 1000u;
+    bool found = false;
+
+    for (; *t < end && cr->polls == polls; (*t)++) {
+        if (cr_task(cr, *t, card)) {
+            found = true;
+        }
+    }
+    return found;
+}
+
+static void test_card_reader_wakeup(void)
+{
+    static card_reader_t cr;
+    iso14443a_card_t card;
+    uint32_t t = 5000u;
+    uint32_t misuse = host_nfc_misuse;
+    uint32_t polls;
+    bool again = false;
+    uint8_t i;
+
+    printf("card reader: wake-up mode\n");
+    host_nfc_wakeup = false;
+    host_card_present = false;
+    cr_init(&cr, true);
+    cr_enable(&cr, true, t);
+
+    CHECK(!reader_poll_once(&cr, &t, &card), "first poll finds nothing");
+    CHECK(cr_armed(&cr) && host_nfc_wakeup && !host_nfc_field, "armed after an empty poll");
+    CHECK(host_nfc_wake_ref == 120u && cr.reference == 120u, "reference from the empty field");
+
+    polls = cr.polls;
+    for (i = 0u; i < 10u; i++) {
+        (void)reader_poll(&cr, &t, &card);
+    }
+    CHECK(cr.polls == polls, "no polling while armed");
+
+    /* A card arrives: the chip interrupts, and only then is it read. */
+    host_card_set(k_uid4, 4u, 0x08u);
+    CHECK(!reader_poll(&cr, &t, &card), "an armed reader waits for its interrupt");
+    cr_wake(&cr, t);
+    CHECK(!cr_armed(&cr) && !host_nfc_wakeup, "a wake-up leaves wake-up mode");
+    cr_wake(&cr, t);
+    CHECK(cr.wakeups == 1u, "a second, late event is ignored");
+    CHECK(reader_poll_once(&cr, &t, &card) && card.uid_len == 4u, "woken reader reads the card");
+
+    /* A held card is tracked by polling, not by the wake-up mode. */
+    for (i = 0u; i < 10u; i++) {
+        again = reader_poll_once(&cr, &t, &card) || again;
+    }
+    CHECK(!again && !cr_armed(&cr), "a held card is polled for and reported once");
+
+    host_card_present = false;
+    for (i = 0u; i < APP_NFC_REMOVE_MISSES; i++) {
+        (void)reader_poll_once(&cr, &t, &card);
+    }
+    CHECK(cr_armed(&cr) && cr.false_wakes == 0u, "armed again once the card left");
+
+    /* A wake-up with nothing there costs a few polls and is counted. */
+    cr_wake(&cr, t);
+    for (i = 0u; i < APP_NFC_REMOVE_MISSES; i++) {
+        (void)reader_poll_once(&cr, &t, &card);
+    }
+    CHECK(cr_armed(&cr) && cr.false_wakes == 1u, "false wake-up counted, armed again");
+
+    /* A pause leaves wake-up mode. A card put down during it must be polled
+     * for, not measured into the next reference. */
+    cr_enable(&cr, false, t);
+    CHECK(!cr_armed(&cr) && !host_nfc_wakeup, "a pause leaves wake-up mode");
+    host_card_set(k_uid7, 7u, 0x00u);
+    t += 500u;
+    cr_enable(&cr, true, t);
+    CHECK(reader_poll_once(&cr, &t, &card) && card.uid_len == 7u,
+          "card put down during a pause is read, not armed over");
+    host_card_present = false;
+
+    CHECK(host_nfc_misuse == misuse, "no command reached the reader in wake-up mode");
+}
+
 /* ===================================================================== */
 static void test_button(void)
 {
@@ -438,6 +538,37 @@ static void test_button(void)
     }
     CHECK(shorts == 1 && holds == 0 && longs == 0 && offs == 0, "tap: %d short, %d hold, %d long, %d off",
           shorts, holds, longs, offs);
+
+    /* Two quick taps: a short, then a double. Two slow ones: two shorts. */
+    {
+        int doubles = 0;
+        button_event_t first = BTN_NONE;
+
+        btn_init(&b, false, 450u);      /* nothing from the tap above to pair with */
+        shorts = 0;
+        for (t = 500u; t < 900u; t++) {
+            button_event_t e = btn_update(&b, (t >= 500u && t < 580u) || (t >= 700u && t < 780u), t);
+
+            if (first == BTN_NONE && e != BTN_NONE) {
+                first = e;
+            }
+            shorts += (e == BTN_SHORT);
+            doubles += (e == BTN_DOUBLE);
+        }
+        CHECK(shorts == 1 && doubles == 1 && first == BTN_SHORT, "quick taps: a short, then a double (%d, %d)",
+              shorts, doubles);
+        shorts = doubles = 0;
+        for (t = 20000u; t < 22000u; t++) {
+            button_event_t e = btn_update(&b, (t >= 20000u && t < 20080u) ||
+                                               (t >= 20080u + APP_BTN_DOUBLE_MS + 100u &&
+                                                t < 20160u + APP_BTN_DOUBLE_MS + 100u), t);
+
+            shorts += (e == BTN_SHORT);
+            doubles += (e == BTN_DOUBLE);
+        }
+        CHECK(shorts == 2 && doubles == 0, "slow taps: %d short, %d double", shorts, doubles);
+        shorts = 0;
+    }
 
     /* Held 2.5 s: a hold while still down, then a long press on release. */
     shorts = holds = longs = offs = 0;
@@ -571,11 +702,16 @@ int main(void)
     test_battery();
     test_iso14443a();
     test_card_reader();
+    test_card_reader_wakeup();
     test_button();
     test_fsm();
     test_fsm_sessions();
     test_fsm_plugged_in();
     test_fsm_lectures();
+    test_fsm_wakeup();
+    test_fsm_sleep();
+    test_fsm_double_press();
+    test_fsm_wake_learning();
     test_cards();
     test_battery_boot();
 

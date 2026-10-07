@@ -22,7 +22,7 @@ typedef enum {
 typedef struct {
     uint32_t scans_accepted;
     uint32_t scans_duplicate;
-    uint32_t scans_unknown;
+    uint32_t scans_enrolled;    /**< Cards shown to the PC during a USB session. */
     uint32_t scans_rejected_full;
     uint32_t records_dropped;
     uint32_t flush_failures;

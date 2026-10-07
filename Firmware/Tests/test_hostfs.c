@@ -96,13 +96,111 @@ uint32_t hf_free(const hostfs_t *h)
 int32_t hf_read(const hostfs_t *h, const char *name11, uint8_t *out, uint32_t cap)
 {
     int e = hf_find(h, name11);
-    uint32_t size, c, done = 0u;
 
     if (e < 0) {
         return -1;
     }
-    size = hf_size(h, e);
+    return hf_read_chain(h, hf_first(h, e), hf_size(h, e), out, cap);
+}
+
+static void sfn_text(const uint8_t *d, char out[13])
+{
+    uint32_t i, n = 0u;
+
+    for (i = 0u; i < 8u && d[i] != ' '; i++) { out[n++] = (char)d[i]; }
+    if (d[8] != ' ') {
+        out[n++] = '.';
+        for (i = 8u; i < 11u && d[i] != ' '; i++) { out[n++] = (char)d[i]; }
+    }
+    out[n] = '\0';
+}
+
+int hf_list(const hostfs_t *h, const char *dir11, hf_dirent_t *out, uint32_t max)
+{
+    static const uint8_t k_at[13] = { 1u, 3u, 5u, 7u, 9u, 14u, 16u, 18u, 20u, 22u, 24u, 28u, 30u };
+    int e = hf_find(h, dir11);
+    uint32_t c, n = 0u, guard = 0u;
+    char lfn[64];
+    bool have_lfn = false;
+    uint8_t lfn_sum = 0u;
+
+    if (e < 0 || (h->root[e * 32 + 11] & FAT12_ATTR_DIRECTORY) == 0u) {
+        return -1;
+    }
+    memset(lfn, 0, sizeof(lfn));
     c = hf_first(h, e);
+    while (c >= 2u && c < (h->clusters + 2u) && guard++ <= h->clusters) {
+        uint8_t sec[FAT12_SECTOR_SIZE];
+        uint32_t i;
+        uint16_t next;
+
+        if (!usbs_read(fat12_cluster_lba(c), sec, 1u)) {
+            return -1;
+        }
+        for (i = 0u; i < FAT12_SECTOR_SIZE; i += 32u) {
+            const uint8_t *d = &sec[i];
+
+            if (d[0] == 0x00u) {
+                return (int)n;
+            }
+            if (d[0] == 0xE5u) {
+                have_lfn = false;
+                continue;
+            }
+            if (d[11] == FAT12_ATTR_LFN) {
+                uint32_t ord = d[0] & 0x1Fu, k;
+
+                if ((d[0] & 0x40u) != 0u) {
+                    memset(lfn, 0, sizeof(lfn));
+                    have_lfn = true;
+                    lfn_sum = d[13];
+                }
+                for (k = 0u; k < 13u; k++) {
+                    uint32_t at = ((ord - 1u) * 13u) + k;
+                    uint16_t ch = rd16(&d[k_at[k]]);
+
+                    if (ch != 0x0000u && ch != 0xFFFFu && at < (sizeof(lfn) - 1u)) {
+                        lfn[at] = (char)ch;
+                    }
+                }
+                have_lfn = have_lfn && (d[13] == lfn_sum);
+                continue;
+            }
+            if (d[0] == '.') {
+                have_lfn = false;
+                continue;
+            }
+            if (n < max) {
+                hf_dirent_t *o = &out[n];
+
+                sfn_text(d, o->sfn);
+                if (have_lfn && fat12_sfn_checksum((const char *)d) == lfn_sum) {
+                    memcpy(o->name, lfn, sizeof(o->name));
+                } else {
+                    memcpy(o->name, o->sfn, sizeof(o->sfn));
+                }
+                o->attr = d[11];
+                o->first = rd16(&d[26]);
+                o->size = rd32(&d[28]);
+                o->time = rd16(&d[22]);
+                o->date = rd16(&d[24]);
+            }
+            n++;
+            have_lfn = false;
+        }
+        next = fat12_get(h->fat, c);
+        if (next >= 0x0FF8u) {
+            break;
+        }
+        c = next;
+    }
+    return (int)((n < max) ? n : max);
+}
+
+int32_t hf_read_chain(const hostfs_t *h, uint32_t first, uint32_t size, uint8_t *out, uint32_t cap)
+{
+    uint32_t c = first, done = 0u;
+
     while (done < size && done < cap && c >= 2u && c < (h->clusters + 2u)) {
         uint8_t sec[FAT12_SECTOR_SIZE];
         uint32_t n = size - done;

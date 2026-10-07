@@ -12,7 +12,8 @@
  *  ----  ----------------  ---------------------------------------------------
  *  PC14  LSE_IN            32.768 kHz crystal. Keeps the RTC, and with it
  *  PC15  LSE_OUT           the CSV timestamps, running while the unit is off.
- *  PA0   PWR_BTN           WKUP1, polled input. The only Standby wake source.
+ *  PA0   PWR_BTN           WKUP1, the only Standby wake source. EXTI0 (both
+ *                          edges) wakes the loop; the level is sampled there.
  *  PA1   --                Spare.
  *  PA2   LED_GREEN         Active high.
  *  PA3   LED_RED           Active high.
@@ -21,7 +22,8 @@
  *  PA6   --                Spare.
  *  PA7   BATT_SENSE        ADC1_IN12, 4.7M/2.7M divider off the cell.
  *  PA8   --                Spare.
- *  PA9   USB_VBUS          VBUS detect through R18/R19, polled input.
+ *  PA9   USB_VBUS          VBUS detect through R18/R19. EXTI9 (both edges)
+ *                          wakes the loop; the level is sampled there.
  *  PA10  --                Spare.
  *  PA11  USB_DM            Fixed function.
  *  PA12  USB_DP            Fixed function.
@@ -29,7 +31,9 @@
  *  PA14  SWCLK             Debug.
  *  PA15  PN532_NSS         Backup reader chip select, active low.
  *  PB0   NFC_NSS           ST25R3916 chip select, active low.
- *  PB1   NFC_IRQ           ST25R3916 interrupt, active high, polled input.
+ *  PB1   NFC_IRQ           ST25R3916 interrupt, active high. EXTI1 (rising)
+ *                          while the reader is in wake-up mode, otherwise
+ *                          polled by bsp_nfc.c with the line masked.
  *  PB3   NFC_SCK           Shared SPI1 clock, AF5.
  *  PB4   NFC_MISO          Shared SPI1 input, AF5, pull-down.
  *  PB5   NFC_MOSI          Shared SPI1 output, AF5.
@@ -132,6 +136,7 @@
 #define BSP_NFC_MEASURE_TIMEOUT_MS  2u    /* Measure amplitude, 25 us max */
 #define BSP_NFC_RX_TIMEOUT_MS       10u   /* the NRT normally ends it at 1 ms */
 
+
 /* ------------------------------------------------------------------------ */
 /* ADC                                                                      */
 /* ------------------------------------------------------------------------ */
@@ -167,5 +172,28 @@
 
 #define BSP_PRIO_USB            5u
 #define BSP_PRIO_PVD            4u   /* pre-empts everything but a fault     */
+#define BSP_PRIO_NFC            6u   /* one-shot reader wake-up (EXTI1)      */
+#define BSP_PRIO_INPUT          6u   /* button and VBUS edges (EXTI0, EXTI9) */
+#define BSP_PRIO_LPTIM          6u   /* end of a Stop 2 sleep                */
 
+/* ------------------------------------------------------------------------ */
+/* Stop 2                                                                   */
+/* ------------------------------------------------------------------------ */
+
+/** 1: sleep in Stop 2 between events when Level 2 allows it (no USB). 0: Sleep
+ *  mode only, woken by SysTick every millisecond, as in the polling build. */
+#define BSP_ENABLE_STOP2        1u
+
+/** Shorter sleeps stay in Sleep mode: Stop 2 costs a few tens of us each way
+ *  and the LPTIM compare write takes ~3 LSE cycles. */
+#define BSP_STOP2_MIN_MS        4u
+
+/** Longest single Stop 2 sleep: inside one 2 s wrap of the 16-bit LPTIM1
+ *  counter at 32768 Hz, so the time slept is never ambiguous. */
+#define BSP_STOP2_MAX_MS        1900u
+
+/** Polls of an LPTIM1 register-write flag before giving up (~30 ms at 4 MHz;
+ *  the write takes ~3 LSE cycles, 92 us). A timeout means the LSE is not
+ *  running: Stop 2 is then not used, and the loop sleeps in Sleep mode. */
+#define BSP_LPTIM_WAIT_LOOPS    20000u
 #endif /* BSP_BOARD_H */

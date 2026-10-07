@@ -17,9 +17,20 @@
  * for those alone. The status registers are read once more at a timeout, so
  * a broken IRQ line makes the reader slow rather than dead, and is counted in
  * dbg_nfc_irq_pin_misses.
+ *
+ * Wake-up mode
+ * ------------
+ * Between cards Level 2 parks the chip in wake-up mode (§4.2.4): oscillator
+ * off, and on its own RC timer it drives the antenna briefly and measures the
+ * amplitude against a reference. Only then is EXTI1 unmasked, and only I_wam
+ * reaches the pin. The interrupt is one shot: the handler masks the line and
+ * posts APP_EVT_NFC_WAKE, because the pin stays high until the status
+ * registers are read and SPI belongs to the main loop. Leaving wake-up mode
+ * reads them, which drops the pin, and waits for the oscillator.
  */
 #include "bsp.h"
 #include "app_debug.h"
+#include "app_events.h"
 #include <string.h>
 
 SPI_HandleTypeDef hbsp_spi;
@@ -48,6 +59,11 @@ SPI_HandleTypeDef hbsp_spi;
 #define REG_NUM_TX2         0x23u
 #define REG_ADC_OUTPUT      0x25u
 #define REG_REGULATOR       0x2Cu
+#define REG_AUX_DISPLAY     0x31u
+#define REG_WAKEUP_TIMER    0x32u
+#define REG_AM_CONF         0x33u   /* amplitude measurement configuration */
+#define REG_AM_REF          0x34u   /* amplitude measurement reference */
+#define REG_AM_DISPLAY      0x36u   /* the wake-up mode's last amplitude reading */
 #define REG_IC_IDENTITY     0x3Fu
 
 /* SPI mode bytes (Table 11). */
@@ -70,6 +86,12 @@ SPI_HandleTypeDef hbsp_spi;
 #define OP_EN               0x80u   /* Ready mode: oscillator, regulators */
 #define OP_RX_EN            0x40u
 #define OP_TX_EN            0x08u
+#define OP_WU               0x04u   /* wake-up mode (with en = 0) */
+#define AUX_OSC_OK          0x10u
+#define WUT_WUR_10MS        0x80u   /* wut counts 10 ms steps, else 100 ms */
+#define WUT_SHIFT           4u
+#define WUT_WAM             0x04u   /* amplitude measurement at each timeout */
+#define AM_D_SHIFT          4u      /* am_ae = 0: compare with REG_AM_REF */
 #define MODE_ISO14443A      0x08u   /* initiator, om = 0001, OOK (Tables 22, 23) */
 #define ISOA_ANTCL          0x01u
 #define IO_CONF1_NO_MCU_CLK 0x07u   /* MCU_CLK and its 32 kHz clock off */
@@ -91,6 +113,7 @@ SPI_HandleTypeDef hbsp_spi;
 #define IRQ_PAR             0x400000u
 #define IRQ_ERR1            0x100000u   /* hard framing; soft framing (err2)
                                            leaves the data intact */
+#define IRQ_WAM             0x040000u   /* wake-up amplitude measurement */
 #define IRQ_RX_ERRORS       (IRQ_CRC | IRQ_PAR | IRQ_ERR1)
 #define IRQ_RX_DONE         (IRQ_RXE | IRQ_NRE | IRQ_COL | IRQ_RX_ERRORS)
 #define IRQ_WANTED          (IRQ_OSC | IRQ_DCT | IRQ_RX_DONE)
@@ -102,10 +125,20 @@ SPI_HandleTypeDef hbsp_spi;
 #define MASK_ERROR  ((uint8_t)(0xFFu & ~((IRQ_WANTED >> 16) & 0xFFu)))
 #define MASK_PT     0xFBu
 
+/* Wake-up mode: I_wam alone. The chip starts its oscillator for every
+ * measurement, so an unmasked I_osc (or anything else) would raise the pin
+ * every period and wake the MCU for nothing. RFAL masks the same way. */
+#define MASK_MAIN_WU   0xFEu
+#define MASK_TIMER_WU  0xFFu
+#define MASK_ERROR_WU  ((uint8_t)(0xFFu & ~((IRQ_WAM >> 16) & 0xFFu)))
+
 #define MAX_FRAME   32u
 
 /** Interrupt bits read from the chip and not yet consumed. */
 static uint32_t s_irq;
+
+/** The chip is in wake-up mode: its oscillator is off. */
+static bool s_wakeup;
 
 /* ------------------------------------------------------------------------ */
 /* SPI                                                                      */
@@ -248,6 +281,27 @@ static uint32_t irq_wait(uint32_t mask, uint32_t timeout_ms)
 /* Helpers                                                                  */
 /* ------------------------------------------------------------------------ */
 
+/** The interrupt masks for normal work, or for wake-up mode. */
+static bool irq_masks(bool wakeup)
+{
+    return reg_write(REG_MASK_MAIN, wakeup ? MASK_MAIN_WU : MASK_MAIN) &&
+           reg_write(REG_MASK_TIMER, wakeup ? MASK_TIMER_WU : MASK_TIMER) &&
+           reg_write(REG_MASK_ERROR, wakeup ? MASK_ERROR_WU : MASK_ERROR);
+}
+
+static void exti_mask(void)
+{
+    CLEAR_BIT(EXTI->IMR1, PIN_NFC_IRQ);
+    __HAL_GPIO_EXTI_CLEAR_IT(PIN_NFC_IRQ);
+}
+
+void bsp_nfc_wake_irq(void)
+{
+    /* One shot: the pin stays high until the main loop reads the status. */
+    CLEAR_BIT(EXTI->IMR1, PIN_NFC_IRQ);
+    app_event_post(APP_EVT_NFC_WAKE);
+}
+
 /** §4.4.10: toggle reg_s, then let the chip set VDD_RF 250 mV below VDD_TX. */
 static bool adjust_regulators(void)
 {
@@ -319,6 +373,8 @@ bool plat_nfc_init(bool supply_3v3, uint8_t *chip_id)
     uint8_t id = 0u;
 
     *chip_id = 0u;
+    exti_mask();
+    s_wakeup = false;
     if (!spi_init() || !reg_read(REG_IC_IDENTITY, &id, 1u)) {
         return false;
     }
@@ -335,9 +391,7 @@ bool plat_nfc_init(bool supply_3v3, uint8_t *chip_id)
 
     if (!reg_write(REG_IO_CONF1, IO_CONF1_NO_MCU_CLK) ||
         !reg_write(REG_IO_CONF2, supply_3v3 ? IO_CONF2_SUP3V : 0x00u) ||
-        !reg_write(REG_MASK_MAIN, MASK_MAIN) ||
-        !reg_write(REG_MASK_TIMER, MASK_TIMER) ||
-        !reg_write(REG_MASK_ERROR, MASK_ERROR) ||
+        !irq_masks(false) ||
         !reg_write(REG_MASK_PT, MASK_PT)) {
         return false;
     }
@@ -429,10 +483,98 @@ bool plat_nfc_measure_amplitude(uint8_t *raw)
     return reg_read(REG_ADC_OUTPUT, raw, 1u);
 }
 
+bool plat_nfc_wakeup_arm(uint8_t reference, uint8_t delta, uint16_t period_ms)
+{
+    uint8_t wut;
+    uint16_t steps;
+
+    /* Wake-up timer control: wur picks 10-80 ms or 100-800 ms, wut the step
+     * count minus one. Take the longest period not over the one asked for. */
+    if (period_ms < 100u) {
+        steps = (uint16_t)(period_ms / 10u);
+        steps = (steps == 0u) ? 1u : steps;
+        wut = (uint8_t)(WUT_WUR_10MS | ((steps - 1u) << WUT_SHIFT));
+    } else {
+        steps = (uint16_t)(period_ms / 100u);
+        steps = (steps > 8u) ? 8u : steps;
+        wut = (uint8_t)((steps - 1u) << WUT_SHIFT);
+    }
+
+    exti_mask();
+    if (!command(CMD_STOP_ALL) ||
+        !reg_write(REG_OP_CONTROL, OP_EN) ||
+        !reg_write(REG_AM_REF, reference) ||
+        !reg_write(REG_AM_CONF, (uint8_t)((delta & 0x0Fu) << AM_D_SHIFT)) ||
+        !reg_write(REG_WAKEUP_TIMER, (uint8_t)(wut | WUT_WAM)) ||
+        !irq_masks(true)) {
+        (void)irq_masks(false);
+        return false;
+    }
+    irq_clear();
+    if (!reg_write(REG_OP_CONTROL, OP_WU)) {
+        (void)reg_write(REG_OP_CONTROL, OP_EN);
+        (void)irq_masks(false);
+        return false;
+    }
+    s_wakeup = true;
+
+    SET_BIT(EXTI->IMR1, PIN_NFC_IRQ);
+    /* An edge before the unmask would be lost, but the pin holds its level
+     * until the status is read, so a level check catches it. */
+    if (HAL_GPIO_ReadPin(PORT_NFC_IRQ, PIN_NFC_IRQ) == NFC_IRQ_ACTIVE_LEVEL) {
+        __HAL_GPIO_EXTI_GENERATE_SWIT(PIN_NFC_IRQ);
+    }
+    return true;
+}
+
+bool plat_nfc_wakeup_disarm(uint8_t *last_raw)
+{
+    uint8_t aux = 0u;
+
+    *last_raw = 0u;
+    exti_mask();
+    if (!s_wakeup) {
+        return true;
+    }
+    s_wakeup = false;
+
+    /* What the chip measured last in wake-up mode: Level 2 learns from it how
+     * that measurement relates to the Measure amplitude command. */
+    (void)reg_read(REG_AM_DISPLAY, last_raw, 1u);
+
+    /* Reading the status drops the pin; keep what woke us for Live
+     * Expressions (I_wam is 0x040000). */
+    s_irq = 0u;
+    (void)irq_read();
+    dbg_nfc_last_irq = s_irq;
+    dbg_nfc_wake_irq = s_irq;
+    s_irq = 0u;
+
+    /* Normal masks back before the oscillator starts: I_osc is waited on. */
+    if (!irq_masks(false) || !reg_write(REG_OP_CONTROL, OP_EN)) {
+        return false;
+    }
+    /* The oscillator may already be up, part-way through one of the chip's
+     * own measurements, and then I_osc need not come. osc_ok is the truth. */
+    if (!reg_read(REG_AUX_DISPLAY, &aux, 1u)) {
+        return false;
+    }
+    if ((aux & AUX_OSC_OK) == 0u) {
+        (void)irq_wait(IRQ_OSC, BSP_NFC_OSC_TIMEOUT_MS);
+        if (!reg_read(REG_AUX_DISPLAY, &aux, 1u)) {
+            return false;
+        }
+    }
+    s_irq = 0u;
+    return (aux & AUX_OSC_OK) != 0u;
+}
+
 void plat_nfc_power_down(void)
 {
     /* The reader runs straight off the cell, so it has to be told to sleep
      * or it keeps its oscillator running while the unit is "off". */
+    exti_mask();
+    s_wakeup = false;
     if (hbsp_spi.State == HAL_SPI_STATE_RESET && !spi_init()) {
         return;
     }

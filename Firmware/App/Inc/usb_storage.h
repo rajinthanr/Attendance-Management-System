@@ -3,28 +3,41 @@
  * @brief   Level 2 (logic) — the mass-storage block device the host sees.
  *
  * Level 1's USB MSC glue calls straight into this; it holds no policy of its
- * own. The volume holds three files:
+ * own. The volume holds:
  *
  *   ATTEND.CSV    read-only. One row per tap, DATE,TIME,CARD_ID, synthesised
  *                 sector by sector from the flash log, so it costs no RAM
  *                 however long the log is. Session markers in the log are not
  *                 rows (see session.h).
+ *   LECTURES.CSV  read-only. One row per lecture marker (csv_lecture_row()).
  *   SETTINGS.CSV  read/write, a few hundred bytes: the clock, the module and
  *                 lecture being taught, the device ID. The host edits it; the
  *                 changes are checked and applied by usbs_end() when the host
  *                 goes away.
  *   STATUS.TXT    read-only. A few lines on what the device holds and whether
  *                 the host's current SETTINGS.CSV would be accepted.
+ *   LASTCARD.TXT  read-only, one sector, rendered at every read: the last card
+ *                 read during this USB session (usbs_set_last_card()), so the
+ *                 PC app can register a card while the device is plugged in.
+ *   LECTURES\     read-only folder: ATTEND.CSV split by lecture, one file per
+ *                 lecture marker, "L001_2026-10-07_14-30.csv" (number, then
+ *                 the start date and time; 8.3 alias L001.CSV). Lectures are
+ *                 numbered from 1 in log order, so from 1 again after the log
+ *                 is cleared. Taps logged before the first lecture, if any,
+ *                 are L000, named after the first of them.
  *
  * Cluster map (one sector per cluster):
  *
  *   2          STATUS.TXT
  *   3 .. 30    SETTINGS.CSV window (28 clusters, the only space left free)
- *   31 ..      ATTEND.CSV
+ *   31         LASTCARD.TXT
+ *   32 ..      ATTEND.CSV, then LECTURES.CSV, then the LECTURES directory,
+ *              then the lecture files
  *
- * The volume is exactly as large as those three areas, so the only free space
- * the host can see is the window. Anything it writes there lands in RAM, and
- * nothing it writes anywhere else is accepted.
+ * The volume is exactly as large as those areas, so the only free space the
+ * host can see is the window. Anything it writes there lands in RAM, and
+ * nothing it writes to a file is accepted. Writes to the LECTURES directory
+ * (a host updating an access date) are accepted and dropped.
  */
 #ifndef USB_STORAGE_H
 #define USB_STORAGE_H
@@ -38,7 +51,11 @@
 #define USBS_STATUS_CLUSTER     2u
 #define USBS_SETTINGS_CLUSTER   3u
 #define USBS_SETTINGS_CLUSTERS  (SETF_MAX_BYTES / FAT12_SECTOR_SIZE)
-#define USBS_ATTEND_CLUSTER     (USBS_SETTINGS_CLUSTER + USBS_SETTINGS_CLUSTERS)
+#define USBS_LASTCARD_CLUSTER   (USBS_SETTINGS_CLUSTER + USBS_SETTINGS_CLUSTERS)
+#define USBS_ATTEND_CLUSTER     (USBS_LASTCARD_CLUSTER + 1u)
+
+/** Longest UID LASTCARD.TXT shows (ISO14443-A triple size). */
+#define USBS_UID_MAX            10u
 
 typedef enum {
     USBS_IMPORT_NONE = 0,   /**< The host did not change SETTINGS.CSV. */
@@ -51,11 +68,9 @@ typedef struct {
     setf_report_t rep;        /**< Valid when outcome != NONE. */
     bool          time_set;   /**< The RTC was set from a #TIME line. */
 
-    /** A new device ID or card list was stored in flash; the caller should reload the config. */
+    /** A new device ID was stored in flash; the caller should reload the config. */
     bool          device_set;
     uint32_t      device_id;
-    bool          cards_set;    /**< A new card list was stored. */
-    uint32_t      card_count;   /**< ...with this many cards. */
 
     /**
      * The host named a new lecture (or asked for one). The caller appends a
@@ -83,15 +98,14 @@ typedef struct {
  * appear on the next attach.
  *
  * @param ls         Log to export. Must outlive the USB session.
- * @param cfg        Device ID (the FAT volume serial and the #DEVICE line) and the
- *                   registered card list (the #CARDS lines). Copied.
+ * @param cfg        Device ID: the FAT volume serial and the #DEVICE line. Copied.
  * @param now        Timestamp stamped on the files, and shown on the #TIME line.
  */
 void usbs_begin(const log_store_t *ls, const device_cfg_t *cfg, const app_datetime_t *now);
 
 /**
  * End the session: if the host changed SETTINGS.CSV, validate it and apply it
- * (set the clock, store a new device ID or card list, report a new lecture). Call it after
+ * (set the clock, store a new device ID, report a new lecture). Call it after
  * the USB peripheral is stopped, so a flash erase cannot stall USB.
  */
 void usbs_end(usbs_result_t *result);
@@ -123,5 +137,23 @@ bool usbs_write(uint32_t lba, const uint8_t *buf, uint32_t count);
 
 /** True once the host has actually read a data sector, i.e. copied the file. */
 bool usbs_file_was_read(void);
+
+/**
+ * A card was read while the drive is up: show it in LASTCARD.TXT and count
+ * it. Main loop only; the update is atomic against the USB interrupt.
+ */
+void usbs_set_last_card(uint32_t id, const uint8_t *uid, uint8_t uid_len);
+
+/** Cards counted by usbs_set_last_card() since usbs_begin(). */
+uint32_t usbs_last_card_taps(void);
+
+/**
+ * The cell, for STATUS.TXT's "Battery" line: millivolts and a percentage, or
+ * 0 mV for "unknown". Main loop only. Kept across sessions.
+ */
+void usbs_set_battery(uint32_t mv, uint8_t percent);
+
+/** Files in the LECTURES folder this session. */
+uint32_t usbs_lecture_file_count(void);
 
 #endif /* USB_STORAGE_H */

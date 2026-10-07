@@ -35,20 +35,6 @@ static device_cfg_t    g_cfg;
 
 static const app_datetime_t k_now = { 2026u, 10u, 6u, 9u, 30u, 0u };
 
-/* The cards the unit has been given: some of the ones that tap, one that never does. */
-static const uint32_t k_cards[] = { 1000u, 1007u, 1014u, 1021u, 1028u, 5000u, 777777u };
-
-static bool next_card(void *ctx, uint32_t *id)
-{
-    uint32_t *i = (uint32_t *)ctx;
-
-    if (*i >= (sizeof(k_cards) / sizeof(k_cards[0]))) {
-        return false;
-    }
-    *id = k_cards[(*i)++];
-    return true;
-}
-
 static void push_marker(app_epoch_t start, const char *module, const char *lecture)
 {
     app_record_t m[SESS_MAX_RECORDS];
@@ -67,16 +53,8 @@ static void setup(uint32_t n_records, bool second_lecture)
 
     host_flash_erase_all();
     host_set_time(&k_now);
-    {
-        uint32_t i2 = 0u, crc = CARDS_CRC_INIT;
-        const uint32_t n = (uint32_t)(sizeof(k_cards) / sizeof(k_cards[0]));
-
-        for (i2 = 0u; i2 < n; i2++) {
-            crc = cards_crc_update(crc, k_cards[i2]);
-        }
-        i2 = 0u;
-        (void)devcfg_set_cards(&g_cfg, 0xC0FFEEu, n, cards_crc_final(crc), next_card, &i2);
-    }
+    devcfg_load(&g_cfg);
+    (void)devcfg_set_device_id(&g_cfg, 0xC0FFEEu);
 
     log_init(&g_ls);
     rb_init(&g_rb);

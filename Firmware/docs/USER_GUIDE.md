@@ -4,11 +4,11 @@ Written for: the people who run a class with the device, not the firmware team.
 
 The device logs a card tap with the date and time, and shows its log to a
 computer as a small USB drive. It records only the card number and the time: it
-does not know who owns a card, only which card numbers are registered. For the easiest way to use it, run the companion
-app in the `Companion` folder (see its README): it keeps the student list, finds
-the device, starts lectures, shows who was present and prints reports. This guide
-describes the device itself, which also works with no app at all, by opening the
-files on the drive.
+does not know who owns a card, or which cards are registered. For the easiest
+way to use it, run the companion app in the `Companion` folder (see its README):
+it keeps the student list, registers cards, finds the device, starts lectures,
+shows who was present and prints reports. This guide describes the device
+itself, which also works with no app at all, by opening the files on the drive.
 
 ## Taking attendance
 
@@ -16,16 +16,21 @@ Tap a card on the reader. The device answers:
 
 | You see | It means |
 |---|---|
-| green light and one short buzz | a registered card: the tap is recorded |
-| red light and one long buzz | a card that is not on the device's list: the tap is still recorded, so you can register the card (see below) |
+| green light and one short buzz | the tap is recorded |
 | two short buzzes | this card is already recorded in this lecture (or was read twice in a row); not recorded again |
 | green light and three quick buzzes | a new lecture has started (you held the button, see below) |
 | red light blinking five times | the battery is low |
+| red light blinking fast without stopping, no buzz, nothing else works | the device could not start (most often its clock crystal). Unplug the USB cable and disconnect the battery for a few seconds, then try again; if it keeps happening, the board needs looking at |
+| red light and four buzzes | the device's memory is full and the tap was not recorded (or, at switch-on, its reader did not start) |
 
-Every card is recorded, registered or not; the colour only tells you whether the
-device has that card number on its list. If the device has never been given a
-list, every card shows green. Who the card belongs to is worked out later, on the
-computer.
+Every card is recorded, registered or not: the device keeps no list of students
+and shows green for every new tap. Who the card belongs to is worked out later,
+on the computer.
+
+While the device is plugged into a computer as a USB drive, a tap is **not**
+recorded. It gives the same green light and buzz, and the card's number is shown
+to the computer so the companion app can register the card (see
+[Registering a new card](#registering-a-new-card)).
 
 On battery, after three minutes without a tap the device switches itself off.
 Press the power button to wake it (green light and a short buzz). While its
@@ -36,29 +41,39 @@ The power button also does three other things while the device is on:
 | Press | Result |
 |---|---|
 | tap | shows the battery: two green blinks if it is fine, red blinking five times if it is low. While it is a USB drive on a computer, a tap first ends that and starts taking attendance (see below) |
+| two quick taps, with the cable in after an eject | brings the drive back to the computer, so the app can read the device again |
 | hold until it buzzes (2 seconds), then let go | **starts the next lecture** (green and three quick buzzes). See [Starting a lecture on the device](#starting-a-lecture-on-the-device) |
 | keep holding for 5 seconds | switches the device off (red light and a long buzz) instead; no lecture is started. Any changes you made to `SETTINGS.CSV` are applied first |
 
 ## Taking attendance with the cable in
 
-When the device is plugged into a computer it shows up as a USB drive, and its
-reader is off. To start taking attendance without pulling the cable, either:
+When the device is plugged into a computer it shows up as a USB drive. Its
+reader stays on, but only for registering cards: taps are not recorded while the
+drive is there. To start taking attendance without pulling the cable, either:
 
 - **eject the drive** on the computer (Eject in Explorer, Finder or the file
   manager; the companion app does this for you when you start a lecture), or
 - **tap the button** on the device once.
 
 The device applies your `SETTINGS.CSV` (green and two buzzes, or red and three
-if the file was refused), the drive disappears from the computer, and the
-reader starts. The cable can stay in: the device runs and charges from it. To
-see the drive again, unplug the cable and plug it back in.
+if the file was refused), the drive disappears from the computer, and taps are
+recorded again. The cable can stay in: the device runs and charges from it. To
+see the drive again, press the button twice quickly (or unplug the cable and
+plug it back in); the app's **Connect** button reminds you. While the drive is
+back on the computer, taps are for registering cards, not attendance, so eject
+it again before the class taps in.
+
+On a phone charger or power bank there is no drive: the device waits about five
+seconds for a computer, then takes attendance as usual. A card held to it in
+those first seconds is read once the wait is over; one taken away sooner gets
+no light at all, so just tap it again.
 
 ## Lectures and double taps
 
 A **lecture** is a module name and a lecture name, for example `EN2090` and
 `Lecture 4`. Every card tapped after you start one is recorded after that
 lecture's marker in the log, which is how the computer knows which lecture it
-belongs to. Start one from the app (Lecture tab), or by editing the `#MODULE` and
+belongs to. Start one from the app (Lectures page), or by editing the `#MODULE` and
 `#LECTURE` lines in `SETTINGS.CSV` and ejecting the drive (or tapping the button,
 or unplugging). Edit them to the same text as
 before and add a line `#NEWSESSION,1` to start a second lecture with the same
@@ -99,9 +114,17 @@ them, and only then tells the device to delete its copy (the `#CLEARLOG,1` line
 in `SETTINGS.CSV`). The old taps stay in the app, matched to their lectures. If
 the app could not read every tap it does not ask, and the device keeps them.
 
+**Clear device records** in the app does the same without starting a lecture:
+it reads everything in first, and refuses to clear the device if it could not.
+
+If the device's records cannot be read at all, **Erase device without saving…**
+(in the app's Device menu) deletes them without copying them first.
+You have to type `ERASE` to confirm. Any taps and lectures that were not already
+in the app are lost for good. The device keeps its ID and its clock.
+
 Without the app, add a line `#CLEARLOG,1` to `SETTINGS.CSV` and eject. **Copy
-`ATTEND.CSV` somewhere safe first:** the records cannot be brought back.
-Renaming the lecture by hand never deletes anything.
+`ATTEND.CSV`, `LECTURES.CSV` and the `LECTURES` folder somewhere safe first:**
+the records cannot be brought back. Renaming the lecture by hand never deletes anything.
 
 ## Reading the attendance
 
@@ -127,9 +150,32 @@ each: date, time, module and lecture name, for example
 `2026-10-07,14:00:03,EN2090,Circuits Lecture 5`. The rows are padded with spaces
 like `ATTEND.CSV`. A tap belongs to the last lecture that started before it.
 
-`STATUS.TXT` on the drive is a short read-only summary: the device ID, the clock,
-how many records the log holds, the last tap, how many cards are registered, the
-current lecture and when it started, and what the device will do with your `SETTINGS.CSV` when you eject the drive.
+The `LECTURES` folder holds the same taps split up, one read-only file per
+lecture, with the same columns as `ATTEND.CSV`:
+
+```
+LECTURES
+  L000_2026-10-06_09-12.csv    taps from before the first lecture, if there were any
+  L001_2026-10-06_14-00.csv    lecture 1, started 2026-10-06 at 14:00
+  L002_2026-10-07_14-00.csv
+```
+
+The name is the lecture's number on the device, then the date and time it
+started (some older programs show only the short name, such as `L001.CSV`).
+`L000` is named after its first tap. The numbers start from 1 again after the
+records are deleted. To see the lecture's module and name, look up its row in
+`LECTURES.CSV`.
+
+`STATUS.TXT` on the drive is a short read-only summary: the device ID, the
+clock, the battery, how many records the log holds, how many files the
+`LECTURES` folder has, the last tap, the current lecture and when it started,
+and what the device will do with your `SETTINGS.CSV` when you eject the drive.
+The battery reads like `87 % (3950 mV)`; it reads a little high while the
+device is charging, which it is whenever it is plugged in. The companion app
+shows the same figure at the top of its window.
+
+`LASTCARD.TXT` shows the card last tapped since the device was plugged in, for
+registering cards (see below). The companion app reads it for you.
 
 ## Changing the device's settings
 
@@ -142,10 +188,6 @@ current lecture and when it started, and what the device will do with your `SETT
    #MODULE,EN2090
    #LECTURE,Circuits Lecture 4
    #DEVICE,0000012345
-   #CARDS,3
-   0000000123
-   0000000456
-   0000000789
    ```
 
 3. Change what you need and save, keeping the name `SETTINGS.CSV`. Or replace
@@ -166,8 +208,7 @@ What each line does:
 | `#MODULE,...` and `#LECTURE,...` | name the lecture; a new one starts if either changed |
 | `#NEWSESSION,1` | starts a new lecture even if the names are the same |
 | `#CLEARLOG,1` | deletes every record on the device (copy `ATTEND.CSV` first) |
-| `#DEVICE,...` | sets the device ID printed on the enclosure |
-| `#CARDS,<n>` | the registered card numbers: the next `n` lines, one number each (decimal or `0x` hex), in ascending order, with exactly `n` of them and at most 1000. Leave the line out to keep the device's list; `#CARDS,0` clears it |
+| `#DEVICE,...` | sets the device ID printed on the enclosure (the line appears once an ID is set) |
 
 Safe to know:
 
@@ -177,10 +218,9 @@ Safe to know:
 - Module names can be up to **24 bytes** and lecture names up to **32 bytes**
   (about that many English letters; fewer for Sinhala or Tamil, which take three
   bytes a letter). A comma inside a name is turned into a space.
-- Lines that do not start with `#` are ignored, except the card numbers after a
-  `#CARDS` line. If that list is out of order, has a zero or a repeat, or does not
-  have exactly `n` numbers, the whole file is refused (red, three pulses) and
-  `STATUS.TXT` says which line is wrong.
+- Lines that do not start with `#` are ignored, and so are `#` lines the
+  device does not know. That includes the `#CARDS` list an older version of the
+  app wrote, with the numbers under it: the device keeps no card list now.
 - Read `STATUS.TXT` on the drive to see what the device thinks of your file
   *before* you eject: it says whether the clock, a new lecture, deleting the
   records or a new device ID will be applied, or names the problem. (Your
@@ -197,21 +237,27 @@ device clock**.
 
 ## Registering a new card
 
-The device cannot tell you whose card it is, and its reader is switched off while
-it is plugged in, so a card cannot be registered live:
+The device does not need to know about a new card: it records every card. The
+companion app is where a card is given to a student, and the device can read the
+card for it while it is plugged in:
 
-1. Tap the new card on the device. It is recorded like any other, and shows red
-   because the device does not know it yet.
-2. Plug the device in and open the companion app. The card appears under *New
-   cards* (Students tab).
-3. Press **Register** and fill in the name, student number, department and
-   modules.
-4. Press **Send cards to device**. (The app shows a banner, "The device does not
-   have your latest student cards", until you do. Starting a lecture sends the
-   list as well.)
-5. Eject the drive (or tap the button). The device checks and stores the list: green and two buzzes
-   means it was accepted. From now on the card shows green.
+1. Plug the device into the computer and open the companion app.
+2. On the **Students** page press **Tap a card…** (or, in a student's window,
+   **Tap card on device…**).
+3. Tap the card on the device. It shows a green light and buzzes, and the card's
+   number appears in the app. The tap is not recorded as attendance.
+4. Fill in the index number and name, and save.
 
-Without the app, find the number in the `CARD_ID` column of `ATTEND.CSV`, add it
-to the numbers under `#CARDS` in `SETTINGS.CSV` (keep them in ascending order and
-fix the count), and eject.
+With a student picked in the list first, **Tap a card…** gives that student the
+new card instead (a lost or replaced card). A card that already belongs to
+another student is refused, and the app waits for another one. When you are
+done, eject the drive (or tap the button) and the device takes attendance again.
+
+A card can also be registered afterwards: tap it with the device unplugged (it
+is recorded like any other), plug the device in, and press **Register…** next to
+it in the orange *New cards* box on the Students page.
+
+Without the app there is nothing to register on the device. Find the card's
+number in the `CARD_ID` column of `ATTEND.CSV`, or tap it while the device is
+plugged in and open `LASTCARD.TXT` (your computer may show an old copy of that
+file; close it and open it again), and keep your own list of who owns it.

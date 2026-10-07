@@ -5,20 +5,21 @@
  * The volume is small and its size is chosen afresh for every USB session:
  * just big enough for the files it holds (see usb_storage.c). Only the
  * metadata lives in RAM (boot sector parameters, FAT, root directory); the
- * big file, ATTEND.CSV, is generated sector by sector and never stored.
+ * big files (ATTEND.CSV, the per-lecture files) are generated sector by
+ * sector and never stored.
  *
  * Geometry is fixed except for the sector count:
  *
  *   LBA 0          boot sector
- *   LBA 1..6       FAT 1   (6 sectors = 2048 twelve-bit entries)
- *   LBA 7..12      FAT 2   (identical)
- *   LBA 13         root directory (16 entries)
- *   LBA 14..       data, one sector per cluster, cluster 2 = LBA 14
+ *   LBA 1..12      FAT 1   (12 sectors = 4096 twelve-bit entries)
+ *   LBA 13..24     FAT 2   (identical)
+ *   LBA 25         root directory (16 entries)
+ *   LBA 26..       data, one sector per cluster, cluster 2 = LBA 26
  *
- * One sector per cluster keeps "which file sector is this?" a subtraction, and
- * at most 2046 data clusters (about 1 MB, and a full 32-byte-row log needs
- * under half of that) keeps the volume well under the 4085 above which a host
- * would read it as FAT16.
+ * One sector per cluster keeps "which file sector is this?" a subtraction.
+ * A full log appears twice (ATTEND.CSV and the per-lecture files), about
+ * 1750 clusters with the lecture list and the directory, so the FAT allows up
+ * to 4084: the most a FAT12 volume may have before a host reads it as FAT16.
  */
 #ifndef FAT12_H
 #define FAT12_H
@@ -28,7 +29,7 @@
 #define FAT12_SECTOR_SIZE        512u
 #define FAT12_RESERVED_SECTORS   1u             /* the boot sector */
 #define FAT12_NUM_FATS           2u
-#define FAT12_SECTORS_PER_FAT    6u             /* 2048 entries * 1.5 B */
+#define FAT12_SECTORS_PER_FAT    12u            /* 4096 entries * 1.5 B */
 #define FAT12_SECTORS_PER_CLUSTER 1u
 #define FAT12_ROOT_ENTRIES       16u
 #define FAT12_ROOT_SECTORS       ((FAT12_ROOT_ENTRIES * 32u) / FAT12_SECTOR_SIZE)
@@ -43,8 +44,9 @@
 /** Entries one FAT holds, and so the highest usable cluster number + 1. */
 #define FAT12_FAT_ENTRIES        ((FAT12_FAT_BYTES * 2u) / 3u)
 
-/** Most data clusters a volume with this FAT can have (clusters 2..2047). */
-#define FAT12_MAX_CLUSTERS       (FAT12_FAT_ENTRIES - 2u)
+/** Most data clusters a volume may have: FAT12 ends at 4084, below the
+ *  4096 - 2 this FAT could describe. */
+#define FAT12_MAX_CLUSTERS       4084u
 
 #define FAT12_EOC                0x0FFFu
 #define FAT12_FIRST_CLUSTER      2u
@@ -56,6 +58,10 @@
 #define FAT12_ATTR_VOLUME_ID     0x08u
 #define FAT12_ATTR_DIRECTORY     0x10u
 #define FAT12_ATTR_ARCHIVE       0x20u
+#define FAT12_ATTR_LFN           0x0Fu    /**< A long-name entry. */
+
+/** Characters one long-name entry carries (UCS-2). */
+#define FAT12_LFN_CHARS          13u
 
 /** Describes the volume for one enumeration. */
 typedef struct {
@@ -89,6 +95,21 @@ void fat12_chain(uint8_t *fat, uint32_t first, uint32_t count);
 void fat12_dirent(uint8_t *d, const char name[11], uint8_t attr,
                   uint16_t first_cluster, uint32_t size,
                   uint16_t date, uint16_t time);
+
+/** The checksum a long-name entry carries of its 8.3 entry's name. */
+uint8_t fat12_sfn_checksum(const char name[11]);
+
+/**
+ * Fill one long-name entry: characters (ord - 1) * 13 onwards of @p name
+ * (ASCII, @p len of them). @p ord counts from 1; the entry for the end of the
+ * name gets the last-entry flag. The entries go into the directory highest
+ * @p ord first, followed by the 8.3 entry.
+ */
+void fat12_lfn_entry(uint8_t *d, uint8_t ord, uint8_t checksum,
+                     const char *name, uint32_t len);
+
+/** Long-name entries a name of @p len characters needs. */
+uint32_t fat12_lfn_count(uint32_t len);
 
 /** Little endian accessors for directory entries read back from the host. */
 uint16_t fat12_rd16(const uint8_t *p);

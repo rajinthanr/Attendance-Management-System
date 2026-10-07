@@ -25,6 +25,29 @@ typedef struct {
 #define HF_ATTEND    "ATTEND  CSV"
 #define HF_STATUS    "STATUS  TXT"
 #define HF_LECTURES  "LECTURESCSV"
+#define HF_LASTCARD  "LASTCARDTXT"
+#define HF_LECTDIR   "LECTURES   "
+
+/** One entry of a subdirectory, long name assembled as a host would. */
+typedef struct {
+    char     name[64];   /**< The long name, or NAME.EXT when there is none. */
+    char     sfn[13];    /**< The 8.3 name as NAME.EXT. */
+    uint8_t  attr;
+    uint32_t first;
+    uint32_t size;
+    uint16_t date, time; /**< Write date and time. */
+} hf_dirent_t;
+
+/**
+ * List the directory @p dir11 (an entry of the root) by following its chain.
+ * Long names are taken only when their checksum matches the 8.3 entry, as a
+ * host does; "." and ".." are skipped.
+ * @return entries stored (at most @p max), or -1 when it does not exist.
+ */
+int hf_list(const hostfs_t *h, const char *dir11, hf_dirent_t *out, uint32_t max);
+
+/** Read @p size bytes of the chain starting at @p first. */
+int32_t hf_read_chain(const hostfs_t *h, uint32_t first, uint32_t size, uint8_t *out, uint32_t cap);
 
 /** Read the boot sector, both FATs' first copy and the root directory. */
 void hf_mount(hostfs_t *h);

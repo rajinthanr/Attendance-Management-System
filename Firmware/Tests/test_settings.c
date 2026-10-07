@@ -385,7 +385,7 @@ void test_settings_parser(void)
     }
 
     /* ---- render, then parse it back ---- */
-    n = setf_render(g_txt, sizeof(g_txt), &k_now, "EN2090", "Circuits Lecture 4", 12648430u, 0u, NULL, NULL);
+    n = setf_render(g_txt, sizeof(g_txt), &k_now, "EN2090", "Circuits Lecture 4", 12648430u);
     CHECK(n > 0u && n < 400u, "render fits easily (%u bytes)", n);
     g_txt[n] = '\0';
     CHECK(strncmp(g_txt, "# Edit these lines", 18u) == 0, "starts with the help line");
@@ -393,21 +393,21 @@ void test_settings_parser(void)
     CHECK(strstr(g_txt, "\r\n#MODULE,EN2090\r\n#LECTURE,Circuits Lecture 4\r\n") != NULL, "#MODULE and #LECTURE lines");
     CHECK(strstr(g_txt, "\r\n#DEVICE,0012648430\r\n") != NULL, "#DEVICE line");
     CHECK(strstr(g_txt, "CARD_ID") == NULL, "no student rows: the device does not know students");
-    CHECK(setf_render(g_txt, n - 1u, &k_now, "EN2090", "Circuits Lecture 4", 12648430u, 0u, NULL, NULL) == 0u,
+    CHECK(setf_render(g_txt, n - 1u, &k_now, "EN2090", "Circuits Lecture 4", 12648430u) == 0u,
           "a buffer one byte short is reported");
     r = scan_n(g_txt, n);
     CHECK(r.status == SETF_OK && r.has_time && r.has_device && r.device_id == 12648430u && !r.bad_directive &&
           strcmp(r.module, "EN2090") == 0 && strcmp(r.lecture, "Circuits Lecture 4") == 0 && !r.new_session,
           "what is shown parses back to what it says");
 
-    n = setf_render(g_txt, sizeof(g_txt), &k_now, NULL, NULL, 0u, 0u, NULL, NULL);
+    n = setf_render(g_txt, sizeof(g_txt), &k_now, NULL, NULL, 0u);
     g_txt[n] = '\0';
     CHECK(strstr(g_txt, "#MODULE,\r\n#LECTURE,\r\n") != NULL && strstr(g_txt, "#DEVICE") == NULL,
           "no session and no device ID: blank slots to fill in, no #DEVICE");
-    n = setf_render(g_txt, sizeof(g_txt), &k_now, "M,1", "L\"2\r\nX", 0u, 0u, NULL, NULL);
+    n = setf_render(g_txt, sizeof(g_txt), &k_now, "M,1", "L\"2\r\nX", 0u);
     g_txt[n] = '\0';
     CHECK(strstr(g_txt, "#MODULE,M 1\r\n#LECTURE,L 2  X\r\n") != NULL, "values are made safe on the way out");
-    n = setf_render(g_txt, sizeof(g_txt), &k_now, "m", "l", 0xFFFFFFFEu, 0u, NULL, NULL);
+    n = setf_render(g_txt, sizeof(g_txt), &k_now, "m", "l", 0xFFFFFFFEu);
     CHECK(n > 0u, "the largest device id renders");
 }
 
@@ -429,17 +429,21 @@ void test_usb_volume(void)
 
     begin_session(100u, 0xC0FFEEu);
 
-    /* 101 rows * 32 B = 3232 B = 7 clusters, after the metadata, STATUS.TXT
-     * and the SETTINGS.CSV window; then one cluster of LECTURES.CSV, which with
-     * no markers in the log is just its header. */
+    /* 101 rows * 32 B = 3232 B = 7 clusters, after the metadata, STATUS.TXT,
+     * the SETTINGS.CSV window and LASTCARD.TXT; then one cluster of
+     * LECTURES.CSV, which with no markers in the log is just its header; then
+     * the LECTURES folder (one cluster) holding L000, the same 7 clusters,
+     * since with no lecture every tap came before the first one. */
     const uint32_t att_clusters = (csv_size(100u) + 511u) / 512u;
+    const uint32_t all_clusters = 1u + USBS_SETTINGS_CLUSTERS + 1u + att_clusters + 1u + 1u + att_clusters;
     CHECK(att_clusters == 7u, "attend clusters %u", att_clusters);
     CHECK(usbs_file_size() == csv_size(100u), "file size %u", usbs_file_size());
-    CHECK(usbs_sector_count() == FAT12_DATA_START_LBA + 1u + USBS_SETTINGS_CLUSTERS + att_clusters + 1u,
+    CHECK(usbs_sector_count() == FAT12_DATA_START_LBA + all_clusters,
           "sector count %u", usbs_sector_count());
     CHECK(usbs_sector_size() == 512u, "sector size");
-    CHECK(att == 31u && USBS_SETTINGS_CLUSTERS == 28u, "cluster map");
-    CHECK(FAT12_DATA_START_LBA == 14u && FAT12_SECTORS_PER_FAT == 6u, "FAT geometry");
+    CHECK(att == 32u && USBS_LASTCARD_CLUSTER == 31u && USBS_SETTINGS_CLUSTERS == 28u, "cluster map");
+    CHECK(FAT12_DATA_START_LBA == 26u && FAT12_SECTORS_PER_FAT == 12u, "FAT geometry");
+    CHECK(usbs_lecture_file_count() == 1u, "one lecture file, L000");
 
     /* Boot sector: the fields a host validates. */
     CHECK(usbs_read(0u, g_sec, 1u), "read boot sector");
@@ -453,7 +457,7 @@ void test_usb_volume(void)
     CHECK(fat12_rd32(&g_sec[39]) == 0xC0FFEEu, "serial is the device id");
     CHECK(memcmp(&g_sec[54], "FAT12   ", 8u) == 0, "fs type");
     CHECK(fat12_cluster_count(usbs_sector_count()) < 4085u, "cluster count is FAT12");
-    CHECK(fat12_cluster_count(usbs_sector_count()) == 1u + USBS_SETTINGS_CLUSTERS + att_clusters + 1u, "clusters %u",
+    CHECK(fat12_cluster_count(usbs_sector_count()) == all_clusters, "clusters %u",
           fat12_cluster_count(usbs_sector_count()));
 
     /* Root directory: label, STATUS, SETTINGS, ATTEND, LECTURES. */
@@ -472,7 +476,16 @@ void test_usb_volume(void)
     CHECK((g_hf.root[es * 32 + 11] & FAT12_ATTR_READ_ONLY) != 0u, "STATUS is read-only");
     CHECK((g_hf.root[ea * 32 + 11] & FAT12_ATTR_READ_ONLY) != 0u, "ATTEND is read-only");
     CHECK((g_hf.root[eu * 32 + 11] & FAT12_ATTR_READ_ONLY) == 0u, "SETTINGS is writable");
-    CHECK(g_hf.root[5 * 32] == 0x00u, "directory ends after the fifth entry");
+    {
+        int ec = hf_find(&g_hf, HF_LASTCARD);
+        int ed = hf_find(&g_hf, HF_LECTDIR);
+
+        CHECK(ec >= 0 && hf_first(&g_hf, ec) == USBS_LASTCARD_CLUSTER && hf_size(&g_hf, ec) == 512u &&
+              (g_hf.root[ec * 32 + 11] & FAT12_ATTR_READ_ONLY) != 0u, "LASTCARD entry");
+        CHECK(ed >= 0 && hf_first(&g_hf, ed) == att + att_clusters + 1u && hf_size(&g_hf, ed) == 0u &&
+              g_hf.root[ed * 32 + 11] == FAT12_ATTR_DIRECTORY, "LECTURES folder entry");
+    }
+    CHECK(g_hf.root[7 * 32] == 0x00u, "directory ends after the seventh entry");
 
     /* FAT chains and free space. */
     uint32_t set_clusters = (usbs_settings_size() + 511u) / 512u;
@@ -574,7 +587,8 @@ void test_usb_volume(void)
     /* An empty log still exports a valid header-only file. */
     begin_session(0u, 0xC0FFEEu);
     CHECK(usbs_file_size() == CSV_ROW_BYTES, "header only");
-    CHECK(usbs_sector_count() == FAT12_DATA_START_LBA + 1u + USBS_SETTINGS_CLUSTERS + 1u + 1u, "one ATTEND cluster");
+    CHECK(usbs_sector_count() == FAT12_DATA_START_LBA + 1u + USBS_SETTINGS_CLUSTERS + 1u + 1u + 1u + 1u,
+          "one ATTEND cluster, LECTURES.CSV, an empty LECTURES folder");
     CHECK(usbs_read(fat12_cluster_lba(att), g_sec, 1u), "read");
     snprintf(expect, sizeof(expect), "%-30s\r\n", "DATE,TIME,CARD_ID");
     CHECK(memcmp(g_sec, expect, 32u) == 0, "header present");

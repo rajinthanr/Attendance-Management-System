@@ -1,8 +1,8 @@
 /**
  * @file    parse_settings.c
  * @brief   Run the firmware's own SETTINGS.CSV parser on files and print what
- *          it understood. Used by Companion/tests/test_firmware_compat.py to
- *          prove that what the app writes is what the device reads.
+ *          it understood, to check by hand (or from a script) that what the PC
+ *          app writes is what the device reads.
  *
  *   parse_settings file...
  *
@@ -12,8 +12,7 @@
  *   time_value=<YYYY-MM-DD HH:MM:SS>        (only when a #TIME was read)
  *   module=<text>
  *   lecture=<text>
- *   cards=<n|->                             (- when the file has no #CARDS list)
- *   cards_crc=<8 hex digits>
+ *   clear=<0|1>
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -64,8 +63,6 @@ int main(int argc, char **argv)
                    r.time.hour, r.time.minute, r.time.second);
         }
         printf("module=%s\nlecture=%s\n", r.has_module ? r.module : "", r.has_lecture ? r.lecture : "");
-        if (r.has_cards) { printf("cards=%u\n", r.card_count); } else { printf("cards=-\n"); }
-        printf("cards_crc=%08x\n", r.card_crc);
         printf("clear=%d\n", (int)r.clear_log);
         free(buf);
     }

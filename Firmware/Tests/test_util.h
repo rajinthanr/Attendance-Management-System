@@ -49,6 +49,10 @@ void test_fsm(void);
 void test_fsm_sessions(void);
 void test_fsm_plugged_in(void);
 void test_fsm_lectures(void);
+void test_fsm_wakeup(void);
+void test_fsm_sleep(void);
+void test_fsm_double_press(void);
+void test_fsm_wake_learning(void);
 
 /* ---- test_cards.c ---- */
 void test_cards(void);

@@ -16,7 +16,6 @@ typedef enum {
     FB_NONE = 0,
     FB_ACCEPTED,    /**< Green LED + one short pulse. */
     FB_DUPLICATE,   /**< Two short green pulses with the motor. */
-    FB_UNKNOWN,     /**< Red LED + one long pulse: card not on the registered list (still recorded). */
     FB_LOW_BATTERY, /**< Red LED blinks. */
     FB_ERROR,       /**< Red blinks with the motor: log full, reader fault. */
     FB_STATUS_OK,   /**< Two green blinks: battery fine (button tap). */

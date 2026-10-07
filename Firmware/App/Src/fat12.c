@@ -173,3 +173,46 @@ void fat12_dirent(uint8_t *d, const char name[11], uint8_t attr,
     wr16(&d[26], first_cluster);
     wr32(&d[28], size);
 }
+
+uint8_t fat12_sfn_checksum(const char name[11])
+{
+    uint8_t sum = 0u;
+    uint8_t i;
+
+    for (i = 0u; i < 11u; i++) {
+        sum = (uint8_t)((uint8_t)((sum & 1u) << 7) + (uint8_t)(sum >> 1) + (uint8_t)name[i]);
+    }
+    return sum;
+}
+
+uint32_t fat12_lfn_count(uint32_t len)
+{
+    return (len + FAT12_LFN_CHARS - 1u) / FAT12_LFN_CHARS;
+}
+
+void fat12_lfn_entry(uint8_t *d, uint8_t ord, uint8_t checksum,
+                     const char *name, uint32_t len)
+{
+    /* Where the 13 UCS-2 characters sit in the 32-byte entry. */
+    static const uint8_t k_at[FAT12_LFN_CHARS] = { 1u, 3u, 5u, 7u, 9u, 14u, 16u, 18u, 20u, 22u, 24u, 28u, 30u };
+    uint32_t first = ((uint32_t)ord - 1u) * FAT12_LFN_CHARS;
+    uint8_t i;
+
+    zero(d, 32u);
+    d[0] = (uint8_t)(ord | ((ord == fat12_lfn_count(len)) ? 0x40u : 0u));
+    d[11] = FAT12_ATTR_LFN;
+    d[13] = checksum;
+    for (i = 0u; i < FAT12_LFN_CHARS; i++) {
+        uint32_t k = first + i;
+        uint16_t ch;
+
+        if (k < len) {
+            ch = (uint8_t)name[k];
+        } else if (k == len) {
+            ch = 0x0000u;   /* terminator, when the name leaves room for it */
+        } else {
+            ch = 0xFFFFu;   /* padding after it */
+        }
+        wr16(&d[k_at[i]], ch);
+    }
+}

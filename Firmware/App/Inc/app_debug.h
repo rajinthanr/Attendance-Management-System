@@ -38,7 +38,8 @@ extern volatile uint8_t  dbg_card_atqa[2];
 extern volatile uint8_t  dbg_card_sak;
 extern volatile uint32_t dbg_card_count;      /**< Cards presented since boot. */
 extern volatile uint8_t  dbg_scan_result;     /**< app_scan_result_t: 1 accepted,
-                                                   2 duplicate, 3 unknown, 4 full. */
+                                                   2 duplicate, 3 shown to the PC
+                                                   while plugged in, 4 full. */
 
 /* ---- Button ------------------------------------------------------------- */
 extern volatile bool     dbg_button_down;     /**< Debounced level. */
@@ -59,17 +60,37 @@ extern volatile uint32_t dbg_nfc_collisions;
 extern volatile uint32_t dbg_nfc_last_irq;    /**< Reader IRQ flags of the last exchange:
                                                    main | timer << 8 | error << 16. */
 extern volatile uint32_t dbg_nfc_irq_pin_misses; /**< Non-zero: IRQ line not reaching PB1. */
+extern volatile bool     dbg_nfc_armed;       /**< In wake-up mode, waiting for PB1.
+                                                   dbg_nfc_amplitude is then the
+                                                   reference it compares against. */
+extern volatile uint32_t dbg_nfc_wakeups;     /**< Wake-up interrupts acted on. */
+extern volatile uint32_t dbg_nfc_false_wakes; /**< Wake-ups that found no card. A few
+                                                   after power-on while the offset is
+                                                   learned; climbing steadily means
+                                                   noise past APP_NFC_WAKE_DELTA_MAX. */
+extern volatile uint8_t  dbg_nfc_wake_raw;    /**< The chip's own reading at the last wake-up. */
+extern volatile uint32_t dbg_nfc_wake_irq;    /**< What raised the last wake-up: 0x040000 (I_wam)
+                                                   is the only right answer. */
+extern volatile int16_t  dbg_nfc_wake_offset; /**< Learned: wake-up reading minus Measure amplitude. */
+extern volatile uint8_t  dbg_nfc_wake_delta;  /**< Current trigger window, counts. */
 
 /* ---- System ------------------------------------------------------------- */
 extern volatile uint8_t  dbg_state;           /**< app_state_t: 0 idle, 1 USB, 2 shutdown. */
 extern volatile uint8_t  dbg_boot_cause;      /**< app_boot_cause_t. */
 extern volatile uint32_t dbg_uptime_ms;
+extern volatile uint32_t dbg_sleep_ms;        /**< How long the last pass asked to sleep. */
+extern volatile uint8_t  dbg_pempty_cleared;  /**< 1: FLASH_SR.PEMPTY was set at start-up (left by
+                                                   the SWD flash loader) and was cleared. */
+extern volatile uint8_t  dbg_lptim_fault;     /**< 0: Stop 2 in use. 1 clock select failed, 2
+                                                   LPTIM1 did not start, 3 it stopped answering:
+                                                   the 32 kHz crystal is not running; the loop
+                                                   then sleeps in Sleep mode only. */
 extern volatile bool     dbg_vbus;            /**< Debounced VBUS. */
 extern volatile bool     dbg_usb_host;        /**< A host enumerated the device. */
 extern volatile uint32_t dbg_records_ram;     /**< Waiting in RAM. */
 extern volatile uint32_t dbg_records_flash;   /**< In the log (exported as CSV). */
 extern volatile uint32_t dbg_records_free;    /**< Log slots left. */
-extern volatile uint32_t dbg_students;        /**< Provisioned list size; 0 = none. */
+extern volatile uint8_t  dbg_battery_percent; /**< Charge estimate from the voltage. */
 extern volatile app_datetime_t dbg_now;       /**< RTC, refreshed once a second. */
 
 /* ---- Written from the debugger ------------------------------------------ */

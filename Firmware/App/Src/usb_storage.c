@@ -4,12 +4,15 @@
  *
  * LBA routing:
  *   0                      boot sector (generated; writes ignored)
- *   1 .. 6, 7 .. 12        FAT 1 and FAT 2 (one RAM copy serves both)
- *   13                     root directory (RAM)
- *   14                     cluster 2: STATUS.TXT (generated, read-only)
- *   15 .. 42               clusters 3..30: SETTINGS.CSV window (RAM, read/write)
- *   43 ..                  clusters 31..: ATTEND.CSV (generated, read-only)
- *   after ATTEND.CSV       LECTURES.CSV (generated, read-only)
+ *   1 .. 12, 13 .. 24      FAT 1 and FAT 2 (one RAM copy serves both)
+ *   25                     root directory (RAM)
+ *   26                     cluster 2: STATUS.TXT (generated, read-only)
+ *   27 .. 54               clusters 3..30: SETTINGS.CSV window (RAM, read/write)
+ *   55                     cluster 31: LASTCARD.TXT (generated, read-only)
+ *   56 ..                  clusters 32..: ATTEND.CSV (generated, read-only)
+ *   then                   LECTURES.CSV, the LECTURES directory (generated;
+ *                          writes dropped) and the lecture files (generated,
+ *                          read-only)
  *
  * Settings are applied in two steps so that a host can write the file in any
  * order it likes, over any number of clusters, and a half-copied or mistyped
@@ -33,6 +36,10 @@ static const char k_name_status[11]   = { 'S','T','A','T','U','S',' ',' ','T','X
 static const char k_name_settings[11] = { 'S','E','T','T','I','N','G','S','C','S','V' };
 static const char k_name_attend[11]   = { 'A','T','T','E','N','D',' ',' ','C','S','V' };
 static const char k_name_lectures[11] = { 'L','E','C','T','U','R','E','S','C','S','V' };
+static const char k_name_lastcard[11] = { 'L','A','S','T','C','A','R','D','T','X','T' };
+static const char k_name_lectdir[11]  = { 'L','E','C','T','U','R','E','S',' ',' ',' ' };
+static const char k_name_dot[11]      = { '.',' ',' ',' ',' ',' ',' ',' ',' ',' ',' ' };
+static const char k_name_dotdot[11]   = { '.','.',' ',' ',' ',' ',' ',' ',' ',' ',' ' };
 static const char k_label[11]         = { 'A','T','T','E','N','D','A','N','C','E',' ' };
 
 /**
@@ -53,6 +60,24 @@ typedef struct {
 /** Far more than a full log can hold at one marker per lecture. */
 #define USBS_MAX_MARKS  768u
 
+/**
+ * One file in the LECTURES folder: the marker header it starts at (LF_NONE for
+ * the taps before any lecture) and its first cluster. Its rows run to where
+ * the next file's start, so nothing else needs storing.
+ */
+typedef struct {
+    uint16_t mark;
+    uint16_t cluster;
+} usbs_lfile_t;
+
+#define LF_NONE        0xFFFFu
+/** "L001_2026-10-07_14-30.csv" */
+#define LF_NAME_LEN    25u
+/** Two long-name entries and the 8.3 entry. */
+#define LF_ENTRIES     3u
+/** "." and ".." */
+#define LF_DOT_ENTRIES 2u
+
 static const log_store_t *s_log;
 static fat12_vol_t s_vol;
 static bool s_active;
@@ -72,6 +97,26 @@ static uint32_t s_lect_size;
 static uint16_t s_fat_date;
 static uint16_t s_fat_time;
 
+static uint32_t s_n_lfiles;         /**< Lecture files planned, s_lfiles[0 .. s_n_lfiles). */
+static uint32_t s_lf_lo;            /**< First one shown; earlier ones did not fit. */
+static uint32_t s_lf_number0;       /**< Lecture number of s_lfiles[0]: 0 when it is L000, else 1. */
+static uint32_t s_dir_cluster;      /**< The LECTURES directory, after LECTURES.CSV. */
+static uint32_t s_dir_clusters;
+static uint32_t s_files_cluster;    /**< First cluster of the first file shown. */
+static uint32_t s_end_cluster;      /**< One past the last cluster in use. */
+
+/* LASTCARD.TXT. Written by the main loop inside a critical section, read by
+ * the USB interrupt. */
+static uint32_t s_card_taps;
+static uint32_t s_card_id;
+static uint8_t  s_card_uid[USBS_UID_MAX];
+static uint8_t  s_card_uid_len;
+
+/* STATUS.TXT's battery line, from the main loop's last good sample. */
+static bool     s_batt_valid;
+static uint32_t s_batt_mv;
+static uint32_t s_batt_percent;
+
 /* The part has a second 16 kB SRAM block that nothing else uses. The FAT, the
  * root directory and the marker table go there so the stack and the USB library
  * keep the main block to themselves. None of them needs zero-initialisation
@@ -87,10 +132,11 @@ static uint16_t s_fat_time;
 static uint8_t  s_fat[FAT12_FAT_BYTES] USBS_SRAM2;
 static uint8_t  s_root[FAT12_SECTOR_SIZE] USBS_SRAM2;
 static usbs_mark_t s_marks[USBS_MAX_MARKS] USBS_SRAM2;
+static usbs_lfile_t s_lfiles[USBS_MAX_MARKS + 1u] USBS_SRAM2;
 static uint8_t  s_win[WIN_SECTORS * FAT12_SECTOR_SIZE];
 static uint64_t s_win_written;      /**< One bit per window sector the host wrote. */
 static uint32_t s_settings_size;    /**< SETTINGS.CSV size as first shown. */
-static device_cfg_t s_cfg;          /**< Device ID and card list as shown at attach. */
+static device_cfg_t s_cfg;          /**< Device ID as shown at attach. */
 static app_epoch_t s_shown_epoch;   /**< The clock as printed on the #TIME line. */
 
 static uint8_t  s_map[WIN_SECTORS]; /**< File sector -> window sector. */
@@ -259,18 +305,6 @@ static bool find_mark(uint32_t row, uint32_t *mark)
     return true;
 }
 
-/** True when the host's file carries a card list that differs from the stored one. */
-static bool cards_would_change(const setf_report_t *r)
-{
-    if (!r->has_cards) {
-        return false;
-    }
-    if (!s_cfg.valid) {
-        return r->card_count != 0u;
-    }
-    return r->card_count != s_cfg.card_count || (r->card_count != 0u && r->card_crc != s_cfg.card_crc);
-}
-
 /** True when the host's #MODULE / #LECTURE / #NEWSESSION start a new session. */
 static bool session_would_start(const setf_report_t *r)
 {
@@ -303,25 +337,118 @@ static bool session_would_start(const setf_report_t *r)
 }
 
 /* ------------------------------------------------------------------------ */
-/* Session start                                                            */
+/* The LECTURES folder                                                      */
 /* ------------------------------------------------------------------------ */
 
-/** Card numbers for the rendered #CARDS lines: the stored list, in order. */
-static bool cards_next(void *ctx, uint32_t *id)
+/** Attendance rows before lecture file @p f begins. */
+static uint32_t lfile_begin(uint32_t f)
 {
-    uint32_t *index = (uint32_t *)ctx;
+    uint32_t b = (s_lfiles[f].mark == LF_NONE) ? 0u : s_marks[s_lfiles[f].mark].data_before;
 
-    return cards_read(&s_cfg, (*index)++, id);
+    return (b > s_records) ? s_records : b;
 }
+
+/** Attendance rows in lecture file @p f: up to where the next one begins. */
+static uint32_t lfile_rows(uint32_t f)
+{
+    uint32_t e = ((f + 1u) < s_n_lfiles) ? lfile_begin(f + 1u) : s_records;
+    uint32_t b = lfile_begin(f);
+
+    return (e > b) ? (e - b) : 0u;
+}
+
+static uint32_t lfile_clusters(uint32_t f)
+{
+    return clusters_for(csv_size(lfile_rows(f)));
+}
+
+static uint32_t dir_clusters_for(uint32_t files)
+{
+    uint32_t n = clusters_for((LF_DOT_ENTRIES + (files * LF_ENTRIES)) * 32u);
+
+    return (n == 0u) ? 1u : n;
+}
+
+/**
+ * One file per lecture marker, plus L000 for taps logged before the first
+ * one. They go after everything else and get whatever clusters are left; if
+ * that is not enough (it is, with the shipped log size) the oldest are left
+ * out rather than the newest.
+ */
+static void plan_lecture_files(uint32_t first_cluster, uint32_t budget)
+{
+    uint32_t m, f, need;
+    bool before;
+    bool any_header = false;
+    uint32_t first_header = 0u;
+
+    s_n_lfiles = 0u;
+    for (m = 0u; m < s_n_marks; m++) {
+        if ((s_marks[m].pos & MARK_STRAY) == 0u) {
+            if (!any_header) {
+                any_header = true;
+                first_header = m;
+            }
+        }
+    }
+    before = any_header ? (s_marks[first_header].data_before > 0u) : (s_records > 0u);
+    s_lf_number0 = before ? 0u : 1u;
+    if (before) {
+        s_lfiles[s_n_lfiles].mark = LF_NONE;
+        s_lfiles[s_n_lfiles].cluster = 0u;
+        s_n_lfiles++;
+    }
+    for (m = 0u; m < s_n_marks; m++) {
+        if ((s_marks[m].pos & MARK_STRAY) == 0u) {
+            s_lfiles[s_n_lfiles].mark = (uint16_t)m;
+            s_lfiles[s_n_lfiles].cluster = 0u;
+            s_n_lfiles++;
+        }
+    }
+
+    need = 0u;
+    for (f = 0u; f < s_n_lfiles; f++) {
+        need += lfile_clusters(f);
+    }
+    s_lf_lo = 0u;
+    while (s_lf_lo < s_n_lfiles &&
+           (need + dir_clusters_for(s_n_lfiles - s_lf_lo)) > budget) {
+        need -= lfile_clusters(s_lf_lo);
+        s_lf_lo++;
+    }
+
+    s_dir_cluster = first_cluster;
+    s_dir_clusters = dir_clusters_for(s_n_lfiles - s_lf_lo);
+    if (s_dir_clusters > budget) {
+        s_dir_clusters = 0u;    /* no room even for the folder: leave it out */
+    }
+    s_files_cluster = s_dir_cluster + s_dir_clusters;
+    s_end_cluster = s_files_cluster;
+    for (f = s_lf_lo; f < s_n_lfiles; f++) {
+        s_lfiles[f].cluster = (uint16_t)s_end_cluster;
+        s_end_cluster += lfile_clusters(f);
+    }
+}
+
+uint32_t usbs_lecture_file_count(void)
+{
+    return (s_dir_clusters > 0u) ? (s_n_lfiles - s_lf_lo) : 0u;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Session start                                                            */
+/* ------------------------------------------------------------------------ */
 
 void usbs_begin(const log_store_t *ls, const device_cfg_t *cfg, const app_datetime_t *now)
 {
     const uint32_t device_id = cfg->device_id;
-    uint32_t card_index = 0u;
+    /* Clusters every volume has: STATUS.TXT, the window, LASTCARD.TXT. */
+    const uint32_t fixed = 1u + WIN_SECTORS + 1u;
 
     uint32_t max_attend_clusters;
     uint32_t total_clusters;
     uint32_t size;
+    uint32_t f;
 
     s_log = ls;
     s_cfg = *cfg;
@@ -330,13 +457,16 @@ void usbs_begin(const log_store_t *ls, const device_cfg_t *cfg, const app_dateti
     s_active = true;
     s_win_written = 0u;
     s_check_valid = false;
+    s_card_taps = 0u;
+    s_card_id = 0u;
+    s_card_uid_len = 0u;
     scan_markers(ls);       /* sets s_records, the rows ATTEND.CSV will have */
 
     /* LECTURES.CSV is at most 769 rows of 128 bytes (193 clusters); it is
      * sized first so ATTEND.CSV's clamp below leaves room for it. */
     s_lect_size = csv_lecture_size(s_n_lectures);
     s_lect_clusters = clusters_for(s_lect_size);
-    max_attend_clusters = FAT12_MAX_CLUSTERS - 1u - WIN_SECTORS - s_lect_clusters;
+    max_attend_clusters = FAT12_MAX_CLUSTERS - fixed - s_lect_clusters;
 
     size = csv_size(s_records);
     s_attend_clusters = clusters_for(size);
@@ -351,7 +481,10 @@ void usbs_begin(const log_store_t *ls, const device_cfg_t *cfg, const app_dateti
     s_attend_size = size;
     s_lect_cluster = USBS_ATTEND_CLUSTER + s_attend_clusters;
 
-    total_clusters = 1u + WIN_SECTORS + s_attend_clusters + s_lect_clusters;
+    plan_lecture_files(s_lect_cluster + s_lect_clusters,
+                       FAT12_MAX_CLUSTERS - fixed - s_attend_clusters - s_lect_clusters);
+
+    total_clusters = s_end_cluster - FAT12_FIRST_CLUSTER;
     s_vol.total_sectors = FAT12_DATA_START_LBA + total_clusters;
     s_vol.volume_serial = (device_id != 0u) ? device_id : 0x43415331u;
     fat12_pack_datetime(now, &s_fat_date, &s_fat_time);
@@ -360,8 +493,7 @@ void usbs_begin(const log_store_t *ls, const device_cfg_t *cfg, const app_dateti
     /* SETTINGS.CSV: the current settings as text, in a zeroed window. */
     fill_zero(s_win, sizeof(s_win));
     s_settings_size = setf_render((char *)s_win, sizeof(s_win), now,
-                                  s_cur.module, s_cur.lecture, device_id,
-                                  s_cfg.valid ? s_cfg.card_count : 0u, cards_next, &card_index);
+                                  s_cur.module, s_cur.lecture, device_id);
     if (s_settings_size == 0u) {
         /* Cannot happen with names this short, but a window the file does not
          * fit would be worse than an empty one the host can still replace. */
@@ -374,8 +506,15 @@ void usbs_begin(const log_store_t *ls, const device_cfg_t *cfg, const app_dateti
     if (s_settings_size > 0u) {
         fat12_chain(s_fat, USBS_SETTINGS_CLUSTER, clusters_for(s_settings_size));
     }
+    fat12_chain(s_fat, USBS_LASTCARD_CLUSTER, 1u);
     fat12_chain(s_fat, USBS_ATTEND_CLUSTER, s_attend_clusters);
     fat12_chain(s_fat, s_lect_cluster, s_lect_clusters);
+    if (s_dir_clusters > 0u) {
+        fat12_chain(s_fat, s_dir_cluster, s_dir_clusters);
+        for (f = s_lf_lo; f < s_n_lfiles; f++) {
+            fat12_chain(s_fat, s_lfiles[f].cluster, lfile_clusters(f));
+        }
+    }
 
     fill_zero(s_root, sizeof(s_root));
     fat12_dirent(&s_root[0], k_label, FAT12_ATTR_VOLUME_ID, 0u, 0u, s_fat_date, s_fat_time);
@@ -388,6 +527,21 @@ void usbs_begin(const log_store_t *ls, const device_cfg_t *cfg, const app_dateti
                  (uint16_t)USBS_ATTEND_CLUSTER, s_attend_size, s_fat_date, s_fat_time);
     fat12_dirent(&s_root[128], k_name_lectures, FAT12_ATTR_READ_ONLY | FAT12_ATTR_ARCHIVE,
                  (uint16_t)s_lect_cluster, s_lect_size, s_fat_date, s_fat_time);
+    fat12_dirent(&s_root[160], k_name_lastcard, FAT12_ATTR_READ_ONLY | FAT12_ATTR_ARCHIVE,
+                 (uint16_t)USBS_LASTCARD_CLUSTER, STATUS_BYTES, s_fat_date, s_fat_time);
+    if (s_dir_clusters > 0u) {
+        fat12_dirent(&s_root[192], k_name_lectdir, FAT12_ATTR_DIRECTORY,
+                     (uint16_t)s_dir_cluster, 0u, s_fat_date, s_fat_time);
+    }
+}
+
+void usbs_set_battery(uint32_t mv, uint8_t percent)
+{
+    plat_critical_enter();
+    s_batt_mv = mv;
+    s_batt_percent = percent;
+    s_batt_valid = (mv != 0u);
+    plat_critical_exit();
 }
 
 uint32_t usbs_sector_count(void)
@@ -524,10 +678,6 @@ static void report_clear(setf_report_t *r, setf_status_t status)
     r->clear_log = false;
     r->module[0] = '\0';
     r->lecture[0] = '\0';
-    r->has_cards = false;
-    r->card_count = 0u;
-    r->card_crc = 0u;
-    r->bad_card_line = 0u;
 }
 
 /** Find the host's SETTINGS.CSV, map it, and parse it. */
@@ -618,6 +768,18 @@ static void sb_eol(sb_t *s)
     sb_str(s, "\r\n");
 }
 
+/** Pad to the end of the sector so the file is a clean 512 text bytes. */
+static void sb_finish(sb_t *s)
+{
+    uint32_t i;
+
+    for (i = s->len; i < (STATUS_BYTES - 2u); i++) {
+        s->buf[i] = (uint8_t)' ';
+    }
+    s->buf[STATUS_BYTES - 2u] = (uint8_t)'\r';
+    s->buf[STATUS_BYTES - 1u] = (uint8_t)'\n';
+}
+
 static void sb_datetime(sb_t *s, const app_datetime_t *d)
 {
     sb_pad(s, d->year, 4u); sb_char(s, '-'); sb_pad(s, d->month, 2u);
@@ -633,7 +795,6 @@ static const char *error_text(const setf_report_t *r)
     case SETF_ERR_TOO_LARGE: return "ERROR, the file is too large";
     case SETF_ERR_FILE:      return "ERROR, the file could not be read, copy it again";
     case SETF_ERR_FLASH:     return "ERROR, the device could not store the setting";
-    case SETF_ERR_CARDS:     return "ERROR, the card list is wrong";
     default:                 return "ERROR";
     }
 }
@@ -642,7 +803,6 @@ static void status_sector(uint8_t *out)
 {
     sb_t s;
     app_datetime_t now;
-    uint32_t i;
 
     /* Parsing the host's file is quick, but this runs in the USB interrupt, so
      * redo it only after the host has written something since the last look. */
@@ -662,22 +822,17 @@ static void status_sector(uint8_t *out)
         sb_str(&s, "Device ID    : "); sb_pad(&s, s_device_id, 10u); sb_eol(&s);
     }
     sb_str(&s, "Clock        : "); sb_datetime(&s, &now); sb_eol(&s);
-    sb_str(&s, "Attendance   : "); sb_dec(&s, s_records); sb_str(&s, " records in ATTEND.CSV");
-    sb_eol(&s);
-
-    sb_str(&s, "Cards        : ");
-    if (s_cfg.valid && s_cfg.card_count > 0u) {
-        uint32_t shift;
-
-        sb_dec(&s, s_cfg.card_count); sb_str(&s, " registered (CRC ");
-        for (shift = 32u; shift > 0u; shift -= 4u) {
-            sb_char(&s, "0123456789ABCDEF"[(s_cfg.card_crc >> (shift - 4u)) & 0xFu]);
-        }
-        sb_char(&s, ')');
+    sb_str(&s, "Battery      : ");
+    if (s_batt_valid) {
+        sb_dec(&s, s_batt_percent); sb_str(&s, " % ("); sb_dec(&s, s_batt_mv); sb_str(&s, " mV)");
     } else {
-        sb_str(&s, "none registered");
+        sb_str(&s, "unknown");
     }
     sb_eol(&s);
+    sb_str(&s, "Attendance   : "); sb_dec(&s, s_records); sb_str(&s, " records in ATTEND.CSV");
+    sb_eol(&s);
+    sb_str(&s, "Lectures     : "); sb_dec(&s, usbs_lecture_file_count());
+    sb_str(&s, " files in the LECTURES folder"); sb_eol(&s);
 
     sb_str(&s, "Last tap     : ");
     {
@@ -724,9 +879,6 @@ static void status_sector(uint8_t *out)
             if (a.rep.has_device && a.rep.device_id != s_device_id) {
                 sb_str(&s, "; device ID will change"); any = true;
             }
-            if (cards_would_change(&a.rep)) {
-                sb_str(&s, "; "); sb_dec(&s, a.rep.card_count); sb_str(&s, " cards will be registered"); any = true;
-            }
             if (a.rep.clear_log) {
                 sb_str(&s, "; all records will be deleted"); any = true;
             }
@@ -742,24 +894,73 @@ static void status_sector(uint8_t *out)
         }
     } else {
         sb_str(&s, error_text(&a.rep));
-        if (a.kind == A_SCANNED && a.rep.status == SETF_ERR_CARDS) {
-            if (a.rep.bad_card_line != 0u) {
-                sb_str(&s, " at line "); sb_dec(&s, a.rep.bad_card_line);
-                sb_str(&s, " (numbers only, ascending, no repeats)");
-            } else {
-                sb_str(&s, " (the count after #CARDS does not match)");
-            }
-        }
         sb_str(&s, ". Nothing will be applied");
     }
     sb_eol(&s);
+    sb_finish(&s);
+}
 
-    /* Pad to the end of the sector so the file is a clean 512 text bytes. */
-    for (i = s.len; i < (STATUS_BYTES - 2u); i++) {
-        out[i] = (uint8_t)' ';
+/* ------------------------------------------------------------------------ */
+/* LASTCARD.TXT                                                             */
+/* ------------------------------------------------------------------------ */
+
+void usbs_set_last_card(uint32_t id, const uint8_t *uid, uint8_t uid_len)
+{
+    uint8_t i;
+    uint8_t n = (uid_len > USBS_UID_MAX) ? (uint8_t)USBS_UID_MAX : uid_len;
+
+    plat_critical_enter();
+    s_card_id = id;
+    for (i = 0u; i < n; i++) {
+        s_card_uid[i] = uid[i];
     }
-    out[STATUS_BYTES - 2u] = (uint8_t)'\r';
-    out[STATUS_BYTES - 1u] = (uint8_t)'\n';
+    s_card_uid_len = n;
+    s_card_taps++;
+    plat_critical_exit();
+}
+
+uint32_t usbs_last_card_taps(void)
+{
+    return s_card_taps;
+}
+
+/**
+ * The card read last, for the PC app's "tap to register". Taps counts every
+ * card read this session, so the app notices the same card tapped twice. The
+ * host caches files, so the app reads this one past its cache.
+ */
+static void lastcard_sector(uint8_t *out)
+{
+    sb_t s;
+    uint8_t i;
+
+    s.buf = out;
+    s.len = 0u;
+    fill_zero(out, FAT12_SECTOR_SIZE);
+
+    sb_str(&s, "LAST CARD"); sb_eol(&s);
+    sb_str(&s, "Taps    : "); sb_dec(&s, s_card_taps); sb_eol(&s);
+    sb_str(&s, "Card ID : ");
+    if (s_card_taps == 0u) {
+        sb_str(&s, "none yet");
+    } else {
+        sb_pad(&s, s_card_id, 10u);
+    }
+    sb_eol(&s);
+    sb_str(&s, "UID     : ");
+    if (s_card_taps == 0u || s_card_uid_len == 0u) {
+        sb_char(&s, '-');
+    } else {
+        for (i = 0u; i < s_card_uid_len; i++) {
+            if (i > 0u) {
+                sb_char(&s, ' ');
+            }
+            sb_char(&s, "0123456789ABCDEF"[s_card_uid[i] >> 4]);
+            sb_char(&s, "0123456789ABCDEF"[s_card_uid[i] & 0x0Fu]);
+        }
+    }
+    sb_eol(&s);
+    sb_finish(&s);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -773,7 +974,22 @@ static void status_sector(uint8_t *out)
  * whole number of rows and the first row index is a plain multiply. Row 0 of
  * the file is the CSV header; row n+1 is attendance record n.
  */
-static void read_attend_sector(uint32_t file_sector, uint8_t *buf)
+/** Attendance row @p row_no (markers excluded) from the log. */
+static bool attend_record(uint32_t row_no, app_record_t *rec)
+{
+    uint32_t mark = 0u;
+    bool has_entry = find_mark(row_no, &mark);
+    uint32_t record_index = has_entry ? (row_no + s_marks[mark].cum_after) : row_no;
+
+    return row_no < s_records && s_log != NULL && log_read(s_log, record_index, rec);
+}
+
+/**
+ * Render one sector of a CSV of attendance rows @p first .. @p first + @p rows:
+ * the header, then one row per record. ATTEND.CSV is all of them, a lecture
+ * file its own stretch.
+ */
+static void attend_sector(uint32_t first, uint32_t rows, uint32_t file_sector, uint8_t *buf)
 {
     uint32_t first_row = file_sector * CSV_ROWS_PER_SECTOR;
     uint32_t i;
@@ -781,19 +997,11 @@ static void read_attend_sector(uint32_t file_sector, uint8_t *buf)
     for (i = 0u; i < CSV_ROWS_PER_SECTOR; i++) {
         char *row = (char *)&buf[i * CSV_ROW_BYTES];
         uint32_t global = first_row + i;
+        app_record_t rec;
 
         if (global == 0u) {
             csv_header(row);
-            continue;
-        }
-
-        uint32_t row_no = global - 1u;      /* attendance row, markers excluded */
-        uint32_t mark = 0u;
-        bool has_entry = find_mark(row_no, &mark);
-        uint32_t record_index = has_entry ? (row_no + s_marks[mark].cum_after) : row_no;
-        app_record_t rec;
-
-        if (row_no < s_records && s_log != NULL && log_read(s_log, record_index, &rec)) {
+        } else if ((global - 1u) < rows && attend_record(first + global - 1u, &rec)) {
             csv_row(&rec, row);
         } else {
             /* Past end of file. The host should not be looking here, but a
@@ -801,6 +1009,134 @@ static void read_attend_sector(uint32_t file_sector, uint8_t *buf)
             fill_zero((uint8_t *)row, CSV_ROW_BYTES);
         }
     }
+}
+
+/**
+ * Render one sector of ATTEND.CSV.
+ *
+ * CSV_ROW_BYTES divides FAT12_SECTOR_SIZE exactly, so a sector is always a
+ * whole number of rows and the first row index is a plain multiply. Row 0 of
+ * the file is the CSV header; row n+1 is attendance record n.
+ */
+static void read_attend_sector(uint32_t file_sector, uint8_t *buf)
+{
+    attend_sector(0u, s_records, file_sector, buf);
+}
+
+/* ---- The LECTURES folder ---- */
+
+/** When lecture file @p f starts: its marker, or for L000 its first tap. */
+static app_epoch_t lfile_stamp(uint32_t f)
+{
+    app_record_t r;
+
+    if (s_lfiles[f].mark != LF_NONE) {
+        if (s_log != NULL && log_read(s_log, MARK_POS(&s_marks[s_lfiles[f].mark]), &r)) {
+            return r.stamp;
+        }
+    } else if (attend_record(0u, &r)) {
+        return r.stamp;
+    }
+    return 0u;
+}
+
+/** "L001_2026-10-07_14-30.csv" and its 8.3 alias "L001    CSV". */
+static void lfile_names(uint32_t f, char lfn[LF_NAME_LEN], char sfn[11])
+{
+    static const char k_alias_pad[7] = { ' ',' ',' ',' ','C','S','V' };
+    uint32_t number = s_lf_number0 + f;
+    app_datetime_t t;
+    uint8_t i;
+
+    time_from_epoch(lfile_stamp(f), &t);
+    lfn[0] = 'L';
+    csv_put_padded(&lfn[1], number, 3u);
+    lfn[4] = '_';
+    csv_put_padded(&lfn[5], t.year, 4u);
+    lfn[9] = '-';
+    csv_put_padded(&lfn[10], t.month, 2u);
+    lfn[12] = '-';
+    csv_put_padded(&lfn[13], t.day, 2u);
+    lfn[15] = '_';
+    csv_put_padded(&lfn[16], t.hour, 2u);
+    lfn[18] = '-';
+    csv_put_padded(&lfn[19], t.minute, 2u);
+    lfn[21] = '.';
+    lfn[22] = 'c';
+    lfn[23] = 's';
+    lfn[24] = 'v';
+
+    for (i = 0u; i < 4u; i++) {
+        sfn[i] = lfn[i];
+    }
+    for (i = 0u; i < 7u; i++) {
+        sfn[4u + i] = k_alias_pad[i];
+    }
+}
+
+/**
+ * One sector of the LECTURES directory: ".", "..", then for every file two
+ * long-name entries and its 8.3 entry, dated when the lecture started.
+ */
+static void read_dir_sector(uint32_t dir_sector, uint8_t *buf)
+{
+    const uint32_t per_sector = FAT12_SECTOR_SIZE / 32u;
+    const uint32_t shown = s_n_lfiles - s_lf_lo;
+    uint32_t i;
+
+    fill_zero(buf, FAT12_SECTOR_SIZE);
+    for (i = 0u; i < per_sector; i++) {
+        uint8_t *d = &buf[i * 32u];
+        uint32_t e = (dir_sector * per_sector) + i;
+
+        if (e == 0u) {
+            fat12_dirent(d, k_name_dot, FAT12_ATTR_DIRECTORY, (uint16_t)s_dir_cluster, 0u,
+                         s_fat_date, s_fat_time);
+        } else if (e == 1u) {
+            fat12_dirent(d, k_name_dotdot, FAT12_ATTR_DIRECTORY, 0u, 0u, s_fat_date, s_fat_time);
+        } else if (((e - LF_DOT_ENTRIES) / LF_ENTRIES) < shown) {
+            uint32_t f = s_lf_lo + ((e - LF_DOT_ENTRIES) / LF_ENTRIES);
+            uint32_t part = (e - LF_DOT_ENTRIES) % LF_ENTRIES;
+            char lfn[LF_NAME_LEN];
+            char sfn[11];
+
+            lfile_names(f, lfn, sfn);
+            if (part < (LF_ENTRIES - 1u)) {
+                /* Highest long-name piece first. */
+                fat12_lfn_entry(d, (uint8_t)((LF_ENTRIES - 1u) - part), fat12_sfn_checksum(sfn),
+                                lfn, LF_NAME_LEN);
+            } else {
+                app_datetime_t t;
+                uint16_t date, time;
+
+                time_from_epoch(lfile_stamp(f), &t);
+                fat12_pack_datetime(&t, &date, &time);
+                fat12_dirent(d, sfn, FAT12_ATTR_READ_ONLY | FAT12_ATTR_ARCHIVE,
+                             s_lfiles[f].cluster, csv_size(lfile_rows(f)), date, time);
+            }
+        } else {
+            break;      /* zeros: the end of the directory */
+        }
+    }
+}
+
+/** One sector of a lecture file: find which file holds @p cluster. */
+static void read_lfile_sector(uint32_t cluster, uint8_t *buf)
+{
+    uint32_t lo = s_lf_lo;
+    uint32_t hi = s_n_lfiles;
+
+    /* The last file starting at or before the cluster. */
+    while ((hi - lo) > 1u) {
+        uint32_t mid = lo + ((hi - lo) / 2u);
+
+        if (s_lfiles[mid].cluster <= cluster) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    attend_sector(lfile_begin(lo), lfile_rows(lo), cluster - s_lfiles[lo].cluster, buf);
 }
 
 /**
@@ -875,11 +1211,17 @@ static bool read_one(uint32_t lba, uint8_t *buf)
     } else if (cluster <= WIN_LAST) {
         copy(buf, &s_win[(cluster - USBS_SETTINGS_CLUSTER) * FAT12_SECTOR_SIZE],
              FAT12_SECTOR_SIZE);
+    } else if (cluster == USBS_LASTCARD_CLUSTER) {
+        lastcard_sector(buf);
     } else if (cluster < s_lect_cluster) {
         s_data_read = true;
         read_attend_sector(cluster - USBS_ATTEND_CLUSTER, buf);
-    } else {
+    } else if (cluster < s_dir_cluster) {
         read_lectures_sector(cluster - s_lect_cluster, buf);
+    } else if (cluster < s_files_cluster) {
+        read_dir_sector(cluster - s_dir_cluster, buf);
+    } else {
+        read_lfile_sector(cluster, buf);
     }
     return true;
 }
@@ -938,8 +1280,13 @@ static bool write_one(uint32_t lba, const uint8_t *buf)
         s_win_written |= (uint64_t)1u << w;
         return true;
     }
+    if (cluster >= s_dir_cluster && cluster < s_files_cluster) {
+        /* The LECTURES directory is generated afresh on every read. A host
+         * that writes it back is only updating an access date: drop it. */
+        return true;
+    }
 
-    return false;       /* ATTEND.CSV, LECTURES.CSV and STATUS.TXT are read-only */
+    return false;       /* every file but SETTINGS.CSV is read-only */
 }
 
 bool usbs_write(uint32_t lba, const uint8_t *buf, uint32_t count)
@@ -962,11 +1309,6 @@ bool usbs_write(uint32_t lba, const uint8_t *buf, uint32_t count)
 /* Session end                                                              */
 /* ------------------------------------------------------------------------ */
 
-static bool feed_cards(void *ctx, uint32_t *id)
-{
-    return setf_cards_next((setf_card_iter_t *)ctx, id);
-}
-
 void usbs_end(usbs_result_t *result)
 {
     analysis_t a;
@@ -975,8 +1317,6 @@ void usbs_end(usbs_result_t *result)
     result->time_set = false;
     result->device_set = false;
     result->device_id = 0u;
-    result->cards_set = false;
-    result->card_count = 0u;
     result->session_start = false;
     result->clear_log = false;
     result->module[0] = '\0';
@@ -999,37 +1339,18 @@ void usbs_end(usbs_result_t *result)
         return;
     }
 
-    /* What needs flash: a new device ID and/or a new card list. Do it first,
-     * so a failure leaves the clock and the lecture untouched too. */
-    {
-        const uint32_t new_id = (a.rep.has_device && a.rep.device_id != s_device_id) ? a.rep.device_id : s_device_id;
-        const bool id_changes = (new_id != s_device_id);
-        const bool cards_change = cards_would_change(&a.rep);
-        device_cfg_t cfg;
+    /* What needs flash: a new device ID. Do it first, so a failure leaves
+     * the clock and the lecture untouched too. */
+    if (a.rep.has_device && a.rep.device_id != s_device_id) {
+        device_cfg_t cfg = s_cfg;
 
-        if (cards_change) {
-            setf_card_iter_t it;
-
-            setf_cards_begin(&it, get_byte, NULL, s_cur_size);
-            if (!devcfg_set_cards(&cfg, new_id, a.rep.card_count, a.rep.card_crc, feed_cards, &it)) {
-                result->rep.status = SETF_ERR_FLASH;
-                result->outcome = USBS_IMPORT_FAILED;
-                return;
-            }
-            result->cards_set = true;
-            result->card_count = a.rep.card_count;
-        } else if (id_changes) {
-            cfg = s_cfg;
-            if (!devcfg_set_device_id(&cfg, new_id)) {
-                result->rep.status = SETF_ERR_FLASH;
-                result->outcome = USBS_IMPORT_FAILED;
-                return;
-            }
+        if (!devcfg_set_device_id(&cfg, a.rep.device_id)) {
+            result->rep.status = SETF_ERR_FLASH;
+            result->outcome = USBS_IMPORT_FAILED;
+            return;
         }
-        if (cards_change || id_changes) {
-            result->device_set = true;
-            result->device_id = new_id;
-        }
+        result->device_set = true;
+        result->device_id = a.rep.device_id;
     }
 
     result->outcome = USBS_IMPORT_OK;

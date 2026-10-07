@@ -9,12 +9,11 @@
  *
  * Region map (128 kB, 64 pages of 2 kB on STM32L432KC):
  *
- *   page  0        config: the device ID, and the size and CRC of the card list
- *   pages 1 .. 8   the registered card list: sorted 32-bit card IDs, nothing
- *                  else, searched in place. No names: who a card belongs to is
- *                  the PC's business. The device uses the list only to tell a
- *                  known card (green) from an unknown one (red) when it is
- *                  tapped; every tap is recorded either way.
+ *   page  0        config: the device ID
+ *   pages 1 .. 8   unused. Firmware up to 2026-10 kept a registered card list
+ *                  here; the device now keeps none (the PC app decides who is
+ *                  registered) and ignores whatever an older version left.
+ *                  Left out of the log so the log's pages stay where they are.
  *   pages 9 .. 63  attendance log, 254 records + header + footer per page
  */
 #ifndef NV_LAYOUT_H
@@ -37,18 +36,10 @@ typedef struct {
     uint32_t magic;
     uint32_t format_version;
     uint32_t device_id;       /**< Printed on the enclosure; the volume serial. */
-    uint32_t card_count;      /**< Cards in the list; 0 = no list, every card counts as known. */
-    uint32_t card_crc32;      /**< CRC-32/IEEE over the list's bytes (little endian). */
+    uint32_t old_card_count;  /**< Was the card list's size; written 0, ignored. */
+    uint32_t old_card_crc32;  /**< Was the card list's CRC; written 0, ignored. */
     uint32_t reserved[3];
 } nv_config_t;               /* 32 bytes = 4 double-words */
-
-/* ---- Registered card list ----------------------------------------------- */
-
-#define NV_CARDS_FIRST_PAGE 1u
-#define NV_CARDS_PAGES      8u
-#define NV_CARDS_OFFSET     (NV_PAGE_SIZE * NV_CARDS_FIRST_PAGE)
-/** Flash would hold 4096; the USB text window limits what the host can send. */
-#define NV_CARDS_MAX        1000u
 
 /* ---- Attendance log ----------------------------------------------------- */
 
@@ -87,7 +78,7 @@ typedef struct {
  *   header  {0xFFFFFFF0 | n, start stamp}    n = text records that follow (0..15)
  *   text    {0xFFFFFFD0,     4 name bytes}   "module NUL lecture NUL", NUL padded
  *
- * Card IDs from NV_ID_RESERVED_MIN up can never be enrolled, so a marker is
+ * Card IDs from NV_ID_RESERVED_MIN up are never logged as taps, so a marker is
  * recognisable from its first word alone, scanning in either direction.
  */
 #define NV_ID_RESERVED_MIN  0xFFFFFF00u

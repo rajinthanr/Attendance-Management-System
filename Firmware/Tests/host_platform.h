@@ -12,7 +12,9 @@ extern uint8_t  host_flash[];
 extern uint32_t host_write_failures;  /* set to N to fail the Nth write */
 extern uint32_t host_out_mask;        /* last plat_out_write() */
 
-extern uint32_t host_ms;              /* plat_uptime_ms(); plat_sleep_idle() adds 1 */
+extern uint32_t host_ms;              /* plat_uptime_ms(); plat_sleep_until() adds 1 */
+extern uint32_t host_sleep_wake;      /* the last plat_sleep_until()'s wake time */
+extern bool     host_sleep_deep;      /* ...and whether it allowed Stop 2 */
 extern bool     host_button;
 extern bool     host_vbus;
 extern bool     host_usb_configured;
@@ -28,6 +30,11 @@ extern bool     host_nfc_init_ok;
 extern bool     host_nfc_field;
 extern bool     host_nfc_powered_down;
 extern bool     host_nfc_collision;   /* REQA answers with a collision */
+extern bool     host_nfc_wakeup;      /* the reader is in its wake-up mode */
+extern uint8_t  host_nfc_wake_ref;    /* the reference it was armed with */
+extern uint8_t  host_nfc_wake_delta;  /* ...and the window */
+extern int      host_nfc_wu_offset;   /* wake-up reading minus Measure amplitude */
+extern uint32_t host_nfc_misuse;      /* commands sent in wake-up mode */
 extern bool     host_card_present;
 
 extern uint32_t host_flash_writes;

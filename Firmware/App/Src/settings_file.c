@@ -5,7 +5,6 @@
 #include "settings_file.h"
 #include "csv.h"
 #include "timeutil.h"
-#include "device_cfg.h"
 
 #define ID_ERASED    0xFFFFFFFFu
 #define KEY_MAX      24u    /* longest directive keyword kept */
@@ -70,11 +69,9 @@ static void out_value(out_t *o, const char *s)
 }
 
 uint32_t setf_render(char *buf, uint32_t cap, const app_datetime_t *now,
-                     const char *module, const char *lecture, uint32_t device_id,
-                     uint32_t n_cards, setf_card_next_fn next, void *next_ctx)
+                     const char *module, const char *lecture, uint32_t device_id)
 {
     out_t o = { buf, cap, 0u, false };
-    uint32_t i;
 
     out_str(&o, "# Edit these lines, then eject the drive (or press the button). "
                 "Add #NEWSESSION,1 to start another lecture with the same names.");
@@ -105,23 +102,6 @@ uint32_t setf_render(char *buf, uint32_t cap, const app_datetime_t *now,
         out_str(&o, "#DEVICE,");
         out_padded(&o, device_id, 10u);
         out_eol(&o);
-    }
-
-    if (next != NULL) {
-        out_str(&o, "# Registered cards: numbers only, ascending, as many as #CARDS says.");
-        out_eol(&o);
-        out_str(&o, "#CARDS,");
-        out_padded(&o, n_cards, 4u);
-        out_eol(&o);
-        for (i = 0u; i < n_cards; i++) {
-            uint32_t id;
-
-            if (!next(next_ctx, &id)) {
-                return 0u;
-            }
-            out_padded(&o, id, 10u);
-            out_eol(&o);
-        }
     }
 
     return o.overflow ? 0u : o.len;
@@ -429,53 +409,10 @@ static bool parse_time(const char *s, uint32_t len, app_datetime_t *dt)
 /* Scan                                                                     */
 /* ------------------------------------------------------------------------ */
 
-/** A card line's number: field 0, non-zero and below the marker range. */
-static bool card_line_id(const line_t *l, uint32_t *id)
-{
-    return parse_u32(l->key, l->key_len, id) && *id != 0u && *id < NV_ID_RESERVED_MIN;
-}
-
-void setf_cards_begin(setf_card_iter_t *it, setf_get_fn get, void *ctx, uint32_t size)
-{
-    it->get = get;
-    it->ctx = ctx;
-    it->size = size;
-    it->pos = 0u;
-    it->in_cards = false;
-}
-
-bool setf_cards_next(setf_card_iter_t *it, uint32_t *id)
-{
-    line_t l;
-
-    while (read_line(it->get, it->ctx, it->size, &it->pos, &l)) {
-        if (!l.any_text) {
-            continue;
-        }
-        if (l.directive) {
-            if (keyword(&l, "#CARDS")) {
-                it->in_cards = true;
-            }
-            continue;
-        }
-        if (it->in_cards && card_line_id(&l, id)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 void setf_scan(setf_get_fn get, void *ctx, uint32_t size, setf_report_t *rep)
 {
     uint32_t pos = 0u;
     line_t l;
-    uint32_t line_no = 0u;
-    bool in_cards = false;
-    bool cards_twice = false;
-    uint32_t declared = 0u;
-    uint32_t count = 0u;
-    uint32_t last = 0u;
-    uint32_t crc = CARDS_CRC_INIT;
 
     rep->status = SETF_OK;
     rep->has_time = false;
@@ -488,10 +425,6 @@ void setf_scan(setf_get_fn get, void *ctx, uint32_t size, setf_report_t *rep)
     rep->clear_log = false;
     rep->module[0] = '\0';
     rep->lecture[0] = '\0';
-    rep->has_cards = false;
-    rep->card_count = 0u;
-    rep->card_crc = 0u;
-    rep->bad_card_line = 0u;
 
     if (size == 0u) {
         rep->status = SETF_ERR_EMPTY;
@@ -503,26 +436,8 @@ void setf_scan(setf_get_fn get, void *ctx, uint32_t size, setf_report_t *rep)
     }
 
     while (read_line(get, ctx, size, &pos, &l)) {
-        line_no++;
-        if (!l.any_text) {
-            continue;
-        }
-        if (!l.directive) {
-            /* Outside a card list anything that is not a directive is ignored.
-             * Inside one, every line must be a number, in order. */
-            if (in_cards) {
-                uint32_t id;
-
-                if (!card_line_id(&l, &id) || (count > 0u && id <= last) || count >= NV_CARDS_MAX) {
-                    if (rep->bad_card_line == 0u) {
-                        rep->bad_card_line = line_no;
-                    }
-                } else {
-                    count++;
-                    last = id;
-                    crc = cards_crc_update(crc, id);
-                }
-            }
+        /* Only directives mean anything; every other line is ignored. */
+        if (!l.any_text || !l.directive) {
             continue;
         }
 
@@ -554,22 +469,7 @@ void setf_scan(setf_get_fn get, void *ctx, uint32_t size, setf_report_t *rep)
             rep->new_session = true;
         } else if (keyword(&l, "#CLEARLOG")) {
             rep->clear_log = true;
-        } else if (keyword(&l, "#CARDS")) {
-            if (in_cards || !parse_u32(l.val, l.val_len, &declared) || declared > NV_CARDS_MAX) {
-                cards_twice = true;             /* a second #CARDS, or a count that makes no sense */
-            }
-            in_cards = true;
         }
-        /* Any other '#' line is a comment. */
-    }
-
-    if (in_cards) {
-        if (cards_twice || rep->bad_card_line != 0u || count != declared) {
-            rep->status = SETF_ERR_CARDS;
-        } else {
-            rep->has_cards = true;
-            rep->card_count = count;
-            rep->card_crc = cards_crc_final(crc);
-        }
+        /* Any other '#' line is a comment, an old app's #CARDS included. */
     }
 }

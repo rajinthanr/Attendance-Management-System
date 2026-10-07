@@ -14,6 +14,8 @@ void btn_init(button_t *b, bool pressed_now, uint32_t now_ms)
     b->off_sent = false;
     b->raw_changed_ms = now_ms;
     b->down_ms = now_ms;
+    b->tapped = false;
+    b->tap_ms = now_ms;
 }
 
 button_event_t btn_update(button_t *b, bool raw_pressed, uint32_t now_ms)
@@ -36,7 +38,17 @@ button_event_t btn_update(button_t *b, bool raw_pressed, uint32_t now_ms)
 
             b->locked = false;
             if (!ignored) {
-                return b->hold_sent ? BTN_LONG : BTN_SHORT;
+                if (b->hold_sent) {
+                    b->tapped = false;
+                    return BTN_LONG;
+                }
+                if (b->tapped && (uint32_t)(now_ms - b->tap_ms) <= APP_BTN_DOUBLE_MS) {
+                    b->tapped = false;
+                    return BTN_DOUBLE;
+                }
+                b->tapped = true;
+                b->tap_ms = now_ms;
+                return BTN_SHORT;
             }
         }
     }
@@ -60,4 +72,23 @@ button_event_t btn_update(button_t *b, bool raw_pressed, uint32_t now_ms)
 bool btn_is_down(const button_t *b)
 {
     return b->down;
+}
+
+bool btn_next_ms(const button_t *b, uint32_t *at_ms)
+{
+    if (b->raw != b->down) {
+        *at_ms = b->raw_changed_ms + APP_BTN_DEBOUNCE_MS;
+        return true;
+    }
+    if (b->down && !b->locked) {
+        if (!b->hold_sent) {
+            *at_ms = b->down_ms + APP_BTN_LONG_MS;
+            return true;
+        }
+        if (!b->off_sent) {
+            *at_ms = b->down_ms + APP_BTN_OFF_MS;
+            return true;
+        }
+    }
+    return false;
 }

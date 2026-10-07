@@ -49,7 +49,8 @@ typedef enum {
     APP_SCAN_NONE = 0,      /**< No card presented yet. */
     APP_SCAN_ACCEPTED,      /**< Recorded. */
     APP_SCAN_DUPLICATE,     /**< Same ID inside the dedup window. */
-    APP_SCAN_UNKNOWN,       /**< Valid card, not on the student list. */
+    APP_SCAN_ENROLLED,      /**< Read while the drive was up: shown to the PC
+                                 in LASTCARD.TXT, not logged. */
     APP_SCAN_STORAGE_FULL   /**< Valid card, but the log has no room left. */
 } app_scan_result_t;
 
