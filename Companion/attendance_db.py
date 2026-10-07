@@ -18,15 +18,13 @@ import datetime as _dt
 import io
 import re
 import sqlite3
-import struct
 import threading
-import zlib
 
 SCHEMA_VERSION = 1
 CARD_MAX = 0xFFFFFEFF          # card numbers from 0xFFFFFF00 up are reserved by the firmware
-DEVICE_CARDS_MAX = 1000        # registered cards the device can hold
 MODULE_BYTES = 24              # what the device can hold of a module code ...
 LECTURE_BYTES = 32             # ... and of a lecture title
+LECTURE_ZERO_TITLE = "Lecture 0"  # taps the device logged before its first lecture (its L000 file)
 MAX_LECTURE_SECONDS = 6 * 3600  # a lecture with no end lasts at most this long (the device's own look-back)
 UNASSIGNED_MODULE = "UNASSIGNED"  # where a lecture the device started with no module name is filed
 
@@ -126,7 +124,7 @@ def fmt_card(card_id):
 
 
 # --------------------------------------------------------------------------
-# ATTEND.CSV, LECTURES.CSV and STATUS.TXT as the device writes them
+# ATTEND.CSV, LECTURES.CSV, STATUS.TXT and LASTCARD.TXT as the device writes them
 # --------------------------------------------------------------------------
 
 _ATTEND_ROW = re.compile(r"^\s*(\d{4})-(\d\d)-(\d\d)\s*,\s*(\d\d):(\d\d):(\d\d)\s*,\s*(\d+)")
@@ -183,11 +181,12 @@ def parse_lectures(text):
 
 
 def parse_status(text):
-    """STATUS.TXT as a dict. 'ok' is false for any other file."""
+    """STATUS.TXT as a dict. 'ok' is false for any other file. Lines this firmware does not write (Battery, on
+    older units) are None."""
     raw = str(text or "").lstrip("\ufeff")
     out = {"ok": raw.lstrip().startswith("ATTENDANCE LOGGER"), "device_id": 0, "clock": None, "records": 0,
            "last_card": None, "last_tap": None, "module": "", "lecture": "", "since": None, "has_lecture": False,
-           "pending": False, "error": "", "note": "", "cards": None, "cards_crc": None}
+           "pending": False, "error": "", "note": "", "battery_percent": None, "battery_mv": None}
     for line in raw.splitlines():
         m = re.match(r"^([A-Za-z][A-Za-z.\s]*?)\s*:\s*(.*?)\s*$", line)
         if not m:
@@ -216,13 +215,12 @@ def parse_status(text):
                     if mm.group(3):
                         out["since"] = parse_ts(mm.group(3))
                     out["has_lecture"] = True
-        elif key == "cards":
-            mm = re.match(r"(\d+) registered(?: \(CRC ([0-9A-Fa-f]{8})\))?", val)
+        elif key == "battery":
+            # "87 % (3950 mV)", or "unknown" before the first reading
+            mm = re.match(r"(\d+)\s*%\s*\((\d+)\s*mV\)", val)
             if mm:
-                out["cards"] = int(mm.group(1))
-                out["cards_crc"] = int(mm.group(2), 16) if mm.group(2) else None
-            elif val.lower().startswith("none"):
-                out["cards"], out["cards_crc"] = 0, 0
+                out["battery_percent"] = min(100, int(mm.group(1)))
+                out["battery_mv"] = int(mm.group(2))
         elif key == "settings.csv":
             out["note"] = val
             if val.upper().startswith("ERROR"):
@@ -232,20 +230,41 @@ def parse_status(text):
     return out
 
 
-def cards_crc(card_ids):
-    """The CRC-32 the device keeps for a card list: the numbers, ascending, as little-endian 32-bit words."""
-    ids = sorted(set(card_ids))
-    return zlib.crc32(b"".join(struct.pack("<I", i) for i in ids)) & 0xFFFFFFFF
+def parse_last_card(text):
+    """
+    LASTCARD.TXT, the card last tapped while the device is plugged in (the reader stays on then, and such a tap
+    is not attendance), as {"taps", "card_id", "uid"}; None for any other file. "taps" counts the cards read
+    since this USB session began (0 at every plug-in), so a new tap is that number going up, even for the
+    same card twice. card_id is None until a card is read; uid is the hex text ("0A F4 1A 9E") or None.
+    """
+    raw = str(text or "").lstrip("\ufeff").split("\x00", 1)[0]
+    if not raw.lstrip().startswith("LAST CARD"):
+        return None
+    out = {"taps": None, "card_id": None, "uid": None}
+    for line in raw.splitlines():
+        m = re.match(r"^\s*(Taps|Card ID|UID)\s*:\s*(.*?)\s*$", line)
+        if not m:
+            continue
+        key, val = m.group(1), m.group(2)
+        if key == "Taps" and val.isdigit():
+            out["taps"] = int(val)
+        elif key == "Card ID" and val.isdigit() and 0 < int(val) <= 0xFFFFFFFF:
+            out["card_id"] = int(val)
+        elif key == "UID" and re.fullmatch(r"[0-9A-Fa-f]{2}( [0-9A-Fa-f]{2})*", val):
+            out["uid"] = val.upper()
+    if out["taps"] is None:
+        return None
+    return out
 
 
-def build_settings(now=None, module=None, lecture=None, new_session=False, device_id=0, echo_time=None, cards=None,
+def build_settings(now=None, module=None, lecture=None, new_session=False, device_id=0, echo_time=None,
                    clear_log=False):
     """
     The SETTINGS.CSV to put on the device. now: a naive epoch to set the clock to (None leaves
     the clock alone); echo_time: the #TIME text the device showed, repeated so that the clock is not touched.
     module / lecture None leaves the line out; "" clears it.
-    cards: the registered card numbers the device should compare taps with (None leaves its list alone,
-    an empty list clears it). The device wants them ascending, without repeats, and at most DEVICE_CARDS_MAX.
+    The device keeps no list of registered cards (it records every card, and this app decides who is
+    registered), so no #CARDS list is ever written.
     clear_log: the device deletes every record it holds (only once they are safely in this database).
     """
     lines = ['# Edit these lines, then eject the drive (or press the button). Add #NEWSESSION,1 to start another lecture with the same names.']
@@ -263,15 +282,6 @@ def build_settings(now=None, module=None, lecture=None, new_session=False, devic
         lines.append("#CLEARLOG,1")
     if device_id:
         lines.append("#DEVICE,%010d" % device_id)
-    if cards is not None:
-        ids = sorted(set(int(c) for c in cards))
-        if len(ids) > DEVICE_CARDS_MAX:
-            raise DbError("The device can hold %d cards and there are %d students. Delete some, or archive "
-                          "the ones who have left." % (DEVICE_CARDS_MAX, len(ids)))
-        if ids and (ids[0] < 1 or ids[-1] > CARD_MAX):
-            raise DbError("A card number is outside what the device accepts")
-        lines.append("#CARDS,%d" % len(ids))
-        lines.extend("%010d" % i for i in ids)
     return "\r\n".join(lines) + "\r\n"
 
 
@@ -458,10 +468,31 @@ class Database:
                 raise DbError("No such student")
             self.con.execute("DELETE FROM students WHERE card_id=?", (card_id,))
 
-    def card_ids(self):
-        """Every registered card number, ascending: what the device is given."""
-        with self.lock:
-            return [r[0] for r in self.con.execute("SELECT card_id FROM students ORDER BY card_id")]
+    def change_card(self, old, new):
+        """
+        Give the student holding card @old the card @new instead (a lost card replaced, or a number typed wrong):
+        their enrolments go with them, and so do the old card's taps, so their attendance so far stays theirs.
+        Refused when @new already belongs to someone. Returns the student.
+        """
+        new = parse_card(new)
+        with self.lock, self._tx():
+            s = self.con.execute("SELECT * FROM students WHERE card_id=?", (old,)).fetchone()
+            if not s:
+                raise DbError("No such student")
+            if new == old:
+                return self.get_student(old)
+            owner = self.con.execute("SELECT name FROM students WHERE card_id=?", (new,)).fetchone()
+            if owner:
+                raise DbError("Card %s already belongs to %s" % (fmt_card(new), owner[0]))
+            self.con.execute(
+                "INSERT INTO students(card_id,student_no,name,department,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                (new, s["student_no"], s["name"], s["department"], s["created_at"], self._now()))
+            self.con.execute("UPDATE enrollments SET card_id=? WHERE card_id=?", (new, old))
+            # A tap both cards made in the same second (never, in practice) would collide; the new card's is kept.
+            self.con.execute("UPDATE OR IGNORE taps SET card_id=? WHERE card_id=?", (new, old))
+            self.con.execute("DELETE FROM taps WHERE card_id=?", (old,))
+            self.con.execute("DELETE FROM students WHERE card_id=?", (old,))
+        return self.get_student(new)
 
     def list_students(self, q=None, module=None, department=None):
         sql = ("SELECT s.*, (SELECT COUNT(*) FROM taps t WHERE t.card_id=s.card_id) AS taps, "
@@ -830,6 +861,41 @@ class Database:
                             self.con.execute("UPDATE lectures SET end_ts=? WHERE id=?", (end, lec["id"]))
         return added
 
+    def take_lecture_zero(self, taps, first_lecture_ts):
+        """
+        Taps the device logged before its first lecture (its L000 file) belong to no lecture window, so no
+        screen would show them. File them under "Lecture 0" (UNASSIGNED_MODULE), from the first of them to
+        the device's first lecture start (or, with no lecture on the device, to just after the last tap,
+        stretched as more come). Made once per start time: one deleted here is not made again. Taps
+        already inside a lecture window here (one started from this app) are left where they are.
+        @taps: [(ts, card_id)] as read from ATTEND.CSV. Returns the lecture when one was made or stretched.
+        """
+        before = [t for t, _ in taps if first_lecture_ts is None or t < first_lecture_ts]
+        if not before:
+            return None
+        start = min(before)
+        end = first_lecture_ts if first_lecture_ts is not None else max(before) + 1
+        with self.lock, self._tx():
+            made = self.con.execute("SELECT value FROM kv WHERE key='lecture0_start'").fetchone()
+            if made is not None and int(made[0]) == start:
+                r = self.con.execute("SELECT * FROM lectures WHERE module_code=? AND title=? AND start_ts=?",
+                                     (UNASSIGNED_MODULE, LECTURE_ZERO_TITLE, start)).fetchone()
+                if r is None or r["end_ts"] is None or r["end_ts"] >= end:
+                    return None         # deleted here on purpose, or already covers them
+                self.con.execute("UPDATE lectures SET end_ts=? WHERE id=?", (end, r["id"]))
+                return dict(r, end_ts=end)
+            for l in self._windows():
+                if l["start_ts"] <= start < l["end"]:
+                    return None
+            self.con.execute("INSERT OR IGNORE INTO modules(code,title,department) VALUES(?,?,'')",
+                             (UNASSIGNED_MODULE, "Started on the device with no module: edit the lecture to move it"))
+            self._ensure_module(UNASSIGNED_MODULE)
+            cur = self.con.execute(
+                "INSERT INTO lectures(module_code,title,start_ts,end_ts,confirmed,created_at) VALUES(?,?,?,?,1,?)",
+                (UNASSIGNED_MODULE, LECTURE_ZERO_TITLE, start, end, self._now()))
+            self.con.execute("INSERT OR REPLACE INTO kv(key,value) VALUES('lecture0_start',?)", (str(start),))
+            return {"id": cur.lastrowid, "start_ts": start, "end_ts": end}
+
     def current_lecture(self):
         """The lecture that is still open, if any."""
         with self.lock:
@@ -1043,6 +1109,22 @@ class Database:
             for l in m["lectures"]:
                 w.writerow([m["code"], l["date"], l["title"], "Yes" if l["attended"] else "No", l["time"]])
         return buf.getvalue()
+
+    def clear_attendance(self):
+        """
+        Delete every lecture and every tap, and the record of reading them, in one go; the students, modules,
+        departments and enrolments stay. A fresh start: the mark of the newest lecture adopted from the device
+        goes too, so the next read adopts every lecture the device still holds, with its taps. Returns
+        {lectures, taps}: how many were deleted.
+        """
+        with self.lock, self._tx():
+            n = {"lectures": self.con.execute("SELECT COUNT(*) FROM lectures").fetchone()[0],
+                 "taps": self.con.execute("SELECT COUNT(*) FROM taps").fetchone()[0]}
+            self.con.execute("DELETE FROM taps")
+            self.con.execute("DELETE FROM lectures")
+            self.con.execute("DELETE FROM sync_log")
+            self.con.execute("DELETE FROM kv WHERE key IN ('adopted_since','lecture0_start')")
+        return n
 
     # ------------------------------------------------------------- misc
     def counts(self):

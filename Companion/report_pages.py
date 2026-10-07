@@ -2,10 +2,15 @@
 Printable report pages, and PDFs made from them.
 
 Each report is one standalone HTML page with its own style sheet, so it prints
-the same from the browser's Print command as it does as a PDF. PDFs are made by
-asking the PC's own Chrome or Edge to print the page: they draw every script
-correctly (Sinhala and Tamil names included), which a hand-made PDF with the
-built-in fonts could not.
+the same from the browser's Print command as it does as a PDF. Those PDFs are
+made by asking the PC's own Chrome or Edge to print the page: they draw every
+script correctly (Sinhala and Tamil names included), which a hand-made PDF with
+the built-in fonts could not.
+
+Plain tables (a lecture's list, every tap, the students) are written as PDF
+here, with nothing but the standard library: table_pdf(). That needs no browser,
+so saving a PDF never fails for the want of one; its built-in Helvetica covers
+Western European text only, and other letters print as "?".
 """
 import html
 import os
@@ -14,6 +19,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
+import zlib
 
 import attendance_db as D
 
@@ -208,3 +215,208 @@ def render_pdf(page_html, timeout=40):
             return f.read()
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------
+# PDF, written here: a ruled table in the built-in Helvetica, no browser needed
+# --------------------------------------------------------------------------
+
+PAGE_W, PAGE_H = 595.28, 841.89      # A4 portrait, in points
+_MARGIN = 42.0
+_ROW_H = 16.0
+_TEXT_PT = 9.0
+_PAD = 4.0                           # space between a column's rule and its text
+# Advance widths (1/1000 em) of the printable ASCII characters, from Adobe's metrics for the two fonts.
+_W_REGULAR = [int(x) for x in (
+    "278 278 355 556 556 889 667 191 333 333 389 584 278 333 278 278 556 556 556 556 556 556 556 556 556 556 278 278 "
+    "584 584 584 556 1015 667 667 722 722 667 611 778 722 278 500 667 556 833 722 778 667 778 722 667 611 722 667 944 "
+    "667 667 611 278 278 278 469 556 333 556 556 500 556 556 278 556 556 222 222 500 222 833 556 556 556 556 333 500 "
+    "278 556 500 722 500 500 500 334 260 334 584").split()]
+_W_BOLD = [int(x) for x in (
+    "278 333 474 556 556 889 722 238 333 333 389 584 278 333 278 278 556 556 556 556 556 556 556 556 556 556 333 333 "
+    "584 584 584 611 975 722 722 722 722 667 611 778 722 278 556 722 611 833 722 778 667 778 722 667 611 722 667 944 "
+    "667 667 611 333 278 333 584 556 333 556 611 556 611 556 333 611 611 278 278 556 278 889 611 611 611 611 389 556 "
+    "333 611 556 778 556 556 500 389 280 389 584").split()]
+_ELLIPSIS = "\u2026"                  # in WinAnsi (0x85), 1000 units wide in both fonts
+
+
+def pdf_text(s):
+    """@s as text the built-in fonts can print (WinAnsi): accents outside it are dropped where that leaves a
+    letter (o with a double acute -> o), control characters become spaces, and anything else becomes '?'."""
+    out = []
+    for ch in str("" if s is None else s):
+        if ch < " " or ch == "\x7f":
+            out.append(" ")
+            continue
+        try:
+            ch.encode("cp1252")
+            out.append(ch)
+            continue
+        except UnicodeEncodeError:
+            pass
+        base = "".join(c for c in unicodedata.normalize("NFKD", ch) if not unicodedata.combining(c))
+        try:
+            base.encode("cp1252")
+            out.append(base or "?")
+        except UnicodeEncodeError:
+            out.append("?")
+    return "".join(out)
+
+
+def _char_w(ch, bold):
+    o = ord(ch)
+    if 32 <= o <= 126:
+        return (_W_BOLD if bold else _W_REGULAR)[o - 32]
+    if ch == _ELLIPSIS:
+        return 1000
+    base = unicodedata.normalize("NFKD", ch)[:1]          # an accented letter is as wide as its letter
+    if base and 32 <= ord(base) <= 126:
+        return (_W_BOLD if bold else _W_REGULAR)[ord(base) - 32]
+    return 667                                           # the wider side of the rest, so text is never cut too late
+
+
+def text_width(s, size, bold=False):
+    """Width in points of @s (already pdf_text()) in Helvetica at @size."""
+    return sum(_char_w(c, bold) for c in s) * size / 1000.0
+
+
+def fit_text(s, width, size, bold=False):
+    """@s cut to fit @width points, ending in an ellipsis when it was cut."""
+    s = pdf_text(s)
+    if text_width(s, size, bold) <= width:
+        return s
+    room = width - text_width(_ELLIPSIS, size, bold)
+    out, used = "", 0.0
+    for c in s:
+        w = _char_w(c, bold) * size / 1000.0
+        if used + w > room:
+            break
+        out += c
+        used += w
+    return out.rstrip() + _ELLIPSIS if room > 0 else ""
+
+
+def _pdf_str(s):
+    """A PDF literal string of WinAnsi text."""
+    b = s.encode("cp1252", errors="replace")
+    return b"(" + b.replace(b"\\", b"\\\\").replace(b"(", b"\\(").replace(b")", b"\\)") + b")"
+
+
+def _col_widths(headers, rows, avail, size):
+    """Each column's width: what its text needs (headers in bold), shared out to fill @avail; a column that
+    would need more than its share gives way, and its text is cut to fit."""
+    n = len(headers)
+    need = [text_width(pdf_text(h), size, True) for h in headers]
+    for r in rows[:2000]:                                # enough rows to judge by, without measuring them all
+        for i in range(n):
+            v = r[i] if i < len(r) else ""
+            need[i] = max(need[i], text_width(pdf_text(v), size))
+    need = [min(w + 2 * _PAD + 2, avail * 0.4) for w in need]      # no column may crowd out all the others
+    if sum(need) <= avail:
+        extra = (avail - sum(need)) / n
+        return [w + extra for w in need]
+    # Too wide: narrow columns keep what they need, the wide ones share the rest.
+    fair, fixed, wide = avail / n, [], []
+    for i, w in enumerate(need):
+        (fixed if w <= fair else wide).append(i)
+    left = avail - sum(need[i] for i in fixed)
+    total_wide = sum(need[i] for i in wide) or 1.0
+    out = list(need)
+    for i in wide:
+        out[i] = max(fair * 0.5, left * need[i] / total_wide)
+    scale = avail / sum(out)
+    return [w * scale for w in out]
+
+
+def table_pdf(title, subtitle, headers, rows, generated=None):
+    """
+    A PDF (bytes, PDF 1.4) of a ruled table: A4 portrait, the built-in Helvetica, @title and @subtitle and
+    a "Generated" line on the first page, the header row repeated at the top of every page, and page numbers.
+    @rows is a list of lists of cells (any values, shown as text); a cell too wide for its column is cut.
+    Text outside Western European letters prints as "?" (pdf_text()).
+    """
+    generated = generated or time.strftime("%Y-%m-%d %H:%M")
+    headers = [str(h) for h in headers]
+    rows = [["" if c is None else str(c) for c in r] for r in rows]
+    left, right = _MARGIN, PAGE_W - _MARGIN
+    widths = _col_widths(headers, rows, right - left, _TEXT_PT)
+    bottom = _MARGIN + 18                                # the page number sits below this
+    pages, ops = [], []
+
+    def text(x, y, s, size, bold=False, grey=0.0):
+        ops.append(b"BT /%s %.1f Tf %.3f g %.2f %.2f Td %s Tj ET" % (b"F2" if bold else b"F1", size, grey, x, y, _pdf_str(s)))
+
+    def rule(y, grey=0.75, width=0.5):
+        ops.append(b"%.3f G %.2f w %.2f %.2f m %.2f %.2f l S" % (grey, width, left, y, right, y))
+
+    def header_row(y):
+        ops.append(b"0.925 g %.2f %.2f %.2f %.2f re f" % (left, y - _ROW_H, right - left, _ROW_H))
+        x = left
+        for h, w in zip(headers, widths):
+            text(x + _PAD, y - _ROW_H + 5, fit_text(h, w - 2 * _PAD, _TEXT_PT, True), _TEXT_PT, True, 0.15)
+            x += w
+        rule(y - _ROW_H, 0.4, 0.8)
+        return y - _ROW_H
+
+    def new_page(first):
+        y = PAGE_H - _MARGIN
+        if first:
+            text(left, y - 16, fit_text(title, right - left, 16, True), 16, True)
+            y -= 24
+            if subtitle:
+                text(left, y - 10, fit_text(subtitle, right - left, 10), 10, False, 0.3)
+                y -= 15
+            text(left, y - 9, fit_text("Generated %s by Attendance Logger" % generated, right - left, 8.5), 8.5,
+                 False, 0.45)
+            y -= 22
+        else:
+            text(left, y - 10, fit_text(title, right - left, 10, True), 10, True, 0.3)
+            y -= 20
+        return header_row(y)
+
+    y = new_page(True)
+    if not rows:
+        text(left + _PAD, y - _ROW_H + 5, "None", _TEXT_PT, False, 0.45)
+    for r in rows:
+        if y - _ROW_H < bottom:
+            pages.append(ops)
+            ops = []
+            y = new_page(False)
+        x = left
+        for i, w in enumerate(widths):
+            v = r[i] if i < len(r) else ""
+            if v:
+                text(x + _PAD, y - _ROW_H + 5, fit_text(v, w - 2 * _PAD, _TEXT_PT), _TEXT_PT)
+            x += w
+        y -= _ROW_H
+        rule(y)
+    pages.append(ops)
+
+    # Objects: 1 catalog, 2 page tree, 3 and 4 the fonts, 5 the document info, then a page and its contents each.
+    n = len(pages)
+    objs = [b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [%s] /Count %d >>" % (b" ".join(b"%d 0 R" % (6 + 2 * i) for i in range(n)), n),
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
+            b"<< /Title <%s> /Producer (Attendance Logger) /CreationDate (D:%s) >>"      # the title in UTF-16
+            % (("\ufeff" + str(title)).encode("utf-16-be").hex().upper().encode(), time.strftime("%Y%m%d%H%M%S").encode())]
+    for i, page_ops in enumerate(pages):
+        ops = page_ops[:]
+        foot = fit_text(title, (right - left) * 0.7, 8)
+        ops.append(b"BT /F1 8 Tf 0.45 g %.2f %.2f Td %s Tj ET" % (left, _MARGIN, _pdf_str(foot)))
+        label = "Page %d of %d" % (i + 1, n)
+        ops.append(b"BT /F1 8 Tf 0.45 g %.2f %.2f Td %s Tj ET" % (right - text_width(label, 8), _MARGIN, _pdf_str(label)))
+        data = zlib.compress(b"\n".join(ops))
+        objs.append(b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %.2f %.2f] /Resources << /Font << /F1 3 0 R "
+                    b"/F2 4 0 R >> >> /Contents %d 0 R >>" % (PAGE_W, PAGE_H, 7 + 2 * i))
+        objs.append(b"<< /Length %d /Filter /FlateDecode >>\nstream\n%s\nendstream" % (len(data), data))
+    out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    offsets = []
+    for i, body in enumerate(objs):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n%s\nendobj\n" % (i + 1, body)
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f\r\n" % (len(objs) + 1)
+    out += b"".join(b"%010d 00000 n\r\n" % o for o in offsets)
+    out += b"trailer\n<< /Size %d /Root 1 0 R /Info 5 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, xref)
+    return bytes(out)
