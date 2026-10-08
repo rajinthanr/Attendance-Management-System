@@ -7,6 +7,11 @@ Writes an HTML page; print it to PDF with headless Chrome:
     google-chrome --headless=new --no-pdf-header-footer \
         --print-to-pdf=Power_Estimation_Report.pdf file:///tmp/report.html
 
+It also writes clock_tree.svg next to this script. To refresh clock_tree.png:
+
+    google-chrome --headless=new --window-size=680,560 --force-device-scale-factor=3 \
+        --default-background-color=ffffffff --screenshot=clock_tree.png file://$PWD/clock_tree.svg
+
 Every figure is computed from the parameters below, so replace an estimate
 with a measured value and regenerate. The currents were measured on the
 bench on 8 October 2026 with the power-test build (`make power-test`,
@@ -581,6 +586,207 @@ def svg_false_timeline(p):
     return svg_timeline(-6, 16, lanes, list(range(-5, 16, 5)), lambda t: f"{t}", "ms", markers, lane_h=32)
 
 
+# STM32CubeMX clock-configuration styling, taken from CubeMX 6.15 itself: the palette in
+# com.st.microxplorer.customgui.STGraphicChart and the fonts in STFonts (STM32CubeMX.jar),
+# the wire and multiplexer colours from db/plugins/clock/images/STM32L43.png.
+MX = dict(
+    wire="#4f5251",        # DarkGray: wires, arrowheads, field text
+    mux="#ecf0f3", mux_line="#90989e",   # multiplexer fill / LightGray outline
+    source="#39a9dc",      # LightBlue: clock source boxes, key-field border, constraint text
+    label="#03234b",       # DarkBlue: signal labels
+    field_line="#b9c4ca",  # VeryLightGray: plain frequency fields
+    disabled="#e2e6e9",    # VeryLightGray90percent: disabled source
+    selected="#49b170",    # LightGreen: selected multiplexer input
+    group="#d9e9f6",       # LightBlueForGenericBoxes: PLL-style block background
+    group_text="#596e8f",
+)
+MX_FONT = "font-family:Arial,'Liberation Sans',Helvetica,sans-serif"   # Java 'Dialog' as CubeMX renders it
+
+
+def svg_clock_tree():
+    """The clock tree as the firmware programs it, in STM32CubeMX's Clock Configuration style."""
+    W, H = 680, 560
+    c = MX
+    out = [f'<svg viewBox="0 0 {W} {H}" class="chart" role="img">',
+           '<defs><marker id="mxarr" viewBox="0 0 8 6" refX="8" refY="3" markerWidth="7" markerHeight="5" orient="auto">'
+           f'<path d="M0,0 L8,3 L0,6 z" fill="{c["wire"]}"/></marker></defs>',
+           f'<rect x="1" y="1" width="{W-2}" height="{H-2}" fill="#ffffff" stroke="{c["wire"]}" stroke-width="1.5"/>']
+
+    def txt(x, y, text, size=9, fill=None, anchor="start", bold=False):
+        out.append(f'<text x="{x}" y="{y}" text-anchor="{anchor}" style="{MX_FONT};font-size:{size}px;'
+                   f'fill:{fill or c["label"]};{"font-weight:700;" if bold else ""}">{text}</text>')
+
+    def wire(pts, arrow=True):
+        d = "M" + " L".join(f"{x},{y}" for x, y in pts)
+        m = ' marker-end="url(#mxarr)"' if arrow else ""
+        out.append(f'<path d="{d}" fill="none" stroke="{c["wire"]}" stroke-width="1"{m}/>')
+
+    def dot(x, y):
+        out.append(f'<circle cx="{x}" cy="{y}" r="2.2" fill="{c["wire"]}"/>')
+
+    def source(x, y, label, value, unit, on=True, w=48, note=None):
+        """CubeMX source: signal label above, value box (LightBlue when in use), unit to the right."""
+        txt(x, y - 5, label)
+        fill = c["source"] if on else c["disabled"]
+        out.append(f'<rect x="{x}" y="{y}" width="{w}" height="18" fill="{fill}" stroke="{c["wire"]}" stroke-width="0.8"/>')
+        txt(x + w / 2, y + 12.5, value, 10.5, c["wire"] if on else "#9aa3ad", "middle", bold=True)
+        txt(x + w + 4, y + 12.5, unit)
+        if note:
+            txt(x, y + 29, note, 8.5, c["source"])
+        return (x + w + 22, y + 9)
+
+    def mux(x, y, w, h, title, inputs, sel):
+        out.append(f'<polygon points="{x},{y} {x+w},{y+10} {x+w},{y+h-10} {x},{y+h}" fill="{c["mux"]}" '
+                   f'stroke="{c["mux_line"]}" stroke-width="1"/>')
+        txt(x, y - 5, title, 9)
+        ys = []
+        for k, name in enumerate(inputs):
+            yy = y + 12 + k * (h - 24) / max(len(inputs) - 1, 1)
+            ys.append(yy)
+            on = k == sel
+            out.append(f'<circle cx="{x+8}" cy="{yy}" r="3.6" fill="#ffffff" stroke="{c["selected"] if on else c["mux_line"]}" '
+                       f'stroke-width="{1.4 if on else 0.9}"/>')
+            if on:
+                out.append(f'<circle cx="{x+8}" cy="{yy}" r="1.7" fill="{c["wire"]}"/>')
+            txt(x + 14, yy + 3, name, 8.5, c["label"] if on else "#7d878f")
+        return ys, (x + w, y + h / 2)
+
+    def presc(x, y, text, w=40):
+        """CubeMX prescaler: a combo box."""
+        out.append(f'<rect x="{x}" y="{y-9}" width="{w}" height="18" fill="#ffffff" stroke="{c["mux_line"]}" stroke-width="0.9"/>')
+        out.append(f'<line x1="{x+w-12}" y1="{y-9}" x2="{x+w-12}" y2="{y+9}" stroke="{c["mux_line"]}" stroke-width="0.9"/>')
+        out.append(f'<path d="M{x+w-9},{y-2} l3,4 l3,-4 z" fill="{c["wire"]}"/>')
+        txt(x + (w - 12) / 2, y + 3.5, text, 9.5, c["wire"], "middle")
+
+    def field(x, y, value, label="", w=50, key=False, note=None):
+        """CubeMX frequency field: label above, white box; key fields get the LightBlue border."""
+        if label:
+            txt(x + w / 2, y - 12, label, 9, anchor="middle")
+        stroke = c["source"] if key else c["field_line"]
+        sw = 2 if key else 1
+        out.append(f'<rect x="{x}" y="{y-9}" width="{w}" height="18" fill="#ffffff" stroke="{stroke}" stroke-width="{sw}"/>')
+        txt(x + w / 2, y + 3.8, value, 10.5, c["wire"], "middle")
+        if note:
+            txt(x + w / 2, y + 20, note, 8.5, c["source"], "middle")
+
+    # Chip edge with the oscillator pins, as in CubeMX's drawing
+    wire([(16, 24), (16, 382)], arrow=False)
+    for py in (52, 60, 258, 266):
+        out.append(f'<rect x="13" y="{py-3}" width="6" height="6" fill="#ffffff" stroke="{c["wire"]}" stroke-width="0.9"/>')
+
+    # Sources
+    lse = source(30, 47, "LSE", "32.768", "KHz", note="crystal Y2")
+    lsi = source(30, 104, "LSI RC", "32", "KHz", on=False)
+    msi = source(30, 162, "MSI RC", "4000", "KHz", note="[24000 in USB]")
+    hsi = source(30, 214, "HSI RC", "16", "MHz", on=False)
+    hse = source(30, 254, "HSE", "-", "MHz", on=False, note="not fitted")
+    h48 = source(30, 318, "HSI48 RC", "48", "MHz", note="trimmed by the CRS")
+    wire([(19, 56), (30, 56)], arrow=False)
+
+    # RTC
+    ys, o = mux(150, 34, 52, 58, "RTC Clock Mux", ["LSE", "LSI", "HSE/32"], 0)
+    wire([lse, (136, lse[1]), (136, ys[0]), (150, ys[0])])
+    wire([lsi, (130, lsi[1]), (130, ys[1]), (150, ys[1])])
+    wire([hse, (142, hse[1]), (142, ys[2]), (150, ys[2])])
+    field(216, o[1], "32.768", "To RTC (KHz)")
+    wire([o, (216, o[1])])
+    presc(280, o[1], "/128", 44)
+    presc(334, o[1], "/256", 44)
+    wire([(266, o[1]), (280, o[1])])
+    wire([(324, o[1]), (334, o[1])])
+    wire([(378, o[1]), (398, o[1])])
+    txt(402, o[1] + 3.5, "1 Hz: calendar, time stamps of every record")
+
+    # LPTIM1 (LPTIM2 is also on LSE but unused)
+    ys, o = mux(150, 116, 52, 48, "LPTIM1 Clock Mux", ["PCLK1", "LSI", "LSE"], 2)
+    dot(136, lse[1])
+    wire([(136, lse[1]), (136, ys[2]), (150, ys[2])])
+    dot(130, lsi[1])
+    wire([(130, lsi[1]), (130, ys[1]), (150, ys[1])])
+    presc(216, o[1], "/8", 40)
+    txt(236, o[1] - 13, "LPTIM PRESC", 9, anchor="middle")
+    wire([o, (216, o[1])])
+    field(290, o[1], "4.096", "To LPTIM1 (KHz)")
+    wire([(256, o[1]), (290, o[1])])
+    wire([(340, o[1]), (398, o[1])])
+    txt(402, o[1], "Stop 2 wake-up; uptime across sleeps")
+    txt(402, o[1] + 11, "16-bit: 16 s wrap, sleeps up to 15 s, 244 us steps", 8.5, c["source"])
+    txt(216, o[1] + 24, "LPTIM2: also on LSE, unused", 8.5, "#7d878f")
+
+    # System clock
+    ys, o = mux(150, 186, 52, 68, "System Clock Mux", ["MSI", "HSI", "HSE", "PLLCLK"], 0)
+    wire([msi, (140, msi[1]), (140, ys[0]), (150, ys[0])])
+    wire([hsi, (144, hsi[1]), (144, ys[1]), (150, ys[1])])
+    dot(142, hse[1])
+    wire([(142, hse[1]), (146, hse[1]), (146, ys[2]), (150, ys[2])])
+    out.append(f'<rect x="150" y="266" width="100" height="20" fill="{c["group"]}"/>')
+    txt(200, 279, "PLL, PLLSAI1: off", 8.5, c["group_text"], "middle")
+    field(216, o[1], "4 [24]", "SYSCLK (MHz)", w=52)
+    wire([o, (216, o[1])])
+    presc(292, o[1], "/1", 40)
+    txt(312, o[1] - 13, "AHB Prescaler", 9, anchor="middle")
+    wire([(268, o[1]), (292, o[1])])
+    field(354, o[1], "4 [24]", "HCLK (MHz)", w=52, key=True, note="80 MHz max")
+    wire([(332, o[1]), (354, o[1])])
+    bus = 414
+    rows = [(172, "/1", "4 [24]", "SysTick: /4000 = 1 kHz"),
+            (196, "FCLK", "4 [24]", "CPU; flash 0 WS [1 WS]"),
+            (220, "/1", "4 [24]", "APB1: USB, CRS, PWR"),
+            (244, "/1", "4 [24]", "APB2: SPI1 /8 = 0.5 [3] MHz"),
+            (268, "/4", "1 [6]", "ADC (synchronous)")]
+    wire([(406, o[1]), (bus, o[1])], arrow=False)
+    wire([(bus, rows[0][0]), (bus, rows[-1][0])], arrow=False)
+    dot(bus, o[1])
+    for y, ptext, fval, label in rows:
+        wire([(bus, y), (422, y)])
+        if ptext == "FCLK":
+            txt(440, y + 3.5, "FCLK", 9, anchor="middle")
+        else:
+            presc(422, y, ptext, 36)
+        wire([(458, y), (466, y)])
+        field(466, y, fval, w=44)
+        wire([(510, y), (520, y)])
+        txt(524, y + 3.5, label)
+
+    # 48 MHz
+    ys, o = mux(150, 304, 62, 64, "CLK48 Clock Mux", ["HSI48", "PLLSAI1Q", "PLLQ", "MSI"], 0)
+    wire([h48, (140, h48[1]), (140, ys[0]), (150, ys[0])])
+    field(232, o[1], "48", "To USB (MHz)")
+    wire([o, (232, o[1])])
+    wire([(282, o[1]), (398, o[1])])
+    txt(402, o[1] + 3.5, "USB FS device, crystal-less; USB sessions only")
+
+    # ST25R3916, in a CubeMX block
+    gy = 396
+    out.append(f'<rect x="12" y="{gy}" width="{W-24}" height="142" fill="{c["group"]}"/>')
+    txt(22, gy + 16, "ST25R3916 (its own clock tree; the MCU only supplies SCK)", 10, c["label"], bold=True)
+    x1 = source(26, gy + 36, "Crystal Y1", "27.12", "MHz", w=50)
+    presc(150, gy + 45, "/2", 40)
+    wire([x1, (150, gy + 45)])
+    field(206, gy + 45, "13.56", "fc (MHz)")
+    wire([(190, gy + 45), (206, gy + 45)])
+    wire([(256, gy + 45), (276, gy + 45)])
+    txt(280, gy + 42, "RF carrier; ISO 14443A at fc/128 = 106 kbit/s")
+    txt(280, gy + 54, "no-response timer in 64/fc steps (212 = 1.0 ms)", 8.5, c["source"])
+    x2 = source(26, gy + 92, "RC oscillator", "32", "kHz", w=50)
+    presc(150, gy + 101, "WUT", 40)
+    wire([x2, (150, gy + 101)])
+    field(206, gy + 101, "100", "Period (ms)")
+    wire([(190, gy + 101), (206, gy + 101)])
+    wire([(256, gy + 101), (276, gy + 101)])
+    txt(280, gy + 98, "wake-up timer: one antenna measurement per period")
+    txt(280, gy + 110, "the crystal starts for each (~0.6 ms), then stops", 8.5, c["source"])
+    # SCK from SPI1 (APB2 row) down the right edge
+    dot(668, 244)
+    wire([(660, 244), (668, 244), (668, gy + 128), (560, gy + 128)])
+    txt(554, gy + 131, "SCK from SPI1: 0.5 [3] MHz", 9, anchor="end")
+    # Key
+    txt(22, H - 8, "Values in [brackets]: USB session (MSI range 9, flash 1 wait state, HSI48 on). Blue boxes: clock sources in use; "
+        "grey: off. Radio button: selected multiplexer input.", 8.5, "#7d878f")
+    out.append("</svg>")
+    return "\n".join(out)
+
+
 def table(head, rows, cls="", align=None):
     align = align or ["l"] + ["r"] * (len(head) - 1)
     h = "".join(f'<th class="{a}">{c}</th>' for c, a in zip(head, align))
@@ -764,8 +970,81 @@ clock_rows = [
      "0.64 ms per channel gives the 1.7 MOhm divider time to settle; the ADC is powered only for each sample."),
     ("Reader crystal", "<b>27.12 MHz</b>", "2 x 13.56 MHz carrier",
      "Fixed by ISO 14443 (fc = 13.56 MHz). Runs only in Ready mode or for each wake-up measurement."),
+    ("Reader wake-up timer", "ST25R3916 <b>32 kHz RC</b>", "100 ms period",
+     "Keeps the 27.12 MHz crystal off between measurements, so the reader idles at about 3 uA between them. 100 ms is the slowest "
+     "check a person will not notice; each check costs about 10 uC, so the period sets most of the idle current."),
+    ("SysTick", "HCLK / 4000 = <b>1 kHz</b>", "Stopped in Stop 2",
+     "HAL's millisecond tick, the firmware's only time base while awake. LPTIM1 adds the time slept in Stop 2, so timers never see a gap."),
+    ("Calendar", "LSE / 128 / 256 = <b>1 Hz</b>", "RTC, backup domain",
+     "ST's lowest-power split of the prescalers. Keeps the date and time through Standby and resets for the attendance time stamps."),
+    ("Clocks left off", "PLL, PLLSAI1, HSI16, LSI", "-",
+     "No load needs more than 24 MHz, so there is no PLL to start or lock (15-40 us, plus current). There is no HSE crystal. LSI would only "
+     "be needed by a watchdog, which is not enabled. MSI is not locked to the LSE (MSI PLL mode off): nothing timed depends on it."),
 ]
 clock_table = table(["Clock domain", "Selection", "Setting", "Why"], clock_rows, align=["l", "l", "l", "l"], cls="clock")
+
+# Wake-up, settling and sleep-entry times
+mcu_time_rows = [
+    ("Sleep to Run", "6 CPU cycles", "6 cycles", "1.5 us at 4 MHz; USB sessions and short waits"),
+    ("Stop 2 to Run, MSI 4 MHz, from flash", "12.06 us", "13.16 us", "Every idle wake-up (datasheet lists 4 MHz at Range 2)"),
+    ("Stop 2 to Run, MSI 48 MHz, Range 1", "8.02 us", "9.24 us", "For comparison: a faster wake clock saves 4 us"),
+    ("Standby to Run, MSI 4 MHz", "19.14 us", "25.8 us", "Power button; then reset and start-up code"),
+    ("Shutdown to Run", "261.5 us", "315.7 us", "Not used: Shutdown would lose the RTC"),
+    ("Reset after power-on (BOR)", "250 us", "400 us", "Battery connected"),
+    ("Regulator Range 2 to Range 1", "20 us", "40 us", "Not used: the firmware stays in Range 1"),
+    ("MSI start-up, ranges 4-7", "3 us", "6 us", "MSI restarts on every Stop 2 exit"),
+    ("MSI PLL-mode settling to 1 %", "-", "2.5 ms", "Not used (MSI PLL mode off)"),
+    ("HSI48 start-up", "2.5 us", "6 us", "USB attach; the CRS then trims it on each 1 ms SOF"),
+    ("PLL lock", "15 us", "40 us", "Not used (PLL off)"),
+    ("LSE start-up", "2 s", "-", "Crystal dependent; only when the battery is connected (firmware allows 5 s)"),
+    ("ADC regulator start-up", "-", "20 us", "Every battery sample"),
+    ("ADC calibration", "116 ADC cycles", "-", "116 us at 1 MHz, every sample"),
+    ("VREFINT buffer start", "8 us", "12 us", "Every sample; then at least 4 us sampling"),
+    ("Flash: one 64-bit record", "81.69 us", "90.76 us", "Each log record"),
+    ("Flash: page erase (2 kB)", "22.02 ms", "24.47 ms", "Once per 254 records, and #CLEARLOG"),
+]
+mcu_time_table = table(["STM32L432 (DS11451 Rev 4)", "Typ", "Max", "Where it applies"], mcu_time_rows,
+                       align=["l", "r", "r", "l"], cls="assump")
+
+nfc_time_rows = [
+    ("Power-down to Ready: crystal start-up", "crystal dependent", "-", "I_osc at 750 mVpp; firmware waits up to 50 ms"),
+    ("Wake-up mode: field per measurement", "~20 us", "-", f"Measured: {M['wu_spike_us']:.0f} us above 40 mA"),
+    ("Measure amplitude command", "-", "25 us", "Each re-arm"),
+    ("Adjust regulators command", "-", "5 ms", "Start-up and a supply-mode change"),
+    ("ISO 14443 guard, field on to first command", "5 ms", "-", "Firmware: 5 ms + 1 tick (APP_NFC_FIELD_GUARD_MS)"),
+    ("No-response timer", "212 x 64/fc = 1.0 ms", "-", "Ends an empty poll (BSP_NFC_NRT_64FC)"),
+    ("Supply: power-down", "2 uA", "20 uA", "Switched off"),
+    ("Supply: wake-up mode (logic + RC)", "2.8 uA", "20 uA", "Between measurements; 3.6 uA in the datasheet's example"),
+    ("Supply: Ready", "4.5 mA", "7.5 mA", f"Measured {T['nfc_ready']} mA"),
+]
+nfc_time_table = table(["ST25R3916 (DS12484 Rev 8)", "Typ", "Max", "Note"], nfc_time_rows, align=["l", "r", "r", "l"], cls="assump")
+
+meas_time_rows = [
+    ("Wake-up measurement: oscillator start to field", f"{M['wu_osc_to_field']*1000:.0f} us", "TEK00005"),
+    ("Wake-up measurement: whole event", f"{M['wu_event_ms']*1000:.0f} us", "TEK00005"),
+    ("Measurement to the reader's oscillator restarting", f"{M['fw_meas_to_osc']:.2f} / {M['tap_meas_to_osc']:.2f} ms",
+     "MCU leaves Stop 2 (~13 us), runs the loop, reads the reader over SPI at 500 kHz"),
+    ("Oscillator restart to field on", f"{M['fw_osc_to_field']:.2f} / {M['tap_osc_to_field']:.2f} ms", "Crystal settles (I_osc), next loop pass"),
+    ("Card seen to field on", f"{M['fw_meas_to_field']:.2f} / {M['tap_meas_to_field']:.2f} ms", "False wake-up / card tap"),
+    ("Field on for a read (guard, REQA..SELECT)", f"{M['read_field_ms']:.2f} ms", "TEK00006"),
+    ("Field on for an empty poll", f"{M['empty_field_ms']:.2f} ms", "TEK00007; see the note below"),
+    ("Field off to re-arm measurement", f"{M['off_to_rearm']*1000:.0f} us", "TEK00007"),
+    ("Re-arm to the next wake-up measurement", f"{M['rearm_to_next']:.1f} ms", "TEK00007: the 100 ms wake-up timer"),
+    ("Buzz (motor on)", f"{M['buzz_end']-M['buzz_start']:.1f} ms", "TEK00006; 60 ms set"),
+]
+meas_time_table = table(["Measured on the board", "Time", "Source / what happens"], meas_time_rows, align=["l", "r", "l"], cls="assump")
+
+fw_time_rows = [
+    ("Enter Stop 2", "<100 us", "Mask interrupts, re-check the queue and inputs, write the LPTIM1 compare (synchronises in ~3 LSE cycles, 92 us), WFI"),
+    ("Shortest / longest Stop 2 sleep", "4 ms / 15 s", "Shorter waits use Sleep mode; the loop asks for at most 5 s (BSP_STOP2_MIN/MAX_MS, APP_SLEEP_MAX_MS)"),
+    ("Enter Standby", "~1 s", "Power-off pattern (700 ms), flush to flash (up to 24.5 ms with an erase), reader power-down, wait for the button release"),
+    ("Button debounce / hold / off / double press", "30 ms / 2 s / 5 s / 600 ms", "APP_BTN_*"),
+    ("VBUS debounce; USB enumeration timeout", "50 ms; 5 s", "No enumeration in 5 s means a charger"),
+    ("Battery divider settling", "1.2 s", "C3 through R7 || R8 = 171 ms time constant (APP_BATT_SETTLE_MS)"),
+    ("Flush RAM records", "5 s after the last tap", "Or at 80 % full, on USB attach, before power-off"),
+    ("Inactivity switch-off", "3 min", "Suspended while VBUS is present"),
+]
+fw_time_table = table(["Firmware", "Time", "What it covers"], fw_time_rows, align=["l", "r", "l"], cls="assump")
 
 def wu_saving(period_ms):
     """Idle saving from a longer wake-up period: the measured average scales with the measurement rate."""
@@ -981,6 +1260,12 @@ the multimeter's 185 uA and 4 false wake-ups a minute. The RF field current is f
 
 <h2><span class="num">2</span>Clock frequency selection</h2>
 <p>Each clock was picked for the job it does. The scanning clock matters most, because it runs on every wake-up.</p>
+<div class="figure"><div class="title">Clock tree</div>
+{svg_clock_tree()}
+<div class="cap">Drawn with STM32CubeMX's own clock-configuration palette and font, but with the values the firmware programs at run time
+(<code>bsp_clock.c</code>, <code>bsp_time.c</code>, <code>bsp_nfc.c</code>), which override the <code>.ioc</code>. Values in brackets apply during a
+USB session (MSI range 9, flash 1 wait state, HSI48 on). The LSE branch keeps running in Stop 2 and Standby; everything fed from SYSCLK stops
+in Stop 2. SPI1's divider is the peripheral's own baud-rate prescaler, not an RCC one.</div></div>
 {clock_table}
 
 <h3>Why 4 MHz and not faster</h3>
@@ -1104,6 +1389,27 @@ The reader stays in Ready mode while the pattern plays, so the motor never runs 
 <div class="cap">A measurement strays past the window with no card there (noise, a hand, drift). One empty poll, {T['empty_poll_ms']:.1f} ms of field
 at {T['field_empty']:.0f} mA (measured), and the reader is armed again with a fresh reference: {ev_t['false_wake']/1000:.2f} mC each,
 against about 5.5 mC with the three empty polls used before.</div></div>
+
+<h3>Wake-up, settling and sleep-entry times</h3>
+<p>What each transition costs in time. The datasheet figures bound the hardware; the measured ones are what the firmware does on this
+board, so the gaps between them are the firmware's own work (loop passes, SPI traffic at 500 kHz, waiting for the reader's crystal).</p>
+<div class="figure"><div class="title">From a wake-up measurement to the field: a false wake-up, zoomed in (TEK00007)</div>
+{svg_measured(M['fw'], -3.4, 0.6, 250, [-3, -2.5, -2, -1.5, -1, -0.5, 0, 0.5], height=200, notes=[
+    (-2.98, 50, "oscillator", "middle"), (-2.45, 110, "measurement: IRQ", "middle"),
+    (-1.85, 30, "MCU awake, SPI", "middle"), (-1.08, 45, "reader oscillator", "middle"), (-0.5, 30, "settling", "middle"),
+    (0.05, 240, "field on", "start")])}
+<div class="cap">The measurement that strays raises the IRQ. The MCU leaves Stop 2 in about 13 us, but takes {M['fw_meas_to_osc']:.1f} ms to read the
+reader's status and restart its oscillator over SPI at 500 kHz, and another {M['fw_osc_to_field']:.1f} ms passes before the field comes on.
+A faster SPI clock (section 10) would shorten the first part.</div></div>
+{meas_time_table}
+{mcu_time_table}
+{nfc_time_table}
+{fw_time_table}
+<div class="callout"><b>Open finding: the field guard looks short.</b> An empty poll keeps the field on {M['empty_field_ms']:.1f} ms in all, although
+the firmware waits 5 ms + 1 tick before REQA and the no-response timer then adds about 1 ms. The buzz is also shorter than set
+({M['buzz_end']-M['buzz_start']:.0f} ms against 60). Both suggest that the millisecond count runs ahead across short Stop 2 sleeps, or that the
+guard starts before the field does, so the real guard may be under the 5 ms ISO 14443 requires. Cards still read, but it should be confirmed
+with a GPIO marker on the scope. Timing the guard with the reader's own NFC field-on guard timer would make it independent of the MCU.</div>
 
 <h2><span class="num">6</span>Charge per event</h2>
 <p>Charge = current x time for each load, summed over the event. 1 uAh = 3.6 mC.</p>
@@ -1273,5 +1579,11 @@ html = re.sub(r"(?<=[\w)%]) x (?=[\w(])", " × ", html)
 
 with open(OUT_HTML, "w") as fh:
     fh.write(html)
+
+# The clock tree on its own, for slides and the README (clock_tree.png is rendered from it, see the docstring).
+_tree = svg_clock_tree().replace('class="chart" role="img"',
+                                 'xmlns="http://www.w3.org/2000/svg" width="680" height="560" role="img"', 1)
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "clock_tree.svg"), "w") as fh:
+    fh.write(_tree.replace(" uA", " µA").replace(" us ", " µs ") + "\n")
 print(f"idle {idle_t:.2f} uA, off {off_t:.2f} uA, tap {ev_t['tap']:.0f} uC, lecture {lect_t:.1f} uAh, "
       f"life4 {life4_t:.1f}/{life4_p:.1f} mo, log {LOG_CAP} records, {LECT100} lectures of 100")

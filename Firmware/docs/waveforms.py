@@ -55,6 +55,24 @@ class Capture:
     def above_ms(self, a, b, ma):
         return sum(1 for v in self.window(a, b) if v > ma) * self.dt * 1000.0
 
+    def rise(self, a, b, ma, smooth=3):
+        """First time (s) in [a, b) where the current, averaged over `smooth` points, exceeds `ma`."""
+        pts = [(tt, v - self.offset) for tt, v in zip(self.t, self.i) if a <= tt < b]
+        for k in range(len(pts)):
+            seg = pts[max(0, k - smooth // 2):k + smooth // 2 + 1]
+            if statistics.fmean(v for _, v in seg) > ma:
+                return pts[k][0]
+        return None
+
+    def fall(self, a, b, ma, smooth=3):
+        """First time (s) in [a, b) where the averaged current drops to `ma` or below."""
+        pts = [(tt, v - self.offset) for tt, v in zip(self.t, self.i) if a <= tt < b]
+        for k in range(len(pts)):
+            seg = pts[max(0, k - smooth // 2):k + smooth // 2 + 1]
+            if statistics.fmean(v for _, v in seg) <= ma:
+                return pts[k][0]
+        return None
+
     def trace(self, a, b, buckets=500):
         """(t_ms, mean mA) per bucket, offset removed, for plotting."""
         pts = [(tt, v - self.offset) for tt, v in zip(self.t, self.i) if a <= tt < b]
@@ -95,6 +113,30 @@ def measure():
     m["empty_ma"] = m["q_empty"] / m["empty_ms"]
     m["q_rearm"] = fw.charge_uc(6.0e-3, 7.0e-3)
     m["q_wu_fw"] = [fw.charge_uc(-2.7e-3, -2.1e-3), fw.charge_uc(105.0e-3, 106.0e-3)]
+    # Timings (ms), from the edges of each capture
+    ms = 1000.0
+    m["wu_osc_on"] = wu.rise(-1e-3, 0.6e-3, 6.0, 31) * ms                  # reader oscillator starts
+    m["wu_field_on"] = wu.rise(-0.2e-3, 0.6e-3, 40.0, 7) * ms              # amplitude measurement
+    m["wu_end"] = wu.fall(m["wu_field_on"] / ms + 50e-6, 0.6e-3, 3.0, 31) * ms
+    m["wu_osc_to_field"] = m["wu_field_on"] - m["wu_osc_on"]
+    m["wu_event_ms"] = m["wu_end"] - m["wu_osc_on"]
+    m["wu_spike_width_us"] = m["wu_spike_us"]
+    for key, cap in (("fw", fw), ("tap", tap)):
+        meas = cap.rise(-2.7e-3, -2.0e-3, 15.0) * ms                        # measurement that woke it
+        osc = cap.rise(-1.6e-3, -0.6e-3, 15.0) * ms                         # oscillator start (Ready)
+        field = cap.rise(-0.6e-3, 1e-3, 120.0) * ms                         # field on
+        m[f"{key}_meas_to_osc"] = osc - meas
+        m[f"{key}_osc_to_field"] = field - osc
+        m[f"{key}_meas_to_field"] = field - meas
+        m[f"{key}_field_on"] = field
+    m["read_field_ms"] = (tap.fall(1e-3, 20e-3, 120.0) * ms) - m["tap_field_on"]
+    off = fw.fall(1e-3, 10e-3, 120.0) * ms
+    m["empty_field_ms"] = off - m["fw_field_on"]
+    rearm = fw.rise(off / ms + 0.15e-3, 10e-3, 15.0) * ms
+    m["off_to_rearm"] = rearm - off
+    m["rearm_to_next"] = fw.rise(60e-3, 120e-3, 15.0) * ms - rearm
+    m["buzz_start"] = tap.fall(10e-3, 20e-3, 120.0) * ms
+    m["buzz_end"] = tap.fall(55e-3, 80e-3, 30.0, 25) * ms
     return m
 
 
