@@ -1,8 +1,8 @@
 # Card Attendance System — firmware architecture
 
-Target: **STM32L432KCU6** (Cortex-M4F, 256 kB flash, 64 kB SRAM, UFQFPN32).
-The 128 kB STM32L432KBU6 cannot run this firmware as it is: the config page and
-the log live in the upper 128 kB (see "Board notes").
+Target: **STM32L432KBU6** (Cortex-M4F, 128 kB flash, 64 kB SRAM, UFQFPN32).
+The code and the attendance data share the 128 kB of flash: code in the first
+72 kB, the config page and log in the last 56 kB (see "Flash map").
 
 ## The two levels
 
@@ -143,7 +143,7 @@ in Stop 2.
 | Mode | Used when | Retained | Wakes on |
 |---|---|---|---|
 | Sleep | USB sessions and switching off (1 ms passes), and any wait under `BSP_STOP2_MIN_MS` (4 ms) | everything | SysTick (1 ms), any interrupt |
-| Stop 2 | idle (`ST_IDLE`) with the next deadline 4 ms or more away | SRAM, registers, RTC, LPTIM1 | LPTIM1 at the deadline (at most 1.9 s), the button (EXTI0), VBUS (EXTI9), the reader's wake-up (EXTI1) |
+| Stop 2 | idle (`ST_IDLE`) with the next deadline 4 ms or more away | SRAM, registers, RTC, LPTIM1 | LPTIM1 at the deadline (at most 15 s), the button (EXTI0), VBUS (EXTI9), the reader's wake-up (EXTI1) |
 | Standby | 3 min idle on battery, low battery, a 5 s hold | RTC + backup registers | WKUP1 (button) only, through reset |
 
 Each `app_task()` pass samples the button and VBUS, steps the feedback pattern,
@@ -153,8 +153,8 @@ in `app_fsm.c` takes the soonest of the deadlines the loop owns: the feedback
 pattern's next step, the heartbeat LED's next edge, the button's debounce and
 its 2 s and 5 s thresholds (`btn_next_ms()`), the VBUS debounce, the reader's
 field guard or next poll (`cr_next_ms()`), the reader retry, the 10 s battery
-sample, the 5 s flush and the 3-minute inactivity timeout, capped at
-`APP_SLEEP_MAX_MS` (1 s). `deep` is set only in `ST_IDLE`: a USB session needs
+sample (placed on a heartbeat flash), the 5 s flush and the 3-minute
+inactivity timeout, capped at `APP_SLEEP_MAX_MS` (5 s). `deep` is set only in `ST_IDLE`: a USB session needs
 the 24 MHz clock and SysTick, so it and the shutdown sequence keep 1 ms passes.
 Every timer is still a timestamp compared against `plat_uptime_ms()`
 (`HAL_GetTick()`), so nothing blocks, not even the reader's 5 ms field guard.
@@ -162,11 +162,13 @@ Every timer is still a timestamp compared against `plat_uptime_ms()`
 `plat_sleep_until()` (`bsp_power.c`) re-tests its predicate with interrupts
 masked, so an event posted between the queue check and the WFI is never slept
 through. For a deep sleep of at least 4 ms, `stop2_for()` sets an LPTIM1
-compare at the deadline and enters Stop 2. LPTIM1 counts the LSE (16 bits,
-32768 Hz, wrapping every 2 s) without pause and interrupts on both the compare
-and the wrap, through EXTI line 32, so a sleep always ends within one wrap and
-the ticks slept are never ambiguous; that is why one sleep is capped at
-`BSP_STOP2_MAX_MS` (1.9 s). On waking (on MSI at the scanning range), the ticks
+compare at the deadline (rounded up to the next tick) and enters Stop 2.
+LPTIM1 counts the LSE divided by 8 (16 bits, 4096 Hz, 0.24 ms a tick, wrapping
+every 16 s) without pause and interrupts on both the compare and the wrap,
+through EXTI line 32, so a sleep always ends within one wrap and the ticks
+slept are never ambiguous; that is why one sleep is capped at
+`BSP_STOP2_MAX_MS` (15 s). A wake from the wrap alone, with nothing else
+pending, goes straight back to Stop 2 (`woken_by_wrap_only()`). On waking (on MSI at the scanning range), the ticks
 slept are converted to milliseconds and added to HAL's `uwTick`, with the
 remainder carried to the next sleep, so `plat_uptime_ms()` never notices the
 gap. `BSP_ENABLE_STOP2` in `bsp_board.h` set to 0 brings back Sleep-mode-only
@@ -204,9 +206,10 @@ Consequences worth stating:
 - **Spare pins are analog**, the lowest-leakage state on an L4.
 - **The core runs at 4 MHz** while scanning. USB sessions raise it to 24 MHz
   and drop back on unplug.
-- **The idle loop wakes at least once a second** (`APP_SLEEP_MAX_MS`), and for
-  each edge of the 4 s heartbeat flash. The cap only bounds how stale the
-  `dbg_*` globals get.
+- **The idle loop wakes only for the heartbeat:** at the start and end of the
+  10 ms flash every 5 s (`APP_SLEEP_MAX_MS` is the same 5 s). The battery
+  sample is placed on the flash's wake (`sample_battery()` aligns
+  `next_battery` to the heartbeat), so it adds none of its own.
 - **The button's pull-up is retained in Standby** via `PWR_PUCRA`. Without
   that, PA0 floats and the unit wakes on noise. Standby is only entered once
   the button is released, so the press that switched the unit off cannot
@@ -250,17 +253,27 @@ size and programming granularity being identical removes read-modify-write
 from the log entirely: a power loss can only lose the record being written,
 never corrupt one already stored.
 
-### Flash map — top 128 kB (`0x08020000`)
+### Flash map — 128 kB, code then data
 
 ```
-page  0        config: device ID
-pages 1..8     unused (held a registered card list until 2026-10)
-pages 9..63    attendance log, 55 pages x 254 records = 13 970 records
+0x08000000  pages  0..35   code, 72 kB      (about 60 kB at -Og, 50 kB at -Os)
+0x08012000  page  36       config: device ID              (region page 0)
+0x08012800  pages 37..63   attendance log, 27 pages x 254 = 6 858 records
+                                                        (region pages 1..27)
 ```
 
-The linker script's `FLASH` region was shortened to 128 kB and an `NVDATA`
-region added, so an image that would overlap the log fails to link instead of
-erasing records at run time.
+The linker script (`STM32L432KBUX_FLASH.ld`) gives `FLASH` 72 kB and the
+rest to an `NVDATA` region, so an image that would overlap the log fails to
+link instead of erasing records at run time. `ASSERT`s in the script check
+that the two regions tile the 128 kB, and `_Static_assert`s in `bsp_flash.c`
+check `BSP_FLASH_BASE` / `BSP_FLASH_SIZE` against `NV_REGION_BYTES`. -O0
+(about 97 kB) does not fit, so the CubeIDE Debug configuration builds at -Og.
+
+Firmware for the earlier 256 kB layout kept its data at `0x08020000`, which the
+KB does not specify (it may read back on a given chip, untested). This layout
+reads none of it: import a unit's log with the app before reflashing, and set
+its device ID again afterwards. Old code left in the region by a reflash is no
+valid config (no magic) and no valid log page, and `log_init()` erases it.
 
 The config page is one 32-byte `nv_config_t`: magic `"CAS1"`, `format_version` 4,
 `device_id`, and words that are written 0 and ignored (`old_card_count` and
@@ -470,8 +483,8 @@ then             the lecture files
 
 One sector per cluster and 16 root entries, seven of them the device's own (the
 volume label, the five files and the folder). A full log appears twice, in
-`ATTEND.CSV` and in the lecture files: 13 970 rows at 32 bytes is about 874
-clusters each, about 1750 with the lecture list and the directory. The volume
+`ATTEND.CSV` and in the lecture files: 6 858 rows at 32 bytes is about 429
+clusters each, about 860 with the lecture list and the directory. The volume
 may have at most 4084 data clusters (`FAT12_MAX_CLUSTERS`), the most a FAT12
 volume can have before a host reads it as FAT16, so the FAT has 4096 entries,
 12 sectors a copy. The FAT (6 kB) and root directory are real RAM tables that the
@@ -487,7 +500,8 @@ room; neither can touch the log.
 `SETTINGS.CSV`, `STATUS.TXT` and the volume serial can show it. The FAT, the
 root directory, the marker table (4.5 kB) and the lecture-file table (3 kB)
 live in SRAM2. The ARM build uses about 22.3 kB (46 %) of the 48 kB main RAM
-block, 14 kB (88 %) of the 16 kB SRAM2, and 60 kB of the 128 kB code region.
+block, 14 kB (88 %) of the 16 kB SRAM2, and 60.3 kB (84 %) of the 72 kB code
+region.
 
 The record count is latched at attach. A host that saw the file size change
 mid-copy would produce a truncated CSV. Nothing is recorded during a USB
@@ -632,8 +646,11 @@ reported rather than resolved: the reader expects one card at a time, and the
 next poll tries again.
 
 `card_reader.c` turns polls into arrivals. A card held on the reader is seen
-by every poll but reported once; it counts as gone after three empty polls in
-a row, so a single missed poll does not log it twice. The logged ID is the UID
+by every poll but reported once; it counts as gone after one empty poll
+(`APP_NFC_REMOVE_MISSES`; each empty poll costs the 203 mA field for ~6 ms and
+100 ms of Ready mode). The reader then re-arms its wake-up mode, so a card
+still held but missed once is not logged twice: it is in the reference, and
+taking it away only costs one false wake-up. The logged ID is the UID
 as a big-endian 32-bit number (`0A F4 1A 9E` is `0x0AF41A9E`, `0183769758` in
 the CSV); longer UIDs keep their last four bytes, since the first is the
 manufacturer code.
@@ -651,7 +668,7 @@ empty. `card_reader.c` alternates between two states:
 ```
 armed ──EXTI1 / APP_EVT_NFC_WAKE──> polling every 100 ms
   ^                                     │
-  └── measure the empty field, arm <────┘ after 3 empty polls in a row
+  └── measure the empty field, arm <────┘ after 1 empty poll           
 ```
 
 - **Arming** (`plat_nfc_wakeup_arm()`): Level 2 measures the antenna
@@ -718,8 +735,13 @@ reliable. A probe attached without halting debug (STM32CubeProgrammer
 `mode=HOTPLUG`) reads zeros for most words while the core sleeps, flash
 included. Halt for the read: `STM32_Programmer_CLI -c port=SWD mode=HOTPLUG
 shared -halt -u <addr> <len> out.bin -run` (a millisecond, which USB does not
-notice). Debug builds (`DEBUG` defined) also keep the debug clocks on in Sleep,
-Stop 2 and Standby (`HAL_DBGMCU_Enable*`), so a session survives them.
+notice). No build keeps the debug clocks on in Sleep, Stop 2 or Standby:
+`bsp_power_init()` clears `DBGMCU_CR` (DBG_SLEEP, DBG_STOP, DBG_STANDBY) at
+every boot, and Stop 2 and Standby entry clear it again. The bits survive every
+reset but a power-on one, and with them set the unit drew 0.3 mA switched off.
+So a probe cannot attach while the core is in Stop 2: attach while it is awake
+(plug its USB into a PC, which keeps the loop in Sleep mode),
+or hold BOOT0 (SW2) and press reset (SW1) to enter the bootloader.
 
 **Flashing over SWD toggles FLASH_SR.PEMPTY ("main flash is empty").**
 Measured on the bench, with no reset in between: 0 before programming, 1
@@ -792,8 +814,8 @@ test for that case.
 | Event | LEDs | Motor |
 |---|---|---|
 | Power on | green 300 ms | 120 ms |
-| Card accepted | green 250 ms | 90 ms |
-| Card read during a USB session (registering, not recorded) | green 250 ms | 90 ms |
+| Card accepted | green 250 ms | 60 ms |
+| Card read during a USB session (registering, not recorded) | green 250 ms | 60 ms |
 | Duplicate (within 10 s, or already in this lecture) | green ×2 | ×2 short |
 | Log full, or reader failed at power-on | red ×4 | ×4 |
 | Settings applied (eject, button or unplug) | green, two pulses | ×2 |
@@ -802,7 +824,7 @@ test for that case.
 | Released between 2 s and 5 s: new lecture | green | ×3 short |
 | Button tap | green ×2 (battery OK) or red ×5 (low); while plugged in it first ends the USB session | — |
 | Button held 5 s, or 3 min idle on battery | red 700 ms, then off | 250 ms |
-| Idle | 30 ms green flash every 4 s; red if the battery is low or the reader failed | — |
+| Idle | 10 ms green flash every 5 s; red if the battery is low or the reader failed | — |
 | USB session | green flash every second | — |
 
 ## Live debugging
@@ -867,10 +889,9 @@ prints; with neither, Print opens the page in the browser, then Save as PDF).
 - **PA0 is the power button**, active low to ground; it is WKUP1, and while
   running its edges (EXTI0) wake the loop, which samples the level.
 - USB is crystal-less: HSI48 trimmed by the CRS against the host's SOF.
-- **The MCU must be the 256 kB STM32L432KC.** The schematic value and the JLCPCB
-  production BOM (`PCB/production/bom.csv`) give U4 as STM32L432KBUx, the
-  128 kB part, which has no flash at `0x08020000`. Read the fitted part's flash
-  size at `0x1FFF75E0` (256 or 128) before trusting a board.
+- **The MCU is the 128 kB STM32L432KB.** The flash-size word at `0x1FFF75E0`
+  reads 128 on the bench unit. A 256 kB KC would run this firmware unchanged,
+  using only the bottom 128 kB.
 
 Full pin map: `Bsp/Inc/bsp_board.h`.
 

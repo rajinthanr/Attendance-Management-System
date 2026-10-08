@@ -20,6 +20,14 @@ static app_boot_cause_t s_boot_cause;
  * (PVD_IN) and the PVD off, PB7 pulls the battery divider node up to VDD,
  * so PA7 reads full scale (measured on the board: 4079 counts instead of
  * ~1250). Level 0 watches VDD internally and leaves PB7 alone. */
+/* Clear DBG_SLEEP, DBG_STOP and DBG_STANDBY. With them set, Stop 2 and
+ * Standby keep the digital core powered and a clock running. */
+static void debug_low_power_off(void)
+{
+    DBGMCU->CR &= ~(DBGMCU_CR_DBG_SLEEP | DBGMCU_CR_DBG_STOP |
+                    DBGMCU_CR_DBG_STANDBY);
+}
+
 static void pvd_off(void)
 {
     HAL_PWR_DisablePVD();
@@ -54,18 +62,13 @@ void bsp_early_init(void)
 
 void bsp_power_init(void)
 {
-#if defined(DEBUG)
-    /* Debug builds (CubeIDE's Debug configuration defines DEBUG): keep the
-     * debug clocks running in Sleep, Stop 2 and Standby, so a debugger stays
-     * connected if the part enters them. It costs current in those modes, so
-     * release builds leave it off. A session that enables halting debug
-     * (CubeIDE's) keeps the loop awake anyway, see plat_sleep_until(); a probe
-     * hot-plugged without it can still read zeros while the core sleeps, so
-     * halt it for a moment to read. */
-    HAL_DBGMCU_EnableDBGSleepMode();
-    HAL_DBGMCU_EnableDBGStopMode();
-    HAL_DBGMCU_EnableDBGStandbyMode();
-#endif
+    /* Debug clocks off in the low-power modes, in every build. The bits
+     * survive every reset but a power-on one, so an older image or a debug
+     * session that set them would otherwise keep the part from really
+     * sleeping (measured: 0.3 mA switched off, against ~3 uA) until the
+     * battery was disconnected. A CubeIDE session keeps the loop awake anyway,
+     * see plat_sleep_until(). */
+    debug_low_power_off();
 
     /* Latch why we booted before the flags are cleared; the application uses
      * this to tell a Standby wake from a cold start. */
@@ -179,6 +182,33 @@ static void sleep_release(uint32_t saved_primask)
 static uint32_t s_stop_carry;
 
 /**
+ * True when the only thing that ended a Stop 2 sleep was LPTIM1 wrapping
+ * before its compare: nothing for the loop to do, so the sleep can go on.
+ * Interrupts are masked, so whatever woke the part is still pending.
+ */
+static bool woken_by_wrap_only(void)
+{
+    uint32_t i, other = 0u;
+
+    if ((LPTIM1->ISR & (LPTIM_ISR_ARRM | LPTIM_ISR_CMPM)) != LPTIM_ISR_ARRM) {
+        return false;
+    }
+    for (i = 0u; i < (sizeof(NVIC->ISPR) / sizeof(NVIC->ISPR[0])); i++) {
+        uint32_t pending = NVIC->ISPR[i];
+        if (i == ((uint32_t)LPTIM1_IRQn >> 5u)) {
+            pending &= ~(1uL << ((uint32_t)LPTIM1_IRQn & 31u));
+        }
+        other |= pending;
+    }
+    if (other != 0u) {
+        return false;
+    }
+    LPTIM1->ICR = LPTIM_ICR_ARRMCF;
+    NVIC_ClearPendingIRQ(LPTIM1_IRQn);
+    return true;
+}
+
+/**
  * Stop 2 for up to @p ms, interrupts masked by the caller. LPTIM1 ends it, or
  * an EXTI line (button, VBUS, reader) does sooner. SysTick does not run in
  * Stop 2, so the time slept, measured on LPTIM1, is added to HAL's tick.
@@ -191,20 +221,25 @@ static bool stop2_for(uint32_t ms)
         ms = BSP_STOP2_MAX_MS;
     }
     start = bsp_lptim_count();
-    if (!bsp_lptim_wake_in((ms * BSP_LSE_HZ) / 1000u)) {
+    /* Rounded up, so the tick never comes back a fraction short of the
+     * deadline and costs a second, 1 ms wake. */
+    if (!bsp_lptim_wake_in(((ms * BSP_LPTIM_HZ) + 999u) / 1000u)) {
         return false;   /* nothing would end the sleep: use Sleep mode */
     }
 
+    debug_low_power_off();   /* in case a probe set them since boot */
     HAL_SuspendTick();
-    HAL_PWREx_EnterSTOP2Mode(PWR_STOPENTRY_WFI);
+    do {
+        HAL_PWREx_EnterSTOP2Mode(PWR_STOPENTRY_WFI);
+    } while (woken_by_wrap_only());
     /* Awake again, on MSI at the range it had (STOPWUCK = MSI), which is the
      * scanning clock: the PLL is never on outside USB sessions. */
     HAL_ResumeTick();
 
     elapsed = (bsp_lptim_count() - start) & 0xFFFFu;
     scaled = (elapsed * 1000u) + s_stop_carry;
-    uwTick += scaled / BSP_LSE_HZ;
-    s_stop_carry = scaled % BSP_LSE_HZ;
+    uwTick += scaled / BSP_LPTIM_HZ;
+    s_stop_carry = scaled % BSP_LPTIM_HZ;
     return true;
 }
 #endif
@@ -259,6 +294,7 @@ void plat_sleep_deep(void)
      * already put the reader into its power-down mode. */
     plat_out_write(0u);
     pvd_off();
+    debug_low_power_off();
 
     /* Standby wakes on WKUP1 only, and wakes through reset, so the pending
      * flag has to be clear or the part would come straight back out. */
@@ -271,6 +307,14 @@ void plat_sleep_deep(void)
      * whatever noise reaches it, which on a battery device shows up as a
      * unit that will not stay off. */
     (void)HAL_PWREx_EnableGPIOPullUp(PWR_GPIO_A, PWR_GPIO_BIT_0);
+    /* The reader's SPI inputs stay powered from +3V3, and Standby lets go of
+     * the pins driving them: floating, they leaked (measured 4.8 uA off
+     * against 3.3 uA in Stop 2). NSS has R12 to +3V3. The LED and motor pins
+     * go low too, so nothing can light or turn. */
+    (void)HAL_PWREx_EnableGPIOPullDown(PWR_GPIO_B, PWR_GPIO_BIT_3 | PWR_GPIO_BIT_4 |
+                                                   PWR_GPIO_BIT_5);
+    (void)HAL_PWREx_EnableGPIOPullDown(PWR_GPIO_A, PWR_GPIO_BIT_2 | PWR_GPIO_BIT_3 |
+                                                   PWR_GPIO_BIT_4);
     HAL_PWREx_EnablePullUpPullDownConfig();
 
     HAL_SuspendTick();

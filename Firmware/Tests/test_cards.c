@@ -157,8 +157,9 @@ static void test_cards_tap(void)
     printf("cards: every card is recorded\n");
 
     boot_fresh();
-    /* Whatever an older firmware left where its list was is ignored. */
-    memset(&host_flash[NV_PAGE_SIZE], 0x5A, NV_PAGE_SIZE);
+    /* Garbage in a log page (an older image's code, left in the region by a
+     * reflash) is erased at boot, and the page is used like any other. */
+    memset(&host_flash[NV_LOG_OFFSET], 0x5A, NV_PAGE_SIZE);
     reboot();
 
     CHECK(tap(1000u, 10u) == APP_SCAN_ACCEPTED && (g_fb & FB_GREEN_BIT) != 0u && (g_fb & FB_RED_BIT) == 0u,

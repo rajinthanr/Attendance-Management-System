@@ -7,14 +7,16 @@
  * anything device specific and the host tests can exercise the same layout
  * against a RAM-backed flash stub.
  *
- * Region map (128 kB, 64 pages of 2 kB on STM32L432KC):
+ * Region map (56 kB, 28 pages of 2 kB: the last 28 of the STM32L432KB's 64;
+ * the first 72 kB hold the code):
  *
  *   page  0        config: the device ID
- *   pages 1 .. 8   unused. Firmware up to 2026-10 kept a registered card list
- *                  here; the device now keeps none (the PC app decides who is
- *                  registered) and ignores whatever an older version left.
- *                  Left out of the log so the log's pages stay where they are.
- *   pages 9 .. 63  attendance log, 254 records + header + footer per page
+ *   pages 1 .. 27  attendance log, 254 records + header + footer per page
+ *
+ * Firmware for the 256 kB layout kept its data at 0x08020000, outside the KB's
+ * specified flash, with the log at pages 9..63 there. This layout reads none of
+ * it. Whatever a reflash leaves in the region (an older image's code) is not a
+ * valid config (no magic) or log page, and log_init() erases such pages.
  */
 #ifndef NV_LAYOUT_H
 #define NV_LAYOUT_H
@@ -43,13 +45,17 @@ typedef struct {
 
 /* ---- Attendance log ----------------------------------------------------- */
 
-#define NV_LOG_FIRST_PAGE   9u
-#define NV_LOG_PAGES        55u
+#define NV_LOG_FIRST_PAGE   1u
+#define NV_LOG_PAGES        27u
 #define NV_LOG_OFFSET       (NV_PAGE_SIZE * NV_LOG_FIRST_PAGE)
 
 /** Records per page: 256 double-words minus one header and one footer. */
 #define NV_LOG_RECS_PER_PAGE  (NV_DW_PER_PAGE - 2u)    /* 254 */
-#define NV_LOG_CAPACITY       (NV_LOG_RECS_PER_PAGE * NV_LOG_PAGES)  /* 13970 */
+#define NV_LOG_CAPACITY       (NV_LOG_RECS_PER_PAGE * NV_LOG_PAGES)  /* 6858 */
+
+/** The whole data region: config page plus log. */
+#define NV_REGION_PAGES     (NV_LOG_FIRST_PAGE + NV_LOG_PAGES)       /* 28 */
+#define NV_REGION_BYTES     (NV_PAGE_SIZE * NV_REGION_PAGES)         /* 56 kB */
 
 #define NV_LOG_HDR_MAGIC    0x4C475041u   /* "LGPA" */
 #define NV_LOG_FTR_MAGIC    0x4C474645u   /* "LGFE" */

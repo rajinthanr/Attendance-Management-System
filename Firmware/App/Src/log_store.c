@@ -112,7 +112,7 @@ static uint16_t page_scan_open(uint8_t page)
     return (uint16_t)(slot - 1u);   /* records present */
 }
 
-/** Insert a page into the sequence-ordered index (insertion sort; <=55 items). */
+/** Insert a page into the sequence-ordered index (insertion sort; <= NV_LOG_PAGES items). */
 static void index_insert(log_store_t *ls, uint8_t page, uint32_t seq, uint16_t count)
 {
     uint8_t i = ls->n_used;

@@ -6,7 +6,7 @@
  * another PCB revision is a change to this file plus the .c files that use it.
  * Nothing in App/ includes this.
  *
- * Target: STM32L432KCU6, UFQFPN32, 256 kB flash / 64 kB SRAM.
+ * Target: STM32L432KBU6, UFQFPN32, 128 kB flash / 64 kB SRAM.
  *
  *  Pin   Signal            Function
  *  ----  ----------------  ---------------------------------------------------
@@ -115,6 +115,11 @@
 
 #define BSP_LSE_HZ              32768u
 
+/** LPTIM1 counts the LSE divided by this (CFGR.PRESC = /8): 4096 Hz, so its
+ *  16-bit count wraps every 16 s, and one tick is 0.24 ms. */
+#define BSP_LPTIM_PRESC         8u
+#define BSP_LPTIM_HZ            (BSP_LSE_HZ / BSP_LPTIM_PRESC)
+
 /* ------------------------------------------------------------------------ */
 /* NFC reader (ST25R3916 on SPI1)                                           */
 /* ------------------------------------------------------------------------ */
@@ -149,13 +154,15 @@
 /* ------------------------------------------------------------------------ */
 
 /**
- * Data lives in the top 128 kB. The linker script keeps code below this;
- * BSP_FLASH_BASE must match the FLASH length in STM32L432KCUX_FLASH.ld.
+ * Data lives in the last 56 kB of the KB's 128 kB (pages 36-63); code has the
+ * first 72 kB. BSP_FLASH_BASE must match the NVDATA origin in
+ * STM32L432KBUX_FLASH.ld, and BSP_FLASH_SIZE NV_REGION_BYTES in nv_layout.h
+ * (bsp_flash.c checks the second at compile time).
  */
-#define BSP_FLASH_BASE          0x08020000u
-#define BSP_FLASH_SIZE          0x00020000u             /* 128 kB */
+#define BSP_FLASH_BASE          0x08012000u
+#define BSP_FLASH_SIZE          0x0000E000u             /* 56 kB, 28 pages */
 #define BSP_FLASH_PAGE_SIZE     2048u
-#define BSP_FLASH_FIRST_PAGE    64u                     /* page index in bank 1 */
+#define BSP_FLASH_FIRST_PAGE    36u                     /* page index in bank 1 */
 
 /* ------------------------------------------------------------------------ */
 /* RTC backup registers                                                     */
@@ -180,6 +187,12 @@
 /* Stop 2                                                                   */
 /* ------------------------------------------------------------------------ */
 
+/** 1: a bench build that holds one load at a time steady for a meter instead
+ *  of running the application (bsp_power_test.c, `make power-test`). */
+#ifndef BSP_POWER_TEST
+#define BSP_POWER_TEST          0u
+#endif
+
 /** 1: sleep in Stop 2 between events when Level 2 allows it (no USB). 0: Sleep
  *  mode only, woken by SysTick every millisecond, as in the polling build. */
 #define BSP_ENABLE_STOP2        1u
@@ -188,9 +201,9 @@
  *  and the LPTIM compare write takes ~3 LSE cycles. */
 #define BSP_STOP2_MIN_MS        4u
 
-/** Longest single Stop 2 sleep: inside one 2 s wrap of the 16-bit LPTIM1
- *  counter at 32768 Hz, so the time slept is never ambiguous. */
-#define BSP_STOP2_MAX_MS        1900u
+/** Longest single Stop 2 sleep: inside one 16 s wrap of the 16-bit LPTIM1
+ *  counter at 4096 Hz, so the time slept is never ambiguous. */
+#define BSP_STOP2_MAX_MS        15000u
 
 /** Polls of an LPTIM1 register-write flag before giving up (~30 ms at 4 MHz;
  *  the write takes ~3 LSE cycles, 92 us). A timeout means the LSE is not

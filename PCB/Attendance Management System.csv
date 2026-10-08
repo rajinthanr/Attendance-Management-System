@@ -37,7 +37,7 @@
 "SW2","1","BOOT0","Button_Switch_SMD:SW_Tactile_SPST_NO_Straight_CK_PTS636Sx25SMTRLFS","Push button switch, generic, two pins"
 "SW3","1","POWER","Button_Switch_SMD:SW_Tactile_SPST_NO_Straight_CK_PTS636Sx25SMTRLFS","Push button switch, generic, two pins"
 "TH1","1","10k NTC","Resistor_THT:R_Axial_DIN0204_L3.6mm_D1.6mm_P1.90mm_Vertical","Temperature dependent resistor, negative temperature coefficient"
-"U1","1","STM32L432KCUx","Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.45x3.45mm","STMicroelectronics Arm Cortex-M4 MCU, 256KB flash, 64KB RAM, 80 MHz, 1.71-3.6V, 26 GPIO, UFQFPN32"
+"U1","1","STM32L432KBUx","Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.45x3.45mm","STMicroelectronics Arm Cortex-M4 MCU, 128KB flash, 64KB RAM, 80 MHz, 1.71-3.6V, 26 GPIO, UFQFPN32"
 "U2","1","MCP73833-xxx-UN","Package_SO:MSOP-10_3x3mm_P0.5mm","Stand-Alone Linear Li-Ion / Li-Polymer Charge Management Controller, MSOP-10"
 "U3","1","TPS7A0233PDBVR","External:SOT23_DBV_TEX-L",""
 "U5","1","ST25R3916-AQWT","External:QFN50P500X500X100-33N","RFID, READ/WRITE, 13.56MHZ, VFQFPN-32; Frequency Min:-; Frequency Max:13.56MHz; RFID IC Type:Read, Write; Programmable Memory:-; Output Power:1.6W; RF IC Case Style:VFQFPN; No. of Pins:32Pins; Supply Voltage Min:2.4V; Supply Voltage Max:5.5V; Current Consumption:-; Product Range:-; MSL:MSL 3 - 168 hours; SVHC:No SVHC (27-Jun-2018)"

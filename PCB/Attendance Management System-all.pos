@@ -82,7 +82,7 @@ SW1       RST              SW_Tactile_SPST_NO_Straight_CK_PTS636Sx25SMTRLFS   11
 SW2       BOOT0            SW_Tactile_SPST_NO_Straight_CK_PTS636Sx25SMTRLFS   112.0000  -139.0000   90.0000  top
 SW3       POWER            SW_Tactile_SPST_NO_Straight_CK_PTS636Sx25SMTRLFS   104.5000  -139.0000   90.0000  top
 TH1       10k_NTC          R_Axial_DIN0204_L3.6mm_D1.6mm_P1.90mm_Vertical     154.0950  -138.0000    0.0000  top
-U1        STM32L432KCUx    QFN-32-1EP_5x5mm_P0.5mm_EP3.45x3.45mm              116.0000  -117.1500    0.0000  top
+U1        STM32L432KBUx    QFN-32-1EP_5x5mm_P0.5mm_EP3.45x3.45mm              116.0000  -117.1500    0.0000  top
 U2        MCP73833-xxx-UN  MSOP-10_3x3mm_P0.5mm                               149.0000  -136.0000    0.0000  top
 U3        TPS7A0233PDBVR   SOT23_DBV_TEX-L                                    123.2636  -125.5000  180.0000  top
 U5        ST25R3916-AQWT   QFN50P500X500X100-33N                              139.7250  -118.2750  180.0000  top
