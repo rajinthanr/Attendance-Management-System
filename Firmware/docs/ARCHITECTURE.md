@@ -729,8 +729,13 @@ reliable. A probe attached without halting debug (STM32CubeProgrammer
 `mode=HOTPLUG`) reads zeros for most words while the core sleeps, flash
 included. Halt for the read: `STM32_Programmer_CLI -c port=SWD mode=HOTPLUG
 shared -halt -u <addr> <len> out.bin -run` (a millisecond, which USB does not
-notice). Debug builds (`DEBUG` defined) also keep the debug clocks on in Sleep,
-Stop 2 and Standby (`HAL_DBGMCU_Enable*`), so a session survives them.
+notice). No build keeps the debug clocks on in Sleep, Stop 2 or Standby:
+`bsp_power_init()` clears `DBGMCU_CR` (DBG_SLEEP, DBG_STOP, DBG_STANDBY) at
+every boot, and Stop 2 and Standby entry clear it again. The bits survive every
+reset but a power-on one, and with them set the unit drew 0.3 mA switched off.
+So a probe cannot attach while the core is in Stop 2: attach while it is awake
+(plug its USB into a PC, which keeps the loop in Sleep mode),
+or hold BOOT0 (SW2) and press reset (SW1) to enter the bootloader.
 
 **Flashing over SWD toggles FLASH_SR.PEMPTY ("main flash is empty").**
 Measured on the bench, with no reset in between: 0 before programming, 1
