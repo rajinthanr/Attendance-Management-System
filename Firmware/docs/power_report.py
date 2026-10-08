@@ -20,6 +20,9 @@ from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cost_model as cm   # noqa: E402  (reads PCB/bom/Attendance_Management_System_BOM_LCSC.xlsx)
+import waveforms as wf    # noqa: E402  (reads the scope captures in Waveforms/)
+
+M = wf.measure()
 
 OUT_HTML = sys.argv[1]
 
@@ -31,28 +34,33 @@ BATT_V = 3.7
 HOURS_PER_MONTH = 730.0
 WEEKDAYS_PER_MONTH = 52.14 * 5 / 12   # 21.7
 
+WU_PERIOD_MS_ = 100       # APP_NFC_WAKE_PERIOD_MS, needed by TYP below
+
 # Battery-side currents. mA unless the key says uA. TYP holds the bench
-# measurements (power-test build modes 1-10, 8 October 2026, multimeter in
-# series with the cell); PES bounds what the meter could not hold steady and
-# what is still an estimate.
+# measurements, 8 October 2026: steady loads with a multimeter in series with
+# the cell (power-test build modes 1-10), and pulses with the TBS1052C across a
+# 1 ohm shunt (waveforms.py). PES bounds what is still uncertain.
 TYP = dict(
     name="Measured",
     stop2_base_ua=3.3,   # mode 1: MCU Stop 2 + RTC + LPTIM1, reader power-down, board static
     off_ua=1.8,          # mode 10, Standby, with the SPI/LED pins pulled down (4.8 before)
-    nfc_wu_ua=184.7,     # mode 2 minus mode 1: the meter read 117-204 uA, 188 averaged
+    nfc_wu_ua=M["q_wu"] * 1000 / WU_PERIOD_MS_,   # scope: one measurement's charge x 10/s
     nfc_ready=5.66,      # mode 3
-    field=203.0,         # mode 4, antenna not yet tuned
+    field=M["read_ma"],  # scope: field during a read (the multimeter read 203 mA steady)
+    field_empty=M["empty_ma"],   # scope: field during an empty poll
+    poll_ms=M["read_ms"], empty_poll_ms=M["empty_ms"],
     run4=1.01,           # mode 5
     sleep4=0.72,         # mode 6
     led_g=2.77, led_r=3.0,  # modes 7, 8
-    motor=56.5,          # mode 9
+    motor=56.5,          # mode 9, running steadily
+    motor_fb=M["buzz_ma"] - M["ready_led_ma"],    # scope: average over a 50 ms buzz, start-up included
     run24=2.8, run80=9.0, adc_extra=0.2, flash_op=7.0, button=0.41,   # datasheet / estimate
     false_per_min=1.0, self_dis_pct=2.0, usable=0.90,
-    poll_ms=10.0, empty_poll_ms=6.0,
 )
 PES = dict(TYP, name="Pessimistic",
-           nfc_wu_ua=200.7, false_per_min=4.0, self_dis_pct=3.0, usable=0.85,
-           poll_ms=14.0, empty_poll_ms=8.0)
+           nfc_wu_ua=184.7,     # the multimeter's mode 2 minus mode 1 (it read 117-204 uA)
+           false_per_min=4.0, self_dis_pct=3.0, usable=0.85,
+           poll_ms=M["read_ms"] * 1.15, empty_poll_ms=M["empty_ms"] * 1.15)
 MEASURED_ON = "8 October 2026"
 
 # Firmware constants (App/Inc/app_config.h, bsp_board.h, feedback.c)
@@ -107,41 +115,45 @@ def off_parts(p):
     return [("Standby, reader power-down, board static (measured)", p["off_ua"])]
 
 
-# Ready-mode time after a read: the pattern (the reader pauses), then the
-# empty polls; the last poll's field time is counted separately.
-READY_AFTER_TAP_MS = FB_ACCEPT_LED + (EMPTY_POLLS - 1) * POLL_MS
+# The rest of the accepted-card pattern after the buzz, with the reader in
+# Ready mode and the green LED on (measured level, firmware length).
+REST_MS = FB_ACCEPT_LED - M["buzz_ms"]
+
+
+def poll_parts(p):
+    """Wake-up IRQ, the read, the empty poll and re-arm: what every tap shares (uC)."""
+    return [
+        ("Wake-up IRQ: measurement, oscillator start", M["q_irq"]),
+        (f"RF field for the read, {p['poll_ms']:.1f} ms at {p['field']:.0f} mA", p["field"] * p["poll_ms"]),
+        (f"Empty poll, {p['empty_poll_ms']:.1f} ms at {p['field_empty']:.0f} mA, and re-arm",
+         p["field_empty"] * p["empty_poll_ms"] + M["q_rearm"]),
+    ]
 
 
 def tap_parts(p):
-    """Charge (uC) of one accepted card tap."""
-    return [
-        (f"Vibration motor, {FB_ACCEPT_VIB} ms", p["motor"] * FB_ACCEPT_VIB),
-        (f"Reader in Ready mode, {READY_AFTER_TAP_MS} ms", p["nfc_ready"] * READY_AFTER_TAP_MS),
-        (f"{EMPTY_POLLS} empty poll before re-arming", EMPTY_POLLS * p["field"] * p["empty_poll_ms"]),
-        ("RF field for the read, 10 ms", p["field"] * p["poll_ms"]),
-        ("Green LED, 250 ms", p["led_g"] * FB_ACCEPT_LED),
-        ("Re-arm wake-up (amplitude measure)", 100.0),
-        ("MCU active during exchange, 15 ms", p["run4"] * 15),
-        ("Oscillator start on wake-up, 1 ms", p["nfc_ready"] * 1),
+    """Charge (uC) of one accepted card tap, built from the scope captures."""
+    return poll_parts(p) + [
+        (f"Buzz: motor, Ready and LED, {M['buzz_ms']:.0f} ms", M["q_buzz"]),
+        (f"Ready and LED, rest of the pattern, {REST_MS:.0f} ms", M["ready_led_ma"] * REST_MS),
         ("Flash write + share of page erase", 0.1 * p["flash_op"] + PAGE_ERASE_MS * p["flash_op"] / RECS_PER_PAGE),
     ]
 
 
 def events(p):
     tap = sum(v for _, v in tap_parts(p))
-    common_poll = (p["field"] * p["poll_ms"] + p["run4"] * 15 + p["nfc_ready"] * 1 + 100
-                   + EMPTY_POLLS * p["field"] * p["empty_poll_ms"])
-    dup = (common_poll + p["motor"] * 2 * FB_DUP_PULSE + p["led_g"] * 2 * FB_DUP_PULSE
-           + p["nfc_ready"] * (2 * FB_DUP_PULSE + FB_DUP_GAP + (EMPTY_POLLS - 1) * POLL_MS))
-    false_wake = (p["nfc_ready"] * (1 + (EMPTY_POLLS - 1) * POLL_MS) + EMPTY_POLLS * p["field"] * p["empty_poll_ms"]
-                  + 100 + p["run4"] * 1.5)
+    common_poll = sum(v for _, v in poll_parts(p))
+    mf = p["motor_fb"]
+    dup = (common_poll + mf * 2 * FB_DUP_PULSE + p["led_g"] * 2 * FB_DUP_PULSE
+           + p["nfc_ready"] * (2 * FB_DUP_PULSE + FB_DUP_GAP))
+    # Measured from the IRQ to re-arm; the empty poll scales with the field time.
+    false_wake = M["q_false"] - M["q_empty"] + p["field_empty"] * p["empty_poll_ms"]
     power_on = (20 * p["run80"] + 30 * p["run4"] + 5 * p["nfc_ready"] + 300 * p["button"]
-                + p["motor"] * FB_ON_VIB + p["led_g"] * FB_ON_LED)
-    auto_off = p["motor"] * FB_OFF_VIB + p["led_r"] * FB_OFF_LED + 2.0
-    button_off = auto_off + 5000 * p["button"] + p["motor"] * FB_HOLD_VIB
+                + mf * FB_ON_VIB + p["led_g"] * FB_ON_LED)
+    auto_off = mf * FB_OFF_VIB + p["led_r"] * FB_OFF_LED + 2.0
+    button_off = auto_off + 5000 * p["button"] + mf * FB_HOLD_VIB
     lect_led = 3 * FB_LECT_PULSE + 2 * FB_LECT_GAP + 400
-    new_lecture = (3000 * p["button"] + p["motor"] * FB_HOLD_VIB + 10
-                   + p["motor"] * 3 * FB_LECT_PULSE + p["led_g"] * lect_led)
+    new_lecture = (3000 * p["button"] + mf * FB_HOLD_VIB + 10
+                   + mf * 3 * FB_LECT_PULSE + p["led_g"] * lect_led)
     short_press = 200 * p["button"] + p["led_g"] * 2 * 150
     batt_sample = BATT_SAMPLE_MS * (p["run4"] + p["adc_extra"])
     page_erase = PAGE_ERASE_MS * p["flash_op"]
@@ -194,7 +206,7 @@ life4_p = life_months(P, 4)
 life4_t_nosd = life_months(T, 4, self_dis=False)
 dev_m, sd_m, tot_m = monthly(T, 4)
 
-poll_mode_ma = T["nfc_ready"] + T["field"] * T["empty_poll_ms"] / 100 + T["run4"] * 0.15 + idle_t / 1000
+poll_mode_ma = T["nfc_ready"] + T["field_empty"] * T["empty_poll_ms"] / 100 + T["run4"] * 0.15 + idle_t / 1000
 idle_life_h = usable_t / (idle_t / 1000)
 poll_life_h = usable_t / poll_mode_ma
 taps_bound = usable_t * 1000 / uah(ev_t["tap"])
@@ -436,30 +448,43 @@ def svg_idle_timeline(p):
     return svg_timeline(-0.15, t1, lanes, list(range(0, 11)), lambda t: f"{t}", "seconds", markers)
 
 
-# One wake-up measurement, illustrated. Its charge follows from the measured
-# average; the split between oscillator start-up and the field burst is an
-# assumption until the pulse is captured on a scope across a shunt.
-WU_OSC_MS = 1.0                            # assumed: 27.12 MHz oscillator start, at Ready current
-WU_BASE_UA = 5.0                           # drawn: board 3.3 uA + the reader's wake-up timer
+WU_BASE_UA = 5.0       # drawn between measurements: board 3.3 uA + the reader's timer (below the scope's resolution)
 
 
-def wu_pulse(p):
-    q = p["nfc_wu_ua"] * WU_PERIOD_MS / 1000   # uC per measurement
-    t_field = (q - p["nfc_ready"] * WU_OSC_MS) / p["field"]   # ms
-    return q, t_field
+def svg_measured(cap, a_ms, b_ms, ymax, ticks, notes=(), width=680, height=210, label_w=60, buckets=700):
+    """A scope capture as battery current (offset removed), with text notes at (t_ms, mA, text, anchor)."""
+    pts = cap.trace(a_ms / 1000, b_ms / 1000, buckets)
+    plot_w, top, ph = width - label_w - 14, 10, height - 44
+    X = lambda t: label_w + plot_w * (t - a_ms) / (b_ms - a_ms)
+    Y = lambda v: top + ph * (1 - max(min(v, ymax), -ymax * 0.05) / ymax)
+    out = [f'<svg viewBox="0 0 {width} {height}" class="chart" role="img">']
+    step = 50 if ymax > 150 else (20 if ymax > 60 else 10)
+    for v in range(0, int(ymax) + 1, step):
+        out.append(f'<line x1="{label_w}" y1="{Y(v):.1f}" x2="{label_w+plot_w}" y2="{Y(v):.1f}" class="grid"/>')
+        out.append(f'<text x="{label_w-6}" y="{Y(v)+3:.1f}" class="tick" text-anchor="end">{v}</text>')
+    for t in ticks:
+        out.append(f'<line x1="{X(t):.1f}" y1="{top}" x2="{X(t):.1f}" y2="{top+ph}" class="grid"/>')
+        out.append(f'<text x="{X(t):.1f}" y="{top+ph+13}" class="tick" text-anchor="middle">{t:g}</text>')
+    out.append(f'<text x="{width-2}" y="{top+ph+28}" class="tick" text-anchor="end">ms</text>')
+    out.append(f'<text x="14" y="{top+ph/2}" class="tick" text-anchor="middle" transform="rotate(-90 14 {top+ph/2})">mA</text>')
+    d = " ".join(f"{'M' if k == 0 else 'L'}{X(t):.1f},{Y(v):.1f}" for k, (t, v) in enumerate(pts))
+    out.append(f'<path d="{d} L{X(pts[-1][0]):.1f},{Y(0):.1f} L{X(pts[0][0]):.1f},{Y(0):.1f} Z" fill="{C_WU}" stroke="none"/>')
+    out.append(f'<path d="{d}" fill="none" stroke="{C_MEAS}" stroke-width="1.1"/>')
+    out.append(f'<line x1="{label_w}" y1="{Y(0):.1f}" x2="{label_w+plot_w}" y2="{Y(0):.1f}" class="axis"/>')
+    for t, v, text, anchor in notes:
+        out.append(f'<text x="{X(t):.1f}" y="{Y(v):.1f}" class="lab" text-anchor="{anchor}">{text}</text>')
+    out.append("</svg>")
+    return "\n".join(out)
 
 
 def svg_wakeup_pulses(p):
-    """Battery current through four wake-up measurements, and one zoomed in."""
-    q, t_f = wu_pulse(p)
+    """Battery current through four wake-up measurements (drawn from the measured
+    pulse), and the measured pulse itself."""
     width, label_w = 680, 112
     plot_w = width - label_w - 14
     lo, hi = 1.0, 3e5                          # uA, log axis
     top_t0, top_t1 = -20.0, 345.0
-    z_t0, z_t1 = -0.2, 1.45
     p1_top, p1_h = 26, 120
-    p2_top, p2_h = 228, 120
-    h = p2_top + p2_h + 34
 
     def Y(ua, top, ph):
         return top + ph * (1 - (math.log10(max(ua, lo)) - math.log10(lo)) / (math.log10(hi) - math.log10(lo)))
@@ -467,77 +492,46 @@ def svg_wakeup_pulses(p):
     def X(t, a, b):
         return label_w + plot_w * (t - a) / (b - a)
 
-    out = [f'<svg viewBox="0 0 {width} {h}" class="chart" role="img">']
-
-    def axis(top, ph, a, b, ticks, unit, title):
-        for ua, lab in ((1, "1 uA"), (10, "10 uA"), (100, "100 uA"), (1e3, "1 mA"), (1e4, "10 mA"), (1e5, "100 mA")):
-            y = Y(ua, top, ph)
-            out.append(f'<line x1="{label_w}" y1="{y:.1f}" x2="{label_w+plot_w}" y2="{y:.1f}" class="grid"/>')
-            out.append(f'<text x="{label_w-6}" y="{y+3:.1f}" class="tick" text-anchor="end">{lab}</text>')
-        for t in ticks:
-            x = X(t, a, b)
-            out.append(f'<line x1="{x:.1f}" y1="{top}" x2="{x:.1f}" y2="{top+ph}" class="grid"/>')
-            out.append(f'<text x="{x:.1f}" y="{top+ph+13}" class="tick" text-anchor="middle">{t:g}</text>')
-        out.append(f'<text x="{width-2}" y="{top+ph+26}" class="tick" text-anchor="end">{unit}</text>')
-        out.append(f'<line x1="{label_w}" y1="{top+ph}" x2="{label_w+plot_w}" y2="{top+ph}" class="axis"/>')
-        out.append(f'<text x="{label_w}" y="{top-12}" class="lab" font-weight="600">{title}</text>')
-        out.append(f'<text x="{label_w-6}" y="{top-12}" class="tick" text-anchor="end">battery current</text>')
-
-    def trace(steps, top, ph, a, b, min_w=0.0):
-        """steps: [(t_start, t_end, uA)] above the baseline; drawn as a filled step line."""
-        base = Y(WU_BASE_UA, top, ph)
-        d = f"M{X(a, a, b):.1f},{base:.1f}"
-        for t0, t1, ua in steps:
-            x0, x1 = X(t0, a, b), X(t1, a, b)
-            x1 = max(x1, x0 + min_w)
-            y = Y(ua, top, ph)
-            d += f" H{x0:.1f} V{y:.1f} H{x1:.1f} V{base:.1f}"
-        d += f" H{X(b, a, b):.1f}"
-        out.append(f'<path d="{d} V{top+ph:.1f} H{label_w} Z" fill="{C_WU}" stroke="none"/>')
-        out.append(f'<path d="{d}" fill="none" stroke="{C_MEAS}" stroke-width="1.3"/>')
-
-    # Panel 1: four measurements, the last one sees a card and the read follows.
-    axis(p1_top, p1_h, top_t0, top_t1, [0, 50, 100, 150, 200, 250, 300], "ms", "Four measurements")
-    meas = [0.0, 100.0, 200.0, 300.0]
+    out = [f'<svg viewBox="0 0 {width} {p1_top + p1_h + 34}" class="chart" role="img">']
+    for ua, lab in ((1, "1 uA"), (10, "10 uA"), (100, "100 uA"), (1e3, "1 mA"), (1e4, "10 mA"), (1e5, "100 mA")):
+        y = Y(ua, p1_top, p1_h)
+        out.append(f'<line x1="{label_w}" y1="{y:.1f}" x2="{label_w+plot_w}" y2="{y:.1f}" class="grid"/>')
+        out.append(f'<text x="{label_w-6}" y="{y+3:.1f}" class="tick" text-anchor="end">{lab}</text>')
+    for t in (0, 50, 100, 150, 200, 250, 300):
+        x = X(t, top_t0, top_t1)
+        out.append(f'<line x1="{x:.1f}" y1="{p1_top}" x2="{x:.1f}" y2="{p1_top+p1_h}" class="grid"/>')
+        out.append(f'<text x="{x:.1f}" y="{p1_top+p1_h+13}" class="tick" text-anchor="middle">{t:g}</text>')
+    out.append(f'<text x="{width-2}" y="{p1_top+p1_h+26}" class="tick" text-anchor="end">ms</text>')
+    out.append(f'<line x1="{label_w}" y1="{p1_top+p1_h}" x2="{label_w+plot_w}" y2="{p1_top+p1_h}" class="axis"/>')
+    out.append(f'<text x="{label_w-6}" y="{p1_top-12}" class="tick" text-anchor="end">battery current</text>')
+    # Each measurement: oscillator start, plateau, field spike (TEK00005); the read after the IRQ (TEK00006).
     steps = []
-    for t in meas:
-        steps += [(t, t + WU_OSC_MS, p["nfc_ready"] * 1000), (t + WU_OSC_MS, t + WU_OSC_MS + t_f, p["field"] * 1000)]
-    steps.append((302.0, 302.0 + p["poll_ms"], p["field"] * 1000))   # the read after the IRQ
-    trace(steps, p1_top, p1_h, top_t0, top_t1, min_w=2.0)
-    yb = Y(WU_BASE_UA, p1_top, p1_h)
+    for t in (0.0, 100.0, 200.0, 300.0):
+        steps += [(t, t + 0.40, M["wu_osc_ma"] * 1000), (t + 0.40, t + 0.62, M["wu_plateau_ma"] * 1000),
+                  (t + 0.62, t + 0.62 + M["wu_spike_us"] / 1000, M["wu_spike_peak"] * 1000)]
+    steps.append((302.5, 302.5 + p["poll_ms"], p["field"] * 1000))
+    base = Y(WU_BASE_UA, p1_top, p1_h)
+    d = f"M{X(top_t0, top_t0, top_t1):.1f},{base:.1f}"
+    for t0, t1, ua in steps:
+        x0 = X(t0, top_t0, top_t1)
+        x1 = max(X(t1, top_t0, top_t1), x0 + 1.2)
+        d += f" H{x0:.1f} V{Y(ua, p1_top, p1_h):.1f} H{x1:.1f} V{base:.1f}"
+    d += f" H{X(top_t1, top_t0, top_t1):.1f}"
+    out.append(f'<path d="{d} V{p1_top+p1_h:.1f} H{label_w} Z" fill="{C_WU}" stroke="none"/>')
+    out.append(f'<path d="{d}" fill="none" stroke="{C_MEAS}" stroke-width="1.3"/>')
+    out.append('<defs><marker id="arr" viewBox="0 0 6 6" refX="3" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse">'
+               '<path d="M0,0 L6,3 L0,6 z" fill="#52514e"/></marker></defs>')
     for a, b in ((0, 100), (100, 200), (200, 300)):
         xa, xb = X(a, top_t0, top_t1) + 4, X(b, top_t0, top_t1) - 4
         y = Y(3e4, p1_top, p1_h)
         out.append(f'<line x1="{xa:.1f}" y1="{y:.1f}" x2="{xb:.1f}" y2="{y:.1f}" stroke="#52514e" stroke-width="0.8" '
                    f'marker-start="url(#arr)" marker-end="url(#arr)"/>')
         out.append(f'<text x="{(xa+xb)/2:.1f}" y="{y-4:.1f}" class="tick" text-anchor="middle">{WU_PERIOD_MS} ms</text>')
-    out.append(f'<text x="{X(50, top_t0, top_t1):.1f}" y="{yb-6:.1f}" class="tick" text-anchor="middle">a few uA between</text>')
+    out.append(f'<text x="{X(50, top_t0, top_t1):.1f}" y="{base-6:.1f}" class="tick" text-anchor="middle">a few uA between</text>')
     x4 = X(300, top_t0, top_t1)
     out.append(f'<text x="{x4-6:.1f}" y="{Y(2e2, p1_top, p1_h):.1f}" class="tick" text-anchor="end">card in range:</text>')
     out.append(f'<text x="{x4-6:.1f}" y="{Y(2e2, p1_top, p1_h)+10:.1f}" class="tick" text-anchor="end">IRQ, MCU wakes, read</text>')
-    out.append('<defs><marker id="arr" viewBox="0 0 6 6" refX="3" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse">'
-               '<path d="M0,0 L6,3 L0,6 z" fill="#52514e"/></marker></defs>')
-
-    # Zoom guides from the second measurement down to panel 2.
-    xz = X(100, top_t0, top_t1)
-    out.append(f'<path d="M{xz-3:.1f},{p1_top+p1_h+17} L{label_w},{p2_top-22} M{xz+3:.1f},{p1_top+p1_h+17} L{label_w+plot_w},{p2_top-22}" '
-               f'stroke="#a3a29d" stroke-width="0.7" stroke-dasharray="3 2" fill="none"/>')
-
-    # Panel 2: one measurement.
-    axis(p2_top, p2_h, z_t0, z_t1, [0, 0.25, 0.5, 0.75, 1.0, 1.25], "ms", "One measurement")
-    trace([(0, WU_OSC_MS, p["nfc_ready"] * 1000), (WU_OSC_MS, WU_OSC_MS + t_f, p["field"] * 1000)],
-          p2_top, p2_h, z_t0, z_t1)
-    xa, xb = X(0, z_t0, z_t1), X(WU_OSC_MS, z_t0, z_t1)
-    yr = Y(p["nfc_ready"] * 1000, p2_top, p2_h)
-    out.append(f'<text x="{(xa+xb)/2:.1f}" y="{yr-6:.1f}" class="lab" text-anchor="middle">oscillator starts, Ready '
-               f'{p["nfc_ready"]:.2f} mA (~{WU_OSC_MS:g} ms, assumed)</text>')
-    xf = X(WU_OSC_MS + t_f, z_t0, z_t1)
-    yf = Y(p["field"] * 1000, p2_top, p2_h)
-    out.append(f'<text x="{xf+5:.1f}" y="{yf+4:.1f}" class="lab">field on, amplitude measured:</text>')
-    out.append(f'<text x="{xf+5:.1f}" y="{yf+16:.1f}" class="lab">{p["field"]:.0f} mA for ~{t_f*1000:.0f} us</text>')
-    out.append(f'<text x="{(xa+xb)/2:.1f}" y="{Y(400, p2_top, p2_h):.1f}" class="val" text-anchor="middle">{q:.1f} uC per measurement</text>')
-    out.append(f'<text x="{(xa+xb)/2:.1f}" y="{Y(400, p2_top, p2_h)+12:.1f}" class="tick" text-anchor="middle">= {p["nfc_wu_ua"]:.0f} uA '
-               f'average x {WU_PERIOD_MS} ms, measured</text>')
+    out.append(f'<text x="{label_w}" y="{p1_top-12}" class="lab" font-weight="600">Four measurements</text>')
     out.append("</svg>")
     return "\n".join(out)
 
@@ -545,6 +539,7 @@ def svg_wakeup_pulses(p):
 def svg_tap_timeline(p):
     """One accepted tap, from the wake-up measurement that sees the card."""
     rd = p["poll_ms"]                      # field on for the read: guard + select
+    bz = M["buzz_ms"]                      # measured; the firmware asks 60 ms
     end_fb = rd + FB_ACCEPT_LED
     ep = p["empty_poll_ms"]
     lanes = [
@@ -560,14 +555,14 @@ def svg_tap_timeline(p):
         ("MCU", "", [
             (-130, 330, C_STOP2, "", ""),
             (0, 1, C_RUN, "", ""), (6, rd, C_RUN, "", ""),
-            (rd + FB_ACCEPT_VIB, rd + FB_ACCEPT_VIB + 0.3, C_RUN, "", ""),
+            (rd + bz, rd + bz + 0.3, C_RUN, "", ""),
             (end_fb, end_fb + 0.5, C_RUN, "", ""), (end_fb + ep, end_fb + ep + 1, C_RUN, "", ""),
         ], []),
-        ("Motor", f"{p['motor']:.1f} mA", [(rd, rd + FB_ACCEPT_VIB, C_MOTOR, f"{FB_ACCEPT_VIB} ms", "#ffffff")], []),
+        ("Motor", f"{p['motor_fb']:.0f} mA average", [(rd, rd + bz, C_MOTOR, f"{bz:.0f} ms", "#ffffff")], []),
         ("Green LED", f"{p['led_g']:.2f} mA", [(rd, end_fb, C_LED, f"{FB_ACCEPT_LED} ms", "#ffffff")], []),
     ]
-    markers = [(0, "card seen: IRQ", "end"), (rd, f"read done ({rd:.0f} ms of field)", "start"),
-               (end_fb, f"empty poll ({ep:.0f} ms), re-arm", "end")]
+    markers = [(0, "card seen: IRQ", "end"), (rd, f"read done ({rd:.1f} ms of field)", "start"),
+               (end_fb, f"empty poll ({ep:.1f} ms), re-arm", "end")]
     return svg_timeline(-130, 330, lanes, list(range(-100, 301, 50)), lambda t: f"{t}", "ms after the card is seen",
                         markers)
 
@@ -577,7 +572,7 @@ def svg_false_timeline(p):
     ep = p["empty_poll_ms"]
     lanes = [
         ("ST25R3916", "", [(-6, 0, C_WU, "wake-up", "#8a4a2d"), (0, 1, C_READY, "", ""),
-                           (1, 1 + ep, C_FIELD, f"field {ep:.0f} ms, no answer", "#ffffff"),
+                           (1, 1 + ep, C_FIELD, f"field {ep:.1f} ms, no answer", "#ffffff"),
                            (1 + ep, 2 + ep, C_READY, "", ""), (2 + ep, 16, C_WU, "wake-up mode again", "#8a4a2d")],
          [(0, C_MEAS)]),
         ("MCU", "", [(-6, 16, C_STOP2, "", ""), (0, 1, C_RUN, "", ""), (1 + ep, 2 + ep, C_RUN, "", "")], []),
@@ -620,9 +615,9 @@ clock_items = [
 ]
 
 event_rows = [
-    ("Accepted card tap", f"Field 10 ms, motor {FB_ACCEPT_VIB} ms, LED 250 ms, Ready {READY_AFTER_TAP_MS} ms, 1 empty poll", ev_t["tap"], ev_p["tap"]),
-    ("Duplicate tap", "Same read, 2 x 60 ms motor + LED", ev_t["dup"], ev_p["dup"]),
-    ("False wake-up", "Oscillator start + 1 empty poll (6 ms field), no feedback", ev_t["false_wake"], ev_p["false_wake"]),
+    ("Accepted card tap", f"Measured: field {T['poll_ms']:.1f} ms, buzz {M['buzz_ms']:.0f} ms, Ready + LED to 250 ms, 1 empty poll", ev_t["tap"], ev_p["tap"]),
+    ("Duplicate tap", f"Same read and poll, 2 x 60 ms motor at {T['motor_fb']:.0f} mA + LED", ev_t["dup"], ev_p["dup"]),
+    ("False wake-up", f"Measured: IRQ, {T['empty_poll_ms']:.1f} ms empty poll at {T['field_empty']:.0f} mA, re-arm", ev_t["false_wake"], ev_p["false_wake"]),
     ("Power-on (button)", "Boot (20 ms at 80 MHz), reader start, 120 ms motor, 300 ms LED", ev_t["power_on"], ev_p["power_on"]),
     ("Lecture start (2-5 s hold)", "3 s hold, 60 ms + 3 x 80 ms motor, 880 ms LED, marker write", ev_t["new_lecture"], ev_p["new_lecture"]),
     ("Auto power-off (3 min idle)", "250 ms motor, 700 ms red LED, flush, reader power-down", ev_t["auto_off"], ev_p["auto_off"]),
@@ -646,8 +641,8 @@ mode_rows = [
     ("Off (Standby)", f"{off_t:.1f} uA", f"{off_p:.1f} uA", "MCU Standby + RTC, reader power-down, divider (measured)"),
     ("Idle, scanning", f"{idle_t:.0f} uA", f"{idle_p:.0f} uA", "Stop 2, reader wake-up mode, heartbeat"),
     ("Polling mode (wake-up off)", f"{poll_mode_ma:.1f} mA", "-", "Reader Ready + field every 100 ms; for comparison"),
-    ("Card read (RF field on)", f"{T['field']:.0f} mA", "-", "For ~10 ms per read; antenna untuned (measured)"),
-    ("Vibration motor on", f"{T['motor']:.1f} mA", "-", "60-250 ms per pattern (measured)"),
+    ("Card read (RF field on)", f"{T['field']:.0f} mA", "-", f"{T['poll_ms']:.1f} ms per read, {T['field_empty']:.0f} mA in an empty poll (scope)"),
+    ("Vibration motor on", f"{T['motor_fb']:.0f} mA", "-", f"Average over a 50 ms buzz (scope); {T['motor']} mA running steadily"),
     ("USB session", "4-6 mA", "-", "From VBUS, not the battery (plus charge current)"),
 ]
 
@@ -721,14 +716,29 @@ meas_rows = [
 ]
 meas_table = table(["Mode", "State held", "Current", "Note"], meas_rows, align=["r", "l", "r", "l"], cls="assump")
 
+scope_rows = [
+    ("One wake-up measurement", "TEK00005", f"{M['q_wu']:.1f} uC",
+     f"Oscillator start {M['wu_osc_ma']:.0f} mA x 0.4 ms, plateau {M['wu_plateau_ma']:.1f} mA, field spike {M['wu_spike_peak']:.0f} mA "
+     f"peak for {M['wu_spike_us']:.0f} us; two more in TEK00007: {M['q_wu_fw'][0]:.1f} and {M['q_wu_fw'][1]:.1f} uC"),
+    ("Wake-up mode average", "", f"{T['nfc_wu_ua']:.0f} uA", f"{M['q_wu']:.1f} uC x 10 per second, plus the reader's timer (a few uA, below the scope's resolution)"),
+    ("Wake-up IRQ to field on", "TEK00006", f"{M['q_irq']:.1f} uC", "The measurement that saw the card, MCU wake, oscillator start"),
+    ("Read: field on", "TEK00006", f"{M['q_read']/1000:.2f} mC", f"{M['read_ms']:.1f} ms at {M['read_ma']:.0f} mA (guard, REQA, anticollision, SELECT)"),
+    ("Buzz", "TEK00006", f"{M['q_buzz']/1000:.2f} mC", f"{M['buzz_ms']:.0f} ms at {M['buzz_ma']:.0f} mA: motor {T['motor_fb']:.0f} mA with start-up, Ready, LED"),
+    ("Ready + green LED", "TEK00006", f"{M['ready_led_ma']:.2f} mA", f"After the buzz (multimeter: {T['nfc_ready']} + {T['led_g']} mA)"),
+    ("Empty poll", "TEK00007", f"{M['q_empty']/1000:.2f} mC", f"{M['empty_ms']:.1f} ms at {M['empty_ma']:.0f} mA"),
+    ("Re-arm (amplitude measure)", "TEK00007", f"{M['q_rearm']:.1f} uC", ""),
+    ("False wake-up, IRQ to re-arm", "TEK00007", f"{M['q_false']/1000:.2f} mC", "Next measurement 105 ms later, as expected"),
+]
+scope_table = table(["Event", "Capture", "Charge / current", "Detail"], scope_rows, align=["l", "l", "r", "l"], cls="assump")
+
 assump_rows = [
     ("STM32L432 Run, 24 MHz / 80 MHz", f"{T['run24']} / {T['run80']} mA", "-", "DS11451 typ., Range 1 (not used while scanning)"),
     ("ADC on, extra over Run", f"{T['adc_extra']} mA", "-", "DS11451"),
     ("Flash program / erase", f"{T['flash_op']} mA", "-", "DS11451; 22 ms per page erase"),
     ("Button pull-ups (R8 10k + internal)", f"{T['button']} mA", "-", "Only while pressed"),
-    ("Field time per read / per empty poll", f"{T['poll_ms']:.0f} / {T['empty_poll_ms']:.0f} ms", f"{P['poll_ms']:.0f} / {P['empty_poll_ms']:.0f} ms",
-     "5 ms guard + 1 ms tick, then REQA..SELECT at 106 kbit/s"),
-    ("Reader wake-up mode average", f"{T['nfc_wu_ua']:.0f} uA", f"{P['nfc_wu_ua']:.0f} uA", "Measured range: 117-204 uA on the meter"),
+    ("Field time per read / per empty poll", f"{T['poll_ms']:.1f} / {T['empty_poll_ms']:.1f} ms", f"{P['poll_ms']:.1f} / {P['empty_poll_ms']:.1f} ms",
+     "Scope (one capture each); pessimistic +15 %"),
+    ("Reader wake-up mode average", f"{T['nfc_wu_ua']:.0f} uA", f"{P['nfc_wu_ua']:.0f} uA", "Scope (pulse charge x 10/s) against the multimeter"),
     ("False wake-ups while scanning", f"{T['false_per_min']:g} / min", f"{P['false_per_min']:g} / min", "Not measured yet; read dbg_nfc_false_wakes"),
     ("Cell self-discharge", f"{T['self_dis_pct']:g} %/month", f"{P['self_dis_pct']:g} %/month", "Typical Li-ion at room temperature"),
     ("Usable capacity of 1000 mAh", f"{usable_t:.0f} mAh", f"{usable_p:.0f} mAh", "Cut-off at 3.3 V, ageing margin"),
@@ -770,7 +780,7 @@ improve_rows = [
     ("Tune the antenna: field 203 mA to ~100 mA", f"-{(T['field']-100)*(T['poll_ms']+T['empty_poll_ms'])/1000:.1f} mC per tap",
      f"{(T['field']-100)*(T['poll_ms']+T['empty_poll_ms'])/ev_t['tap']*100:.0f} % of each tap; probably cheaper wake-up measurements too"),
     ("SPI prescaler /8 to /2", f"-{T['field']*1.4/1000:.2f} mC per read", f"{T['field']*1.4/ev_t['tap']*100:.0f} % of each tap"),
-    ("Motor pulse 60 ms to 40 ms", f"-{T['motor']*20/1000:.1f} mC per tap", f"{T['motor']*20/ev_t['tap']*100:.0f} % of each tap"),
+    ("Motor pulse 60 ms to 40 ms", f"-{T['motor_fb']*20/1000:.1f} mC per tap", f"{T['motor_fb']*20/ev_t['tap']*100:.0f} % of each tap"),
     ("Heartbeat off", f"-{T['led_g']*1000*HB_ON_MS/HB_PERIOD_MS:.1f} uA idle",
      f"{T['led_g']*1000*HB_ON_MS/HB_PERIOD_MS/idle_t*100:.0f} % of idle; no sign the unit is on"),
 ]
@@ -953,7 +963,7 @@ html = f"""<!doctype html>
 <p>The logger spends nearly all of its life in one of two low-power states. Switched off, it sits in Standby and draws
 <b>{off_t:.1f} uA</b> (measured). Switched on and waiting for cards, the MCU sleeps in Stop 2 and wakes only for a 10 ms heartbeat flash
 every 5 s, while the ST25R3916 checks the antenna itself every 100 ms. That idle state draws about <b>{idle_t:.0f} uA</b>, and
-{T['nfc_wu_ua']/idle_t*100:.0f} % of it is the reader's wake-up mode. The large currents ({T['field']:.0f} mA for the RF field, {T['motor']:.1f} mA for
+{T['nfc_wu_ua']/idle_t*100:.0f} % of it is the reader's wake-up mode. The large currents ({T['field']:.0f} mA for the RF field, {T['motor_fb']:.0f} mA for
 the motor) flow only for milliseconds per tap, so a whole 100-student lecture costs about <b>{lect_t/1000:.2f} mAh</b> ({lect_t/1000*BATT_V:.2f} mWh).</p>
 <p>At four lectures a day, the device uses about <b>{dev_m:.0f} mAh a month</b>. With the cell's self-discharge (about {sd_m:.0f} mAh a month)
 that gives roughly <b>{life4_t:.0f} months per charge</b>, or {life4_t_nosd:.0f} months from the device's draw alone.</p>
@@ -963,10 +973,11 @@ that gives roughly <b>{life4_t:.0f} months per charge</b>, or {life4_t_nosd:.0f}
 <p>A finished unit costs about <b>US${COST[2]['unit']:.0f} (LKR {COST[2]['unit']*cm.LKR_PER_USD:,.0f})</b> to make at 1 000 units and
 US${COST[3]['unit']:.0f} (LKR {COST[3]['unit']*cm.LKR_PER_USD:,.0f}) at 10 000, landed in Sri Lanka and tested (section 11).</p>
 <div class="callout"><b>Confidence.</b> Every current in this report except the 24/80 MHz run currents, the ADC and the flash was measured on the board
-({MEASURED_ON}) with a multimeter in series with the cell, using a power-test build that holds each load steady (section 3).
-Event charges are those currents multiplied by the firmware's timings, which come from its constants, not from a scope.
-The reader's wake-up mode average is the least certain figure: the meter read 117-204 uA while it averaged the reader's 100 ms measurements,
-so the pessimistic column uses 204 uA and 4 false wake-ups a minute. The RF field current is for the untuned antenna.</div>
+({MEASURED_ON}). Steady loads were read with a multimeter in series with the cell, using a power-test build that holds each load steady;
+the pulses (a wake-up measurement, a card tap, a false wake-up) were captured with a Tektronix TBS1052C across a 1 ohm shunt and integrated
+(section 3). The two methods disagree on the reader's wake-up mode: the scope's {M['q_wu']:.1f} uC per measurement gives {T['nfc_wu_ua']:.0f} uA,
+the multimeter, which cannot follow 94 mA spikes on its uA range, read 117-204 uA. The typical column uses the scope, the pessimistic one
+the multimeter's 185 uA and 4 false wake-ups a minute. The RF field current is for the untuned antenna.</div>
 
 <h2><span class="num">2</span>Clock frequency selection</h2>
 <p>Each clock was picked for the job it does. The scanning clock matters most, because it runs on every wake-up.</p>
@@ -1010,6 +1021,30 @@ steady, so the meter reads it instead of a millisecond pulse. The 3.3 V rail com
 the MCU and LEDs draw; the reader's VDD/VDD_TX and the motor sit straight on BAT+.</p>
 <h3>Measured <span class="measured">Measured {MEASURED_ON}</span></h3>
 {meas_table}
+<h3>Scope captures <span class="measured">Measured {MEASURED_ON}</span></h3>
+<p>Tektronix TBS1052C, probe and menu at 10X, across a 1 ohm shunt in the battery's negative lead, so 1 mV is 1 mA; USB and the debugger
+unplugged. Each capture's DC offset (up to 2 mA) is taken from a quiet stretch and subtracted, and the charge is the integral of the current.
+The files are in <code>Waveforms/</code>; <code>Firmware/docs/waveforms.py</code> does the arithmetic.</p>
+{scope_table}
+<div class="two">
+<div class="figure"><div class="title">One wake-up measurement (TEK00005)</div>
+{svg_measured(M['wu'], -0.9, 0.6, 100, [-0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6], width=340, height=200, label_w=40, notes=[
+    (-0.43, 36, "oscillator", "middle"), (-0.43, 28, "starts", "middle"), (0.04, 96, f"field {M['wu_spike_peak']:.0f} mA", "start")])}
+</div>
+<div class="figure"><div class="title">A false wake-up (TEK00007)</div>
+{svg_measured(M['fw'], -4, 12, 250, [-4, -2, 0, 2, 4, 6, 8, 10, 12], width=340, height=200, label_w=40, notes=[
+    (-2.4, 120, "measurement", "middle"), (3, 240, f"empty poll {M['empty_ms']:.1f} ms", "middle"), (6.3, 130, "re-arm", "start")])}
+</div>
+</div>
+<div class="figure"><div class="title">A card tap (TEK00006)</div>
+{svg_measured(M['tap'], -10, 128, 230, list(range(0, 129, 20)), height=220, notes=[
+    (6, 222, f"read: {M['read_ms']:.1f} ms at {M['read_ma']:.0f} mA", "start"),
+    (38, 128, f"buzz: {M['buzz_ms']:.0f} ms at {M['buzz_ma']:.0f} mA", "middle"),
+    (95, 30, f"Ready + LED, {M['ready_led_ma']:.1f} mA", "middle")])}
+<div class="cap">Battery current with the scope's offset removed. The capture ends at 128 ms; the LED stays on, with the reader in Ready mode,
+to the end of the 250 ms pattern, and one empty poll then re-arms wake-up mode (as in the false wake-up). The buzz measured {M['buzz_ms']:.0f} ms
+against the 60 ms set: the pattern's clock starts at the beginning of the loop pass that read the card, before the ~6 ms read.
+The motor averages {T['motor_fb']:.0f} mA over the buzz against {T['motor']} mA running, because it spends the buzz starting up.</div></div>
 <h3>Changes made after the first measurements</h3>
 {done_table}
 <h3>Still estimated</h3>
@@ -1024,17 +1059,18 @@ the MCU and LEDs draw; the reader's VDD/VDD_TX and the motor sit straight on BAT
 <div class="cap">The reader's own antenna measurements are {T['nfc_wu_ua']/idle_t*100:.0f} % of idle current. The MCU, including its wake-ups,
 is under {(T['stop2_base_ua'] + WAKES_PER_S*WAKE_MS*T['run4'])/idle_t*100+1:.0f} %.</div></div>
 <div class="calc"><div class="eq">{eqs([
-  ("Wake-up mode", f"mode 2 - mode 1 = {T['stop2_base_ua']+T['nfc_wu_ua']:.0f} - {T['stop2_base_ua']} uA", f"{T['nfc_wu_ua']:.1f} uA"),
+  ("Wake-up mode", f"{M['q_wu']:.2f} uC per measurement x 10 /s (scope)", f"{T['nfc_wu_ua']:.1f} uA"),
   ("Heartbeat", f"{T['led_g']} mA x {HB_ON_MS} ms / {HB_PERIOD_MS} ms", f"{T['led_g']*1000*HB_ON_MS/HB_PERIOD_MS:.1f} uA"),
   ("Wake-ups", f"0.4 /s x 0.5 ms x {T['run4']} mA", f"{WAKES_PER_S*WAKE_MS/1000*T['run4']*1000:.2f} uA"),
   ("Sampling", f"1.5 ms x ({T['run4']} + {T['adc_extra']}) mA / 10 s", f"{BATT_SAMPLE_MS/1000*(T['run4']+T['adc_extra'])*1000/10:.2f} uA"),
   ("Off", "measured, mode 10", f"{off_t:.2f} uA"),
-  ("Polling mode", f"{T['nfc_ready']} mA Ready + {T['field']:.0f} mA x 6 ms / 100 ms + MCU", f"{poll_mode_ma:.1f} mA"),
+  ("Polling mode", f"{T['nfc_ready']} mA Ready + {T['field_empty']:.0f} mA x {T['empty_poll_ms']:.1f} ms / 100 ms + MCU", f"{poll_mode_ma:.1f} mA"),
 ])}</div></div>
 <p>The reader's wake-up mode is still far cheaper than polling: switching it off would take idle current from {idle_t:.0f} uA to about
-{poll_mode_ma:.0f} mA, and battery life left switched on from {idle_life_h/24:.0f} days to {poll_life_h/24:.1f} days. At {WU_PERIOD_MS} ms it costs about
-{T['nfc_wu_ua']*WU_PERIOD_MS/1000:.0f} uC per measurement, far more than the ~1 uC first assumed: each measurement starts the 27.12 MHz oscillator
-and drives the untuned antenna. A longer period (section 10) or a tuned antenna is the largest remaining saving.</p>
+{poll_mode_ma:.0f} mA, and battery life left switched on from {idle_life_h/24:.0f} days to {poll_life_h/24:.1f} days. Each measurement costs
+{M['q_wu']:.1f} uC (scope), ten times the ~1 uC first assumed: it starts the 27.12 MHz oscillator ({M['wu_osc_uc']:.1f} uC) and drives the untuned
+antenna for about {M['wu_spike_us']:.0f} us at up to {M['wu_spike_peak']:.0f} mA ({M['wu_spike_uc']:.1f} uC). A longer period (section 10) or a tuned
+antenna is the largest remaining saving.</p>
 
 <h2 class="pb"><span class="num">5</span>When the MCU and the reader are awake</h2>
 <p>The two chips sleep independently. The MCU sleeps in Stop 2 and wakes on its own timer (LPTIM1) or on an interrupt: the button,
@@ -1049,39 +1085,41 @@ first of those wakes every 10 s, so it adds no wake of its own. Meanwhile the re
 Nothing else is due, so the loop sleeps the full 5 s (<code>APP_SLEEP_MAX_MS</code>).</div></div>
 <div class="figure"><div class="title">The reader's wake-up measurements, every {WU_PERIOD_MS} ms</div>
 {svg_wakeup_pulses(T)}
-<div class="cap">Log scale. Ten times a second the ST25R3916 starts its oscillator, drives the antenna for a moment and compares the
-amplitude with its reference; the MCU sleeps through all of it. When a card changes the amplitude past the window (the fourth
-measurement), the reader raises its IRQ and the MCU wakes to read the card. The charge per measurement, {wu_pulse(T)[0]:.1f} uC, follows from the
-measured {T['nfc_wu_ua']:.0f} uA average; how it divides between oscillator start-up and the field burst is an illustration
-(assumed {WU_OSC_MS:g} ms start-up) until the pulse is captured with a scope across a shunt resistor.</div></div>
+<div class="cap">Log scale; each pulse is drawn from the measured one (section 3): the oscillator starts at about {M['wu_osc_ma']:.0f} mA
+for 0.4 ms, then the antenna is driven for about {M['wu_spike_us']:.0f} us at up to {M['wu_spike_peak']:.0f} mA, {M['q_wu']:.1f} uC in all. Ten times a
+second the ST25R3916 compares the amplitude with its reference while the MCU sleeps. When a card changes it past the window (the fourth
+measurement), the reader raises its IRQ and the MCU wakes to read the card ({T['poll_ms']:.1f} ms of field).</div></div>
 <div class="figure"><div class="title">One accepted card tap</div>
 {svg_tap_timeline(T)}
 <div class="legend"><span style="--c:{C_STOP2}">MCU Stop 2</span><span style="--c:{C_RUN}">MCU awake</span>
 <span style="--c:{C_WU}">Wake-up mode</span><span style="--c:{C_READY}">Ready, {T['nfc_ready']:.2f} mA</span>
 <span style="--c:{C_FIELD}">RF field on, {T['field']:.0f} mA</span><span style="--c:{C_MOTOR}">Motor</span><span style="--c:{C_LED}">LED</span></div>
 <div class="cap">The card is noticed at the reader's next measurement, at most {WU_PERIOD_MS} ms after it arrives. The IRQ wakes the MCU, which turns the
-field on and sleeps through the 6 ms guard in Stop 2, then runs REQA, anticollision and SELECT (~4 ms), logs the card and starts the pattern.
+field on and sleeps through the 6 ms guard in Stop 2, then runs REQA, anticollision and SELECT (the field is on {T['poll_ms']:.1f} ms in all,
+measured), logs the card and starts the pattern.
 The reader stays in Ready mode while the pattern plays, so the motor never runs with the field on. At the end of the pattern one empty poll
 (the card has gone) re-arms wake-up mode. Five seconds after the last tap the MCU wakes once more to write the RAM buffer to flash.</div></div>
 <div class="figure"><div class="title">A false wake-up</div>
 {svg_false_timeline(T)}
-<div class="cap">A measurement strays past the window with no card there (noise, a hand, drift). One empty poll, about {T['empty_poll_ms']:.0f} ms of field,
-and the reader is armed again with a fresh reference: {ev_t['false_wake']/1000:.1f} mC each, against 5.5 mC with the three empty polls used before.</div></div>
+<div class="cap">A measurement strays past the window with no card there (noise, a hand, drift). One empty poll, {T['empty_poll_ms']:.1f} ms of field
+at {T['field_empty']:.0f} mA (measured), and the reader is armed again with a fresh reference: {ev_t['false_wake']/1000:.2f} mC each,
+against about 5.5 mC with the three empty polls used before.</div></div>
 
 <h2><span class="num">6</span>Charge per event</h2>
 <p>Charge = current x time for each load, summed over the event. 1 uAh = 3.6 mC.</p>
 {event_table}
 <div class="figure"><div class="title">One accepted card tap, {ev_t['tap']/1000:.1f} mC ({uah(ev_t['tap']):.2f} uAh)</div>
 {svg_hbar(tap_items, "#2a78d6", "mC", fmt=lambda v: qfmt(v*1000))}
-<div class="cap">The field (read plus one empty poll) and the motor are about {(T['field']*(T['poll_ms']+T['empty_poll_ms']) + T['motor']*FB_ACCEPT_VIB)/ev_t['tap']*100:.0f} % of a tap.
-Keeping the reader in Ready mode during the pattern is most of the rest.</div></div>
+<div class="cap">Built from the scope captures. The buzz and the RF field (read plus one empty poll) are
+{(M['q_buzz'] + T['field']*T['poll_ms'] + T['field_empty']*T['empty_poll_ms'])/ev_t['tap']*100:.0f} % of a tap;
+the reader in Ready mode with the LED on for the rest of the pattern is most of the remainder.</div></div>
 <div class="calc"><div class="eq">{eqs([
-  ("Motor", f"{T['motor']:.1f} mA x {FB_ACCEPT_VIB} ms", f"{T['motor']*FB_ACCEPT_VIB/1000:.2f} mC"),
-  ("Ready mode", f"{T['nfc_ready']} mA x {READY_AFTER_TAP_MS} ms (pattern)", f"{T['nfc_ready']*READY_AFTER_TAP_MS/1000:.2f} mC"),
-  ("Empty poll", f"{EMPTY_POLLS} x {T['field']:.0f} mA x {T['empty_poll_ms']:.0f} ms", f"{EMPTY_POLLS*T['field']*T['empty_poll_ms']/1000:.2f} mC"),
-  ("Read", f"{T['field']:.0f} mA x {T['poll_ms']:.0f} ms (guard, REQA, anticollision, SELECT)", f"{T['field']*T['poll_ms']/1000:.2f} mC"),
-  ("LED", f"{T['led_g']} mA x 250 ms", f"{T['led_g']*250/1000:.2f} mC"),
-  ("Total", "incl. re-arm, MCU, oscillator, flash", f"{ev_t['tap']/1000:.2f} mC = {uah(ev_t['tap']):.2f} uAh"),
+  ("Wake-up IRQ", "measured, TEK00006", f"{M['q_irq']/1000:.3f} mC"),
+  ("Read", f"{T['field']:.0f} mA x {T['poll_ms']:.1f} ms (guard, REQA, anticollision, SELECT)", f"{T['field']*T['poll_ms']/1000:.2f} mC"),
+  ("Buzz", f"{M['buzz_ma']:.0f} mA x {M['buzz_ms']:.0f} ms (motor, Ready, LED)", f"{M['q_buzz']/1000:.2f} mC"),
+  ("Ready + LED", f"{M['ready_led_ma']:.2f} mA x {REST_MS:.0f} ms (rest of the pattern)", f"{M['ready_led_ma']*REST_MS/1000:.2f} mC"),
+  ("Empty poll", f"{T['field_empty']:.0f} mA x {T['empty_poll_ms']:.1f} ms + re-arm {M['q_rearm']:.0f} uC", f"{(T['field_empty']*T['empty_poll_ms']+M['q_rearm'])/1000:.2f} mC"),
+  ("Total", "incl. flash", f"{ev_t['tap']/1000:.2f} mC = {uah(ev_t['tap']):.2f} uAh"),
 ])}</div></div>
 
 <h2><span class="num">7</span>A lecture, and battery life</h2>
@@ -1217,8 +1255,10 @@ besomi.com (603450 LiPo retail price).</p>
 wake-up mode average should both fall.</li>
 <li>Read <code>dbg_nfc_false_wakes</code> after an hour of idle with no card near (plug in USB to keep the MCU awake for the probe) and replace
 the assumed {T['false_per_min']:g} per minute.</li>
-<li>Integrate one tap and one idle minute with a current-integrating meter (Nordic PPK2 or similar), with no debugger attached, and compare
-with {ev_t['tap']/1000:.1f} mC and {idle_t:.0f} uA.</li>
+<li>Capture the end of a tap (the rest of the LED pattern and the empty poll, 100-300 ms after the card) on the scope; the model takes it from
+the false wake-up and the firmware's pattern length.</li>
+<li>Settle the wake-up mode average ({T['nfc_wu_ua']:.0f} uA from the scope, 185 uA from the multimeter) with a current-integrating meter
+(Nordic PPK2 or similar) over a minute of idle, with no debugger attached.</li>
 </ul>
 </body></html>
 """
