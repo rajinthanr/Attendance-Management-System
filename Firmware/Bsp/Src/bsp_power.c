@@ -20,6 +20,14 @@ static app_boot_cause_t s_boot_cause;
  * (PVD_IN) and the PVD off, PB7 pulls the battery divider node up to VDD,
  * so PA7 reads full scale (measured on the board: 4079 counts instead of
  * ~1250). Level 0 watches VDD internally and leaves PB7 alone. */
+/* Clear DBG_SLEEP, DBG_STOP and DBG_STANDBY. With them set, Stop 2 and
+ * Standby keep the digital core powered and a clock running. */
+static void debug_low_power_off(void)
+{
+    DBGMCU->CR &= ~(DBGMCU_CR_DBG_SLEEP | DBGMCU_CR_DBG_STOP |
+                    DBGMCU_CR_DBG_STANDBY);
+}
+
 static void pvd_off(void)
 {
     HAL_PWR_DisablePVD();
@@ -54,18 +62,13 @@ void bsp_early_init(void)
 
 void bsp_power_init(void)
 {
-#if defined(DEBUG)
-    /* Debug builds (CubeIDE's Debug configuration defines DEBUG): keep the
-     * debug clocks running in Sleep, Stop 2 and Standby, so a debugger stays
-     * connected if the part enters them. It costs current in those modes, so
-     * release builds leave it off. A session that enables halting debug
-     * (CubeIDE's) keeps the loop awake anyway, see plat_sleep_until(); a probe
-     * hot-plugged without it can still read zeros while the core sleeps, so
-     * halt it for a moment to read. */
-    HAL_DBGMCU_EnableDBGSleepMode();
-    HAL_DBGMCU_EnableDBGStopMode();
-    HAL_DBGMCU_EnableDBGStandbyMode();
-#endif
+    /* Debug clocks off in the low-power modes, in every build. The bits
+     * survive every reset but a power-on one, so an older image or a debug
+     * session that set them would otherwise keep the part from really
+     * sleeping (measured: 0.3 mA switched off, against ~3 uA) until the
+     * battery was disconnected. A CubeIDE session keeps the loop awake anyway,
+     * see plat_sleep_until(). */
+    debug_low_power_off();
 
     /* Latch why we booted before the flags are cleared; the application uses
      * this to tell a Standby wake from a cold start. */
@@ -195,6 +198,7 @@ static bool stop2_for(uint32_t ms)
         return false;   /* nothing would end the sleep: use Sleep mode */
     }
 
+    debug_low_power_off();   /* in case a probe set them since boot */
     HAL_SuspendTick();
     HAL_PWREx_EnterSTOP2Mode(PWR_STOPENTRY_WFI);
     /* Awake again, on MSI at the range it had (STOPWUCK = MSI), which is the
@@ -259,6 +263,7 @@ void plat_sleep_deep(void)
      * already put the reader into its power-down mode. */
     plat_out_write(0u);
     pvd_off();
+    debug_low_power_off();
 
     /* Standby wakes on WKUP1 only, and wakes through reset, so the pending
      * flag has to be clear or the part would come straight back out. */
