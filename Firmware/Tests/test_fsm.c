@@ -500,24 +500,36 @@ void test_fsm_wakeup(void)
 /** Between events the loop asks to sleep until its next deadline, deeply. */
 void test_fsm_sleep(void)
 {
-    uint32_t i, longest = 0u;
+    uint32_t i, longest = 0u, wakes = 0u, last_wake = 0u;
     bool deep = true;
 
     printf("fsm sleep\n");
 
     boot_fresh();
-    run_ms(5000u);   /* the power-on pattern and the first battery sample are over */
-    for (i = 0u; i < 4000u; i++) {
+    /* A tap just before the 10 s battery sample delays it off the heartbeat's
+     * beat (it waits for the pattern and the reader's empty polls). */
+    run_ms(9300u);
+    CHECK(tap(1000u, 10u) == APP_SCAN_ACCEPTED, "a tap delays the battery sample");
+    run_ms(4000u);
+    for (i = 0u; i < 4u * APP_IND_IDLE_PERIOD_MS; i++) {
         app_task();
         deep = deep && host_sleep_deep;
         if ((host_sleep_wake - host_ms) > longest) {
             longest = host_sleep_wake - host_ms;
         }
+        if (host_sleep_wake != last_wake) {
+            last_wake = host_sleep_wake;
+            wakes++;
+        }
     }
     CHECK(deep, "idle with the reader armed: Stop 2 allowed throughout");
-    /* The pass's own millisecond is already gone when it is measured here. */
-    CHECK(longest >= APP_SLEEP_MAX_MS - 1u && longest < APP_SLEEP_MAX_MS, "long sleeps between heartbeats (%u ms)",
-          longest);
+    /* From the end of one flash to the start of the next. The pass's own
+     * millisecond is already gone when it is measured here. */
+    CHECK(longest >= APP_IND_IDLE_PERIOD_MS - APP_IND_IDLE_ON_MS - 1u && longest < APP_SLEEP_MAX_MS,
+          "long sleeps between heartbeats (%u ms)", longest);
+    /* Two deadlines a period, the flash's start and end: battery samples ride
+     * on the heartbeat. One more for the window's edge. */
+    CHECK(wakes <= 4u * 2u + 1u, "idle wakes only for the heartbeat (%u in 4 periods)", wakes);
     CHECK(dbg_nfc_armed, "the reader waits for its interrupt meanwhile");
 
     /* A pattern plays: wake for each step of it. */

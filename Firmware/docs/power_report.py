@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Power and capacity estimation report for the RFID attendance logger.
+"""Power, capacity and manufacturing cost report for the RFID attendance logger.
 
 Writes an HTML page; print it to PDF with headless Chrome:
 
@@ -8,12 +8,18 @@ Writes an HTML page; print it to PDF with headless Chrome:
         --print-to-pdf=Power_Estimation_Report.pdf file:///tmp/report.html
 
 Every figure is computed from the parameters below, so replace an estimate
-with a measured value and regenerate.
+with a measured value and regenerate. The currents were measured on the
+bench on 8 October 2026 with the power-test build (`make power-test`,
+Bsp/Src/bsp_power_test.c), which holds each load steady for a multimeter.
 """
 import math
+import os
 import re
 import sys
 from datetime import date
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import cost_model as cm   # noqa: E402  (reads PCB/bom/Attendance_Management_System_BOM_LCSC.xlsx)
 
 OUT_HTML = sys.argv[1]
 
@@ -25,33 +31,43 @@ BATT_V = 3.7
 HOURS_PER_MONTH = 730.0
 WEEKDAYS_PER_MONTH = 52.14 * 5 / 12   # 21.7
 
-# Typical / pessimistic sets. Currents in mA unless the key says uA.
+# Battery-side currents. mA unless the key says uA. TYP holds the bench
+# measurements (power-test build modes 1-10, 8 October 2026, multimeter in
+# series with the cell); PES bounds what the meter could not hold steady and
+# what is still an estimate.
 TYP = dict(
-    name="Typical",
-    mcu_stop2_ua=1.3, mcu_stby_ua=0.5,
-    run4=0.50, run24=2.8, run80=9.0, adc_extra=0.2, flash_op=7.0,
-    nfc_pd_ua=1.0, nfc_wu_ua=15.0, nfc_ready=4.0, field=100.0,
-    led_g=2.34, led_r=2.98, motor=70.0, button=0.41,
-    div_ua=0.56, ldo_ua=0.025, chg_ua=0.5,
+    name="Measured",
+    stop2_base_ua=3.3,   # mode 1: MCU Stop 2 + RTC + LPTIM1, reader power-down, board static
+    off_ua=1.8,          # mode 10, Standby, with the SPI/LED pins pulled down (4.8 before)
+    nfc_wu_ua=184.7,     # mode 2 minus mode 1: the meter read 117-204 uA, 188 averaged
+    nfc_ready=5.66,      # mode 3
+    field=203.0,         # mode 4, antenna not yet tuned
+    run4=1.01,           # mode 5
+    sleep4=0.72,         # mode 6
+    led_g=2.77, led_r=3.0,  # modes 7, 8
+    motor=56.5,          # mode 9
+    run24=2.8, run80=9.0, adc_extra=0.2, flash_op=7.0, button=0.41,   # datasheet / estimate
     false_per_min=1.0, self_dis_pct=2.0, usable=0.90,
     poll_ms=10.0, empty_poll_ms=6.0,
 )
 PES = dict(TYP, name="Pessimistic",
-           mcu_stop2_ua=2.0, nfc_wu_ua=30.0, nfc_ready=5.0, field=150.0,
-           led_g=3.0, led_r=3.9, motor=90.0, chg_ua=1.0,
-           false_per_min=4.0, self_dis_pct=3.0, usable=0.85, poll_ms=14.0)
+           nfc_wu_ua=200.7, false_per_min=4.0, self_dis_pct=3.0, usable=0.85,
+           poll_ms=14.0, empty_poll_ms=8.0)
+MEASURED_ON = "8 October 2026"
 
 # Firmware constants (App/Inc/app_config.h, bsp_board.h, feedback.c)
-HB_ON_MS, HB_PERIOD_MS = 30, 4000
-WAKES_PER_S, WAKE_MS = 1.5, 0.5
+HB_ON_MS, HB_PERIOD_MS = 10, 5000
+WAKES_PER_S, WAKE_MS = 2 / 5.0, 0.5     # heartbeat on and off edges; APP_SLEEP_MAX_MS = 5 s
 BATT_SAMPLE_S, BATT_SAMPLE_MS = 10.0, 1.5
-FB_ACCEPT_VIB, FB_ACCEPT_LED = 90, 250
+FB_ACCEPT_VIB, FB_ACCEPT_LED = 60, 250
 FB_DUP_PULSE, FB_DUP_GAP = 60, 90
 FB_ON_VIB, FB_ON_LED = 120, 300
 FB_OFF_VIB, FB_OFF_LED = 250, 700
 FB_HOLD_VIB = 60
 FB_LECT_PULSE, FB_LECT_GAP = 80, 120
-EMPTY_POLLS = 3
+EMPTY_POLLS = 1                       # APP_NFC_REMOVE_MISSES
+POLL_MS = 100
+WU_PERIOD_MS = 100
 PAGE_ERASE_MS = 22.0
 
 # Flash: STM32L432KB, 128 kB = 64 pages of 2 kB (App/Inc/nv_layout.h,
@@ -64,7 +80,7 @@ MARKER_RECS = 6                      # typical lecture marker
 ENDURANCE = 10000                    # STM32L4 flash cycles
 
 # Measured image sizes (text + data, bytes), arm-none-eabi-gcc 13.3, 2026-10-07
-IMG_O0, IMG_OG, IMG_OS, IMG_OS_LTO = 99244, 61772, 51256, 46220
+IMG_O0, IMG_OG, IMG_OS, IMG_OS_LTO = 99244, 62052, 51496, 46220   # -Og/-Os 2026-10-08
 OS_BREAKDOWN = [("Application logic (App/)", 19775), ("ST HAL drivers", 18532),
                 ("Board support (Bsp/)", 6051), ("USB device library", 5598),
                 ("Startup and CubeMX init (Core/)", 1390), ("C library", 184)]
@@ -79,29 +95,29 @@ def uah(uc):
 # --------------------------------------------------------------------------
 def idle_parts(p):
     return [
-        ("Heartbeat LED (30 ms every 4 s)", p["led_g"] * 1000 * HB_ON_MS / HB_PERIOD_MS),
         ("ST25R3916 wake-up mode (100 ms)", p["nfc_wu_ua"]),
-        ("MCU Stop 2 + RTC + LPTIM1", p["mcu_stop2_ua"]),
-        ("Board static (divider, LDO, charger)", p["div_ua"] + p["ldo_ua"] + p["chg_ua"]),
-        ("MCU loop wake-ups (~1.5/s)", WAKES_PER_S * WAKE_MS / 1000 * p["run4"] * 1000),
+        ("Heartbeat LED (10 ms every 5 s)", p["led_g"] * 1000 * HB_ON_MS / HB_PERIOD_MS),
+        ("MCU Stop 2, reader off, board static", p["stop2_base_ua"]),
+        ("MCU loop wake-ups (0.4/s)", WAKES_PER_S * WAKE_MS / 1000 * p["run4"] * 1000),
         ("Battery sample (every 10 s)", BATT_SAMPLE_MS / 1000 * (p["run4"] + p["adc_extra"]) * 1000 / BATT_SAMPLE_S),
     ]
 
 
 def off_parts(p):
-    return [
-        ("MCU Standby + RTC", p["mcu_stby_ua"]),
-        ("ST25R3916 power-down", p["nfc_pd_ua"]),
-        ("Board static (divider, LDO, charger)", p["div_ua"] + p["ldo_ua"] + p["chg_ua"]),
-    ]
+    return [("Standby, reader power-down, board static (measured)", p["off_ua"])]
+
+
+# Ready-mode time after a read: the pattern (the reader pauses), then the
+# empty polls; the last poll's field time is counted separately.
+READY_AFTER_TAP_MS = FB_ACCEPT_LED + (EMPTY_POLLS - 1) * POLL_MS
 
 
 def tap_parts(p):
     """Charge (uC) of one accepted card tap."""
     return [
-        ("Vibration motor, 90 ms", p["motor"] * FB_ACCEPT_VIB),
-        ("Reader in Ready mode, 550 ms", p["nfc_ready"] * (FB_ACCEPT_LED + EMPTY_POLLS * 100)),
-        ("3 empty polls before re-arming", EMPTY_POLLS * p["field"] * p["empty_poll_ms"]),
+        (f"Vibration motor, {FB_ACCEPT_VIB} ms", p["motor"] * FB_ACCEPT_VIB),
+        (f"Reader in Ready mode, {READY_AFTER_TAP_MS} ms", p["nfc_ready"] * READY_AFTER_TAP_MS),
+        (f"{EMPTY_POLLS} empty poll before re-arming", EMPTY_POLLS * p["field"] * p["empty_poll_ms"]),
         ("RF field for the read, 10 ms", p["field"] * p["poll_ms"]),
         ("Green LED, 250 ms", p["led_g"] * FB_ACCEPT_LED),
         ("Re-arm wake-up (amplitude measure)", 100.0),
@@ -116,8 +132,8 @@ def events(p):
     common_poll = (p["field"] * p["poll_ms"] + p["run4"] * 15 + p["nfc_ready"] * 1 + 100
                    + EMPTY_POLLS * p["field"] * p["empty_poll_ms"])
     dup = (common_poll + p["motor"] * 2 * FB_DUP_PULSE + p["led_g"] * 2 * FB_DUP_PULSE
-           + p["nfc_ready"] * (2 * FB_DUP_PULSE + FB_DUP_GAP + EMPTY_POLLS * 100))
-    false_wake = (p["nfc_ready"] * (1 + EMPTY_POLLS * 100) + EMPTY_POLLS * p["field"] * p["empty_poll_ms"]
+           + p["nfc_ready"] * (2 * FB_DUP_PULSE + FB_DUP_GAP + (EMPTY_POLLS - 1) * POLL_MS))
+    false_wake = (p["nfc_ready"] * (1 + (EMPTY_POLLS - 1) * POLL_MS) + EMPTY_POLLS * p["field"] * p["empty_poll_ms"]
                   + 100 + p["run4"] * 1.5)
     power_on = (20 * p["run80"] + 30 * p["run4"] + 5 * p["nfc_ready"] + 300 * p["button"]
                 + p["motor"] * FB_ON_VIB + p["led_g"] * FB_ON_LED)
@@ -346,6 +362,230 @@ def svg_flash_map():
     return "\n".join(out)
 
 
+# Timeline colours: one per state, shared by the three timeline figures.
+C_STOP2, C_RUN = "#e4e3dd", "#2a78d6"
+C_WU, C_MEAS, C_READY, C_FIELD = "#f8dccf", "#eb6834", "#eda100", "#c8372d"
+C_LED, C_MOTOR = "#1baf7a", "#7d5bd6"
+
+
+def svg_timeline(t0, t1, lanes, ticks, tick_fmt, unit, markers=(), width=680, label_w=112, lane_h=34):
+    """Swimlanes against time.
+
+    lanes:   [(name, sub, segments, points)]; segments are (start, end, colour,
+             text, text colour), drawn at least 1.6 px wide, with the text inside
+             when it fits and to the right otherwise; points are (t, colour).
+    markers: [(t, text, anchor)] dashed lines labelled above the lanes.
+    """
+    plot_w = width - label_w - 14
+    top = 30 if markers else 8
+    h = top + lane_h * len(lanes) + 30
+    X = lambda t: label_w + plot_w * (t - t0) / (t1 - t0)
+    bottom = top + lane_h * len(lanes)
+    out = [f'<svg viewBox="0 0 {width} {h}" class="chart" role="img">']
+    for t in ticks:
+        out.append(f'<line x1="{X(t):.1f}" y1="{top}" x2="{X(t):.1f}" y2="{bottom}" class="grid"/>')
+        out.append(f'<text x="{X(t):.1f}" y="{bottom+14}" class="tick" text-anchor="middle">{tick_fmt(t)}</text>')
+    out.append(f'<text x="{width-2}" y="{bottom+27}" class="tick" text-anchor="end">{unit}</text>')
+    for i, (name, sub, segs, pts) in enumerate(lanes):
+        y = top + i * lane_h
+        out.append(f'<text x="{label_w-10}" y="{y+lane_h/2-3}" class="lab" text-anchor="end">{name}</text>')
+        out.append(f'<text x="{label_w-10}" y="{y+lane_h/2+9}" class="tick" text-anchor="end">{sub}</text>')
+        out.append(f'<rect x="{label_w}" y="{y+5}" width="{plot_w}" height="{lane_h-10}" fill="#f7f6f2"/>')
+        for a, b, col, text, tcol in segs:
+            x0, x1 = X(max(a, t0)), X(min(b, t1))
+            w = max(x1 - x0, 1.6)
+            out.append(f'<rect x="{x0:.1f}" y="{y+5}" width="{w:.1f}" height="{lane_h-10}" rx="1.5" fill="{col}"/>')
+            if text:
+                if w > 5.3 * len(text) + 8:
+                    out.append(f'<text x="{x0+w/2:.1f}" y="{y+lane_h/2+3.5}" class="seg" text-anchor="middle" '
+                               f'fill="{tcol}">{text}</text>')
+                else:
+                    out.append(f'<text x="{x0+w+4:.1f}" y="{y+lane_h/2+3.5}" class="seg" fill="#0b0b0b">{text}</text>')
+        for t, col in pts:
+            if not t0 <= t <= t1:
+                continue
+            out.append(f'<rect x="{X(t)-0.9:.1f}" y="{y+5}" width="1.8" height="{lane_h-10}" fill="{col}"/>')
+    for t, text, anchor in markers:
+        x = X(t)
+        out.append(f'<line x1="{x:.1f}" y1="{top-6}" x2="{x:.1f}" y2="{bottom}" stroke="#52514e" '
+                   f'stroke-width="0.8" stroke-dasharray="3 2"/>')
+        dx = {"start": 3, "end": -3}.get(anchor, 0)
+        out.append(f'<text x="{x+dx:.1f}" y="{top-10}" class="tick" text-anchor="{anchor}">{text}</text>')
+    out.append(f'<line x1="{label_w}" y1="{bottom}" x2="{label_w+plot_w}" y2="{bottom}" class="axis"/>')
+    out.append("</svg>")
+    return "\n".join(out)
+
+
+def svg_idle_timeline(p):
+    """Ten seconds of idle scanning: who is awake, and when."""
+    t1 = 10.4
+    wakes = [0.0, 0.010, 5.0, 5.010, 10.0, 10.010]
+    meas = [i * WU_PERIOD_MS / 1000 for i in range(int(t1 * 1000 / WU_PERIOD_MS) + 1)]
+    lanes = [
+        ("MCU", f"run {p['run4']:.2f} mA",
+         [(0, 5.0, C_STOP2, f"Stop 2, {p['stop2_base_ua']} uA with the board's static draw", "#52514e"),
+          (5.0, t1, C_STOP2, "", "")],
+         [(t, C_RUN) for t in wakes]),
+        ("ST25R3916", f"{p['nfc_wu_ua']:.0f} uA average",
+         [(0, t1, C_WU, "", "")], [(t, C_MEAS) for t in meas]),
+        ("Green LED", f"{p['led_g']:.2f} mA", [], [(0.0, C_LED), (5.0, C_LED), (10.0, C_LED)]),
+        ("RF field", "off while idle", [], []),
+    ]
+    markers = [(0.0, "heartbeat + battery sample", "start"), (5.0, "heartbeat", "middle"),
+               (10.0, "heartbeat + battery sample", "end")]
+    return svg_timeline(-0.15, t1, lanes, list(range(0, 11)), lambda t: f"{t}", "seconds", markers)
+
+
+# One wake-up measurement, illustrated. Its charge follows from the measured
+# average; the split between oscillator start-up and the field burst is an
+# assumption until the pulse is captured on a scope across a shunt.
+WU_OSC_MS = 1.0                            # assumed: 27.12 MHz oscillator start, at Ready current
+WU_BASE_UA = 5.0                           # drawn: board 3.3 uA + the reader's wake-up timer
+
+
+def wu_pulse(p):
+    q = p["nfc_wu_ua"] * WU_PERIOD_MS / 1000   # uC per measurement
+    t_field = (q - p["nfc_ready"] * WU_OSC_MS) / p["field"]   # ms
+    return q, t_field
+
+
+def svg_wakeup_pulses(p):
+    """Battery current through four wake-up measurements, and one zoomed in."""
+    q, t_f = wu_pulse(p)
+    width, label_w = 680, 112
+    plot_w = width - label_w - 14
+    lo, hi = 1.0, 3e5                          # uA, log axis
+    top_t0, top_t1 = -20.0, 345.0
+    z_t0, z_t1 = -0.2, 1.45
+    p1_top, p1_h = 26, 120
+    p2_top, p2_h = 228, 120
+    h = p2_top + p2_h + 34
+
+    def Y(ua, top, ph):
+        return top + ph * (1 - (math.log10(max(ua, lo)) - math.log10(lo)) / (math.log10(hi) - math.log10(lo)))
+
+    def X(t, a, b):
+        return label_w + plot_w * (t - a) / (b - a)
+
+    out = [f'<svg viewBox="0 0 {width} {h}" class="chart" role="img">']
+
+    def axis(top, ph, a, b, ticks, unit, title):
+        for ua, lab in ((1, "1 uA"), (10, "10 uA"), (100, "100 uA"), (1e3, "1 mA"), (1e4, "10 mA"), (1e5, "100 mA")):
+            y = Y(ua, top, ph)
+            out.append(f'<line x1="{label_w}" y1="{y:.1f}" x2="{label_w+plot_w}" y2="{y:.1f}" class="grid"/>')
+            out.append(f'<text x="{label_w-6}" y="{y+3:.1f}" class="tick" text-anchor="end">{lab}</text>')
+        for t in ticks:
+            x = X(t, a, b)
+            out.append(f'<line x1="{x:.1f}" y1="{top}" x2="{x:.1f}" y2="{top+ph}" class="grid"/>')
+            out.append(f'<text x="{x:.1f}" y="{top+ph+13}" class="tick" text-anchor="middle">{t:g}</text>')
+        out.append(f'<text x="{width-2}" y="{top+ph+26}" class="tick" text-anchor="end">{unit}</text>')
+        out.append(f'<line x1="{label_w}" y1="{top+ph}" x2="{label_w+plot_w}" y2="{top+ph}" class="axis"/>')
+        out.append(f'<text x="{label_w}" y="{top-12}" class="lab" font-weight="600">{title}</text>')
+        out.append(f'<text x="{label_w-6}" y="{top-12}" class="tick" text-anchor="end">battery current</text>')
+
+    def trace(steps, top, ph, a, b, min_w=0.0):
+        """steps: [(t_start, t_end, uA)] above the baseline; drawn as a filled step line."""
+        base = Y(WU_BASE_UA, top, ph)
+        d = f"M{X(a, a, b):.1f},{base:.1f}"
+        for t0, t1, ua in steps:
+            x0, x1 = X(t0, a, b), X(t1, a, b)
+            x1 = max(x1, x0 + min_w)
+            y = Y(ua, top, ph)
+            d += f" H{x0:.1f} V{y:.1f} H{x1:.1f} V{base:.1f}"
+        d += f" H{X(b, a, b):.1f}"
+        out.append(f'<path d="{d} V{top+ph:.1f} H{label_w} Z" fill="{C_WU}" stroke="none"/>')
+        out.append(f'<path d="{d}" fill="none" stroke="{C_MEAS}" stroke-width="1.3"/>')
+
+    # Panel 1: four measurements, the last one sees a card and the read follows.
+    axis(p1_top, p1_h, top_t0, top_t1, [0, 50, 100, 150, 200, 250, 300], "ms", "Four measurements")
+    meas = [0.0, 100.0, 200.0, 300.0]
+    steps = []
+    for t in meas:
+        steps += [(t, t + WU_OSC_MS, p["nfc_ready"] * 1000), (t + WU_OSC_MS, t + WU_OSC_MS + t_f, p["field"] * 1000)]
+    steps.append((302.0, 302.0 + p["poll_ms"], p["field"] * 1000))   # the read after the IRQ
+    trace(steps, p1_top, p1_h, top_t0, top_t1, min_w=2.0)
+    yb = Y(WU_BASE_UA, p1_top, p1_h)
+    for a, b in ((0, 100), (100, 200), (200, 300)):
+        xa, xb = X(a, top_t0, top_t1) + 4, X(b, top_t0, top_t1) - 4
+        y = Y(3e4, p1_top, p1_h)
+        out.append(f'<line x1="{xa:.1f}" y1="{y:.1f}" x2="{xb:.1f}" y2="{y:.1f}" stroke="#52514e" stroke-width="0.8" '
+                   f'marker-start="url(#arr)" marker-end="url(#arr)"/>')
+        out.append(f'<text x="{(xa+xb)/2:.1f}" y="{y-4:.1f}" class="tick" text-anchor="middle">{WU_PERIOD_MS} ms</text>')
+    out.append(f'<text x="{X(50, top_t0, top_t1):.1f}" y="{yb-6:.1f}" class="tick" text-anchor="middle">a few uA between</text>')
+    x4 = X(300, top_t0, top_t1)
+    out.append(f'<text x="{x4-6:.1f}" y="{Y(2e2, p1_top, p1_h):.1f}" class="tick" text-anchor="end">card in range:</text>')
+    out.append(f'<text x="{x4-6:.1f}" y="{Y(2e2, p1_top, p1_h)+10:.1f}" class="tick" text-anchor="end">IRQ, MCU wakes, read</text>')
+    out.append('<defs><marker id="arr" viewBox="0 0 6 6" refX="3" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse">'
+               '<path d="M0,0 L6,3 L0,6 z" fill="#52514e"/></marker></defs>')
+
+    # Zoom guides from the second measurement down to panel 2.
+    xz = X(100, top_t0, top_t1)
+    out.append(f'<path d="M{xz-3:.1f},{p1_top+p1_h+17} L{label_w},{p2_top-22} M{xz+3:.1f},{p1_top+p1_h+17} L{label_w+plot_w},{p2_top-22}" '
+               f'stroke="#a3a29d" stroke-width="0.7" stroke-dasharray="3 2" fill="none"/>')
+
+    # Panel 2: one measurement.
+    axis(p2_top, p2_h, z_t0, z_t1, [0, 0.25, 0.5, 0.75, 1.0, 1.25], "ms", "One measurement")
+    trace([(0, WU_OSC_MS, p["nfc_ready"] * 1000), (WU_OSC_MS, WU_OSC_MS + t_f, p["field"] * 1000)],
+          p2_top, p2_h, z_t0, z_t1)
+    xa, xb = X(0, z_t0, z_t1), X(WU_OSC_MS, z_t0, z_t1)
+    yr = Y(p["nfc_ready"] * 1000, p2_top, p2_h)
+    out.append(f'<text x="{(xa+xb)/2:.1f}" y="{yr-6:.1f}" class="lab" text-anchor="middle">oscillator starts, Ready '
+               f'{p["nfc_ready"]:.2f} mA (~{WU_OSC_MS:g} ms, assumed)</text>')
+    xf = X(WU_OSC_MS + t_f, z_t0, z_t1)
+    yf = Y(p["field"] * 1000, p2_top, p2_h)
+    out.append(f'<text x="{xf+5:.1f}" y="{yf+4:.1f}" class="lab">field on, amplitude measured:</text>')
+    out.append(f'<text x="{xf+5:.1f}" y="{yf+16:.1f}" class="lab">{p["field"]:.0f} mA for ~{t_f*1000:.0f} us</text>')
+    out.append(f'<text x="{(xa+xb)/2:.1f}" y="{Y(400, p2_top, p2_h):.1f}" class="val" text-anchor="middle">{q:.1f} uC per measurement</text>')
+    out.append(f'<text x="{(xa+xb)/2:.1f}" y="{Y(400, p2_top, p2_h)+12:.1f}" class="tick" text-anchor="middle">= {p["nfc_wu_ua"]:.0f} uA '
+               f'average x {WU_PERIOD_MS} ms, measured</text>')
+    out.append("</svg>")
+    return "\n".join(out)
+
+
+def svg_tap_timeline(p):
+    """One accepted tap, from the wake-up measurement that sees the card."""
+    rd = p["poll_ms"]                      # field on for the read: guard + select
+    end_fb = rd + FB_ACCEPT_LED
+    ep = p["empty_poll_ms"]
+    lanes = [
+        ("Card", "", [(-62, 40, "#d9d8d1", "held to the antenna", "#0b0b0b")], []),
+        ("ST25R3916", "", [
+            (-130, 0, C_WU, "wake-up mode", "#8a4a2d"),
+            (0, 1, C_READY, "", ""),
+            (1, rd, C_FIELD, "", ""),
+            (rd, end_fb, C_READY, f"Ready, field off: {p['nfc_ready']:.2f} mA", "#0b0b0b"),
+            (end_fb, end_fb + ep, C_FIELD, "", ""),
+            (end_fb + ep + 1, 330, C_WU, "wake-up mode", "#8a4a2d"),
+        ], [(-100, C_MEAS), (0, C_MEAS), (end_fb + ep + 100 + 1, C_MEAS)]),
+        ("MCU", "", [
+            (-130, 330, C_STOP2, "", ""),
+            (0, 1, C_RUN, "", ""), (6, rd, C_RUN, "", ""),
+            (rd + FB_ACCEPT_VIB, rd + FB_ACCEPT_VIB + 0.3, C_RUN, "", ""),
+            (end_fb, end_fb + 0.5, C_RUN, "", ""), (end_fb + ep, end_fb + ep + 1, C_RUN, "", ""),
+        ], []),
+        ("Motor", f"{p['motor']:.1f} mA", [(rd, rd + FB_ACCEPT_VIB, C_MOTOR, f"{FB_ACCEPT_VIB} ms", "#ffffff")], []),
+        ("Green LED", f"{p['led_g']:.2f} mA", [(rd, end_fb, C_LED, f"{FB_ACCEPT_LED} ms", "#ffffff")], []),
+    ]
+    markers = [(0, "card seen: IRQ", "end"), (rd, f"read done ({rd:.0f} ms of field)", "start"),
+               (end_fb, f"empty poll ({ep:.0f} ms), re-arm", "end")]
+    return svg_timeline(-130, 330, lanes, list(range(-100, 301, 50)), lambda t: f"{t}", "ms after the card is seen",
+                        markers)
+
+
+def svg_false_timeline(p):
+    """A wake-up measurement that strays with no card: one empty poll."""
+    ep = p["empty_poll_ms"]
+    lanes = [
+        ("ST25R3916", "", [(-6, 0, C_WU, "wake-up", "#8a4a2d"), (0, 1, C_READY, "", ""),
+                           (1, 1 + ep, C_FIELD, f"field {ep:.0f} ms, no answer", "#ffffff"),
+                           (1 + ep, 2 + ep, C_READY, "", ""), (2 + ep, 16, C_WU, "wake-up mode again", "#8a4a2d")],
+         [(0, C_MEAS)]),
+        ("MCU", "", [(-6, 16, C_STOP2, "", ""), (0, 1, C_RUN, "", ""), (1 + ep, 2 + ep, C_RUN, "", "")], []),
+    ]
+    markers = [(0, "IRQ", "middle"), (2 + ep, "measure + re-arm", "start")]
+    return svg_timeline(-6, 16, lanes, list(range(-5, 16, 5)), lambda t: f"{t}", "ms", markers, lane_h=32)
+
+
 def table(head, rows, cls="", align=None):
     align = align or ["l"] + ["r"] * (len(head) - 1)
     h = "".join(f'<th class="{a}">{c}</th>' for c, a in zip(head, align))
@@ -380,16 +620,16 @@ clock_items = [
 ]
 
 event_rows = [
-    ("Accepted card tap", "Field 10 ms, motor 90 ms, LED 250 ms, Ready 550 ms, 3 empty polls", ev_t["tap"], ev_p["tap"]),
+    ("Accepted card tap", f"Field 10 ms, motor {FB_ACCEPT_VIB} ms, LED 250 ms, Ready {READY_AFTER_TAP_MS} ms, 1 empty poll", ev_t["tap"], ev_p["tap"]),
     ("Duplicate tap", "Same read, 2 x 60 ms motor + LED", ev_t["dup"], ev_p["dup"]),
-    ("False wake-up", "Ready ~0.3 s + 3 empty polls, no feedback", ev_t["false_wake"], ev_p["false_wake"]),
+    ("False wake-up", "Oscillator start + 1 empty poll (6 ms field), no feedback", ev_t["false_wake"], ev_p["false_wake"]),
     ("Power-on (button)", "Boot (20 ms at 80 MHz), reader start, 120 ms motor, 300 ms LED", ev_t["power_on"], ev_p["power_on"]),
     ("Lecture start (2-5 s hold)", "3 s hold, 60 ms + 3 x 80 ms motor, 880 ms LED, marker write", ev_t["new_lecture"], ev_p["new_lecture"]),
     ("Auto power-off (3 min idle)", "250 ms motor, 700 ms red LED, flush, reader power-down", ev_t["auto_off"], ev_p["auto_off"]),
     ("Power-off (5 s hold)", "As above + 5 s hold + 60 ms hold buzz", ev_t["button_off"], ev_p["button_off"]),
     ("Short press (battery check)", "0.2 s press, two 150 ms green blinks", ev_t["short_press"], ev_p["short_press"]),
     ("Flash page erase", "22 ms at ~7 mA, once per 254 records", ev_t["page_erase"], ev_p["page_erase"]),
-    ("Battery sample", "1.5 ms MCU + ADC, every 10 s", ev_t["batt_sample"], ev_p["batt_sample"]),
+    ("Battery sample", "1.5 ms MCU + ADC, every 10 s, on a heartbeat wake", ev_t["batt_sample"], ev_p["batt_sample"]),
 ]
 
 
@@ -403,11 +643,11 @@ event_table = table(
     align=["l", "l", "r", "r", "r"], cls="events")
 
 mode_rows = [
-    ("Off (Standby)", f"{off_t:.1f} uA", f"{off_p:.1f} uA", "MCU Standby + RTC, reader power-down, divider"),
-    ("Idle, scanning", f"{idle_t:.1f} uA", f"{idle_p:.1f} uA", "Stop 2, reader wake-up mode, heartbeat"),
+    ("Off (Standby)", f"{off_t:.1f} uA", f"{off_p:.1f} uA", "MCU Standby + RTC, reader power-down, divider (measured)"),
+    ("Idle, scanning", f"{idle_t:.0f} uA", f"{idle_p:.0f} uA", "Stop 2, reader wake-up mode, heartbeat"),
     ("Polling mode (wake-up off)", f"{poll_mode_ma:.1f} mA", "-", "Reader Ready + field every 100 ms; for comparison"),
-    ("Card read (RF field on)", f"{T['field']:.0f} mA", f"{P['field']:.0f} mA", "For ~10 ms per read; antenna untuned"),
-    ("Vibration motor on", f"{T['motor']:.0f} mA", f"{P['motor']:.0f} mA", "60-250 ms per pattern"),
+    ("Card read (RF field on)", f"{T['field']:.0f} mA", "-", "For ~10 ms per read; antenna untuned (measured)"),
+    ("Vibration motor on", f"{T['motor']:.1f} mA", "-", "60-250 ms per pattern (measured)"),
     ("USB session", "4-6 mA", "-", "From VBUS, not the battery (plus charge current)"),
 ]
 
@@ -466,22 +706,30 @@ for code_kb in (64, 72, 80):
 split_table = table(["Code / data", "Log pages", "Records", "Lectures of 100", "Headroom at -Og", "Headroom at -Os"],
                     split_rows, cls="keep")
 
+meas_rows = [
+    ("1", "MCU Stop 2 + RTC + LPTIM1, reader power-down", f"{T['stop2_base_ua']} uA", "Includes the divider, LDO and charger leakage"),
+    ("2", "As 1, reader in wake-up mode (100 ms)", f"{T['stop2_base_ua'] + T['nfc_wu_ua']:.0f} uA",
+     "Meter read 117-204 uA as it averaged the 100 ms measurements; 188 averaged"),
+    ("3", "As 1, reader Ready (oscillator on, field off)", f"{T['nfc_ready']} mA", "Reader between polls and during patterns"),
+    ("4", "As 1, RF field on", f"{T['field']:.0f} mA", "Antenna not yet tuned"),
+    ("5", "MCU Run, MSI 4 MHz, reader power-down", f"{T['run4']} mA", "DS11451 gives ~0.5 mA; peripheral clocks are on"),
+    ("6", "MCU Sleep, MSI 4 MHz, SysTick every 1 ms", f"{T['sleep4']} mA", "The loop's mode in USB sessions"),
+    ("7", "Green LED on (470 R from 3.3 V)", f"{T['led_g']} mA", ""),
+    ("8", "Red LED on", f"{T['led_r']} mA", ""),
+    ("9", "Vibration motor on (coin ERM on BAT+)", f"{T['motor']} mA", ""),
+    ("10", "Standby (switched off)", f"{T['off_ua']} uA", "4.8 uA before the reader's SPI pins were pulled down in Standby"),
+]
+meas_table = table(["Mode", "State held", "Current", "Note"], meas_rows, align=["r", "l", "r", "l"], cls="assump")
+
 assump_rows = [
-    ("STM32L432 Stop 2 + RTC (LSE)", f"{T['mcu_stop2_ua']} uA", f"{P['mcu_stop2_ua']} uA", "DS11451 typ., 3 V, 25 °C"),
-    ("STM32L432 Standby + RTC", f"{T['mcu_stby_ua']} uA", "-", "DS11451 typ."),
-    ("STM32L432 Run, MSI 4 MHz", f"{T['run4']} mA", "-", "DS11451 typ. (~0.4 mA at Range 2)"),
-    ("STM32L432 Run, 24 MHz / 80 MHz", f"{T['run24']} / {T['run80']} mA", "-", "DS11451 typ., Range 1"),
-    ("ST25R3916 power-down", f"{T['nfc_pd_ua']} uA", "-", "DS12484 typ."),
-    ("ST25R3916 wake-up mode, 100 ms", f"{T['nfc_wu_ua']:.0f} uA", f"{P['nfc_wu_ua']:.0f} uA", "Model: ~4 uA timer + ~1.1 uC per measurement"),
-    ("ST25R3916 Ready (oscillator on)", f"{T['nfc_ready']} mA", f"{P['nfc_ready']} mA", "DS12484 typ."),
-    ("RF field on (from BAT+)", f"{T['field']:.0f} mA", f"{P['field']:.0f} mA", "Estimate: antenna not fitted or tuned"),
-    ("Green / red LED (470 R from 3.3 V)", f"{T['led_g']} / {T['led_r']} mA", f"{P['led_g']} / {P['led_r']} mA", "(3.3 V - Vf) / 470 R, Vf 2.2 / 1.9 V"),
-    ("Vibration motor (coin ERM on BAT+)", f"{T['motor']:.0f} mA", f"{P['motor']:.0f} mA", "Assumed; measure the fitted motor"),
+    ("STM32L432 Run, 24 MHz / 80 MHz", f"{T['run24']} / {T['run80']} mA", "-", "DS11451 typ., Range 1 (not used while scanning)"),
+    ("ADC on, extra over Run", f"{T['adc_extra']} mA", "-", "DS11451"),
+    ("Flash program / erase", f"{T['flash_op']} mA", "-", "DS11451; 22 ms per page erase"),
     ("Button pull-ups (R8 10k + internal)", f"{T['button']} mA", "-", "Only while pressed"),
-    ("Battery divider R7 + R8 (7.4 M)", f"{T['div_ua']} uA", "-", "4.15 V / 7.4 MOhm"),
-    ("TPS7A02 LDO quiescent", f"{T['ldo_ua']*1000:.0f} nA", "-", "TPS7A02 datasheet typ."),
-    ("MCP73833 leakage, no input", f"{T['chg_ua']} uA", f"{P['chg_ua']} uA", "Assumed upper bound"),
-    ("False wake-ups while scanning", f"{T['false_per_min']:g} / min", f"{P['false_per_min']:g} / min", "After offset learning; check dbg_nfc_false_wakes"),
+    ("Field time per read / per empty poll", f"{T['poll_ms']:.0f} / {T['empty_poll_ms']:.0f} ms", f"{P['poll_ms']:.0f} / {P['empty_poll_ms']:.0f} ms",
+     "5 ms guard + 1 ms tick, then REQA..SELECT at 106 kbit/s"),
+    ("Reader wake-up mode average", f"{T['nfc_wu_ua']:.0f} uA", f"{P['nfc_wu_ua']:.0f} uA", "Measured range: 117-204 uA on the meter"),
+    ("False wake-ups while scanning", f"{T['false_per_min']:g} / min", f"{P['false_per_min']:g} / min", "Not measured yet; read dbg_nfc_false_wakes"),
     ("Cell self-discharge", f"{T['self_dis_pct']:g} %/month", f"{P['self_dis_pct']:g} %/month", "Typical Li-ion at room temperature"),
     ("Usable capacity of 1000 mAh", f"{usable_t:.0f} mAh", f"{usable_p:.0f} mAh", "Cut-off at 3.3 V, ageing margin"),
 ]
@@ -490,15 +738,16 @@ assump_table = table(["Quantity", "Typical", "Pessimistic", "Source / basis"], a
 
 clock_rows = [
     ("Scanning (SYSCLK/HCLK)", "MSI range 6, <b>4 MHz</b>", "Range 1, 0 wait states",
-     "Reset clock and the Stop 2 wake-up clock (STOPWUCK = MSI): no PLL to relock on ~1.5 wake-ups per second. "
+     "Reset clock and the Stop 2 wake-up clock (STOPWUCK = MSI): no PLL to relock on each wake-up. "
      "The work is time-bound (5 ms field guard, 106 kbit/s frames, ADC sampling), so a faster clock only raises the current for the same window."),
     ("USB session", "MSI range 9, <b>24 MHz</b>", "Range 1, 1 wait state",
      "USB FS needs HCLK above 14.2 MHz (RM0394). 24 MHz is the first MSI step with margin for rendering CSV sectors on demand. "
      "Powered from VBUS, so it costs the battery nothing."),
     ("USB kernel clock", "<b>HSI48</b> trimmed by CRS", "Locks to the host's 1 kHz SOF",
      "Meets the USB ±0.25 % tolerance with no crystal and no PLL. Stopped outside USB sessions."),
-    ("RTC and Stop 2 timer", "<b>LSE 32.768 kHz</b>", "RTC + LPTIM1 (16-bit)",
-     "Runs through Stop 2 for well under 1 uA. A 16-bit count at 32 768 Hz wraps every 2.0 s, so each Stop 2 sleep is capped at 1.9 s; resolution 30.5 us."),
+    ("RTC and Stop 2 timer", "<b>LSE 32.768 kHz</b>", "RTC; LPTIM1 at LSE / 8 (16-bit)",
+     "Runs through Stop 2 for well under 1 uA. LPTIM1 counts 4096 Hz, so its 16-bit count wraps every 16 s and one Stop 2 sleep can last "
+     "up to 15 s (the loop asks for at most 5 s); resolution 244 us. A wake from the wrap alone goes straight back to Stop 2."),
     ("Reader SPI", "4 MHz / 8 = <b>500 kHz</b>", "Mode 1, ST25R3916 max 10 MHz",
      "Well inside the chip's limit. Register traffic during a read adds an estimated 2-3 ms of field-on time; a /2 prescaler (2 MHz) would cut it to under 1 ms."),
     ("ADC", "HCLK / 4 = <b>1 MHz</b>", "640.5-cycle sample",
@@ -508,18 +757,34 @@ clock_rows = [
 ]
 clock_table = table(["Clock domain", "Selection", "Setting", "Why"], clock_rows, align=["l", "l", "l", "l"], cls="clock")
 
+def wu_saving(period_ms):
+    """Idle saving from a longer wake-up period: the measured average scales with the measurement rate."""
+    return T["nfc_wu_ua"] * (1 - WU_PERIOD_MS / period_ms)
+
+
 improve_rows = [
-    ("Motor pulse 90 ms to 50 ms", f"-{T['motor']*40/1000:.1f} mC per tap", f"{T['motor']*40/ev_t['tap']*100:.0f} % of each tap"),
-    ("Re-arm wake-up right after a read (skip 3 empty polls)",
-     f"-{(EMPTY_POLLS*T['field']*T['empty_poll_ms'] + T['nfc_ready']*300)/1000:.1f} mC per tap",
-     f"{(EMPTY_POLLS*T['field']*T['empty_poll_ms'] + T['nfc_ready']*300)/ev_t['tap']*100:.0f} % of each tap"),
-    ("Heartbeat 30 ms to 10 ms", f"-{T['led_g']*1000*20/HB_PERIOD_MS:.1f} uA idle", f"{T['led_g']*1000*20/HB_PERIOD_MS/idle_t*100:.0f} % of idle"),
-    ("Wake-up period 100 ms to 200 ms", f"-{T['nfc_wu_ua'] - (4 + 1.1/0.2):.1f} uA idle",
-     f"{(T['nfc_wu_ua'] - (4 + 1.1/0.2))/idle_t*100:.0f} % of idle; ~100 ms slower response"),
+    ("Wake-up period 100 ms to 200 ms", f"-{wu_saving(200):.0f} uA idle",
+     f"{wu_saving(200)/idle_t*100:.0f} % of idle; a card is noticed up to 100 ms later"),
+    ("Wake-up period 100 ms to 400 ms", f"-{wu_saving(400):.0f} uA idle",
+     f"{wu_saving(400)/idle_t*100:.0f} % of idle; up to 400 ms to notice a card"),
+    ("Tune the antenna: field 203 mA to ~100 mA", f"-{(T['field']-100)*(T['poll_ms']+T['empty_poll_ms'])/1000:.1f} mC per tap",
+     f"{(T['field']-100)*(T['poll_ms']+T['empty_poll_ms'])/ev_t['tap']*100:.0f} % of each tap; probably cheaper wake-up measurements too"),
     ("SPI prescaler /8 to /2", f"-{T['field']*1.4/1000:.2f} mC per read", f"{T['field']*1.4/ev_t['tap']*100:.0f} % of each tap"),
-    ("Voltage scaling Range 2 while scanning", "-0.04 uA idle", "<1 % (the MCU is awake 0.08 % of the time)"),
+    ("Motor pulse 60 ms to 40 ms", f"-{T['motor']*20/1000:.1f} mC per tap", f"{T['motor']*20/ev_t['tap']*100:.0f} % of each tap"),
+    ("Heartbeat off", f"-{T['led_g']*1000*HB_ON_MS/HB_PERIOD_MS:.1f} uA idle",
+     f"{T['led_g']*1000*HB_ON_MS/HB_PERIOD_MS/idle_t*100:.0f} % of idle; no sign the unit is on"),
 ]
 improve_table = table(["Change", "Saving", "Effect"], improve_rows, align=["l", "r", "l"])
+
+done_table = table(["Change", "Before", "After"], [
+    ("Debug clocks off in Stop 2 / Standby (DBGMCU_CR cleared at boot)", "0.3 mA switched off", "4.8 uA"),
+    ("Reader SPI, LED and motor pins pulled down in Standby", "4.8 uA switched off", f"{T['off_ua']} uA"),
+    ("Heartbeat flash", "30 ms every 4 s", "10 ms every 5 s"),
+    ("Longest idle sleep (APP_SLEEP_MAX_MS); LPTIM1 / 8", "1 s (1.35 wakes/s)", "5 s (0.4 wakes/s)"),
+    ("Battery sample placed on the heartbeat's wake", "own wake every 10 s", "none extra"),
+    ("Empty polls before re-arming (APP_NFC_REMOVE_MISSES)", "3", "1"),
+    ("Accepted-card buzz (APP_FB_ACCEPT_VIB_MS)", "90 ms", "60 ms"),
+], align=["l", "r", "r"])
 
 measured_table = table(["Quantity", "Value", "Note"], [
     ("Flash size (0x1FFF75E0)", "128 kB", "Fitted part is the STM32L432KB"),
@@ -530,12 +795,60 @@ measured_table = table(["Quantity", "Value", "Note"], [
     ("Divider check", "4,153 mV", "1515 mV x (4.7 M + 2.7 M) / 2.7 M"),
 ], align=["l", "r", "l"])
 
+COST = cm.compute()
+R = cm.LKR_PER_USD
+
+
+def usd(v):
+    return f"{v:,.0f}" if v >= 1000 else f"{v:,.2f}"
+
+
+cost_lines = (("parts", "Electronic parts (LCSC)"), ("pcb", "PCB fabrication"), ("asm", "PCB assembly (JLCPCB)"),
+              ("offb", "Battery, motor, case, box"), ("freight", "Freight to Colombo"),
+              ("tax", f"Import duty, VAT, levies ({cm.IMPORT_TAX*100:.0f} %)"),
+              ("labour", "Final assembly and test (Sri Lanka)"), ("scrap", "Yield loss"))
+cost_rows = [(lab, *[usd(c[k]) if c[k] > 0 else "-" for c in COST]) for k, lab in cost_lines]
+cost_rows += [
+    (("<b>Order total, USD</b>", *[f"<b>{usd(c['total'])}</b>" for c in COST]), "cls:total"),
+    ("Order total, LKR", *[f"{c['total']*R:,.0f}" for c in COST]),
+    (("<b>Cost per unit, USD</b>", *[f"<b>{c['unit']:,.2f}</b>" for c in COST]), "cls:total"),
+    (("<b>Cost per unit, LKR</b>", *[f"<b>{c['unit']*R:,.0f}</b>" for c in COST]), "cls:"),
+    (f"Price per unit at {cm.MARGIN*100:.0f} % margin, USD", *[f"{c['unit']/(1-cm.MARGIN):,.2f}" for c in COST]),
+    (f"Price per unit at {cm.MARGIN*100:.0f} % margin, LKR", *[f"{c['unit']/(1-cm.MARGIN)*R:,.0f}" for c in COST]),
+]
+cost_table = table(["USD unless stated", "1 unit", "100 units", "1 000 units", "10 000 units"], cost_rows, cls="keep")
+
+breaks_rows = []
+for lcsc, (name, b, est) in cm.BREAKS.items():
+    breaks_rows.append((name, *[f"{b[n]:.3f}" + ("*" if n in est else "") for n in cm.SCALES]))
+breaks_rows.append((("<b>All electronic parts, per board</b>", *[f"<b>{c['parts_per_board']:.2f}</b>" for c in COST]), "cls:total"))
+breaks_table = table(["Part (USD each)", "1", "100", "1 000", "10 000"], breaks_rows, cls="keep")
+
+cost_assump_rows = [
+    ("Exchange rate", f"1 USD = {R:.0f} LKR", f"Rate on {cm.LKR_RATE_ON}; it moved 328-332 over the month before"),
+    ("Electronic parts", f"LCSC, {cm.PRICES_ON}", "Price breaks above; other parts at the BOM's minimum-lot price x "
+     + ", ".join(f"{cm.OTHER_FACTOR[n]:g}" for n in cm.SCALES)),
+    ("PCB", "$2 for 5; then $" + " / $".join(f"{cm.PCB_EACH[n]:.2f}" for n in cm.SCALES[1:]), "2 layers, 60 x 89 mm, per board (estimate)"),
+    ("Assembly", f"JLCPCB Economic to 100, Standard above", f"{cm.SMT_JOINTS} SMT + {cm.THT_JOINTS} hand-soldered joints, "
+     f"{cm.EXT_TYPES} Extended part types at $3.07 each per order"),
+    ("Battery", " / ".join(f"${cm.BATTERY[n]:.2f}" for n in cm.SCALES), "1000 mAh LiPo with protection board and JST XA lead (estimate)"),
+    ("Motor", " / ".join(f"${cm.MOTOR[n]:.2f}" for n in cm.SCALES), "10 mm coin ERM with leads (estimate)"),
+    ("Case", " / ".join(f"${cm.ENCL[n]:.2f}" for n in cm.SCALES), "3D printed to 100; aluminium tool ($3 000) at 1 000; steel tool ($6 000) at 10 000"),
+    ("Freight", " / ".join(f"${cm.FREIGHT[n]:,.0f}" for n in cm.SCALES), "Whole order, China to Colombo; lithium cells ship as dangerous goods"),
+    ("Import charges", f"{cm.IMPORT_TAX*100:.0f} % of CIF", "Duty (HS code dependent) + 18 % VAT + 2.5 % SSCL + levies; VAT is reclaimable when registered"),
+    ("Labour", f"${cm.LABOUR_USD_H:.2f}/h; " + " / ".join(f"{cm.LABOUR_MIN[n]} min" for n in cm.SCALES),
+     "Fit battery, motor and case, flash, test; plus a $300-600 test jig from 1 000"),
+    ("Yield", " / ".join(f"{cm.YIELD[n]*100:.0f} %" for n in cm.SCALES), "Units that pass test"),
+]
+cost_assump_table = table(["Item", "1 / 100 / 1 000 / 10 000", "Basis"], cost_assump_rows, align=["l", "l", "l"], cls="assump")
+cost_items = [(f"{c['n']:,} unit" + ("s" if c['n'] > 1 else ""), c["unit"]) for c in COST]
+
 # --------------------------------------------------------------------------
 # Page
 # --------------------------------------------------------------------------
 css = """
 @page { size: A4; margin: 16mm 16mm 18mm 16mm;
-  @bottom-left { content: "RFID Attendance Logger - Power and capacity estimation"; font: 8pt Inter, sans-serif; color: #8a8984; }
+  @bottom-left { content: "RFID Attendance Logger - Power, capacity and cost"; font: 8pt Inter, sans-serif; color: #8a8984; }
   @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 8pt Inter, sans-serif; color: #8a8984; } }
 @page :first { @bottom-left { content: none; } }
 :root { --ink:#0b0b0b; --ink2:#52514e; --muted:#8a8984; --rule:#e4e3dd; --soft:#f4f3ef; --blue:#2a78d6; --orange:#eb6834; }
@@ -587,6 +900,7 @@ table.scen, table.keep { break-inside: avoid; }
 .chart .tick { font: 8px Inter, sans-serif; fill: #6b6a66; }
 .chart .lab { font: 9.5px Inter, sans-serif; fill: #0b0b0b; }
 .chart .val { font: 600 9.5px Inter, sans-serif; fill: #0b0b0b; font-feature-settings: "tnum" 1; }
+.chart .seg { font: 600 8.5px Inter, sans-serif; }
 .calc { background: var(--soft); border-left: 2.5pt solid var(--blue); padding: 7pt 10pt; margin: 6pt 0 10pt; font-size: 8.8pt;
   break-inside: avoid; border-radius: 0 4pt 4pt 0; }
 code { font-family: "DejaVu Sans Mono", monospace; font-size: 8.2pt; }
@@ -598,7 +912,8 @@ code { font-family: "DejaVu Sans Mono", monospace; font-size: 8.2pt; }
 .keep { break-inside: avoid; }
 ul { margin: 2pt 0 8pt 14pt; padding: 0; }
 li { margin-bottom: 3pt; }
-.legend { display: flex; gap: 14pt; font-size: 8pt; color: var(--ink2); margin-top: 2pt; }
+.legend { display: flex; flex-wrap: wrap; row-gap: 3pt; gap: 3pt 14pt; font-size: 8pt; color: var(--ink2); margin-top: 2pt; }
+.legend span { white-space: nowrap; }
 .legend span::before { content: ""; display: inline-block; width: 9pt; height: 9pt; border-radius: 2pt; margin-right: 4pt; vertical-align: -1pt; background: var(--c); }
 .measured { display: inline-block; background: #e8f5ee; color: #0f6b47; font-weight: 600; font-size: 7.6pt; padding: 1pt 5pt; border-radius: 3pt;
   text-transform: uppercase; letter-spacing: 0.5pt; }
@@ -607,49 +922,53 @@ li { margin-bottom: 3pt; }
 fill_lo, fill_hi = min(fills), max(fills)
 html = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Power Estimation Report</title><style>{css}</style></head><body>
+<title>Power and Cost Report</title><style>{css}</style></head><body>
 
 <section class="cover">
-  <div class="eyebrow">Engineering estimate &middot; Firmware and hardware rev 0.1</div>
-  <h1>RFID Attendance Logger<br>Power and Capacity Estimation</h1>
-  <p class="lede">Current draw for each operating mode and event, the reasoning behind each clock frequency,
-  the expected number of card reads and the battery life on a 1000 mAh, 3.7 V Li-ion cell,
-  and how the STM32L432KB's 128 kB of flash is shared between the program and the attendance log.</p>
+  <div class="eyebrow">Bench measurement and model &middot; Firmware and hardware rev 0.1</div>
+  <h1>RFID Attendance Logger<br>Power, Capacity and Cost</h1>
+  <p class="lede">Current draw for each operating mode and event, when the MCU and the reader are awake,
+  the reasoning behind each clock frequency, the expected number of card reads and the battery life on a 1000 mAh, 3.7 V Li-ion cell,
+  how the STM32L432KB's 128 kB of flash is shared between the program and the attendance log,
+  and what a finished unit costs to make at 1 to 10 000 units, in US dollars and Sri Lankan rupees.</p>
   <div class="meta">
     <div><b>Hardware</b>STM32L432KB (128 kB) + ST25R3916</div>
     <div><b>Battery</b>1000 mAh, 3.7 V nominal (3.7 Wh)</div>
     <div><b>Date</b>{today}</div>
-    <div><b>Status</b>Calculated, not yet measured</div>
+    <div><b>Status</b>Currents measured {MEASURED_ON}</div>
   </div>
   <div class="tiles">
     <div class="tile accent"><div class="k">Battery life</div><div class="v">{life4_t:.0f}<small>months</small></div>
       <div class="s">4 lectures/day, 100 students, incl. self-discharge ({life4_p:.0f} pessimistic)</div></div>
     <div class="tile"><div class="k">Idle scanning</div><div class="v">{idle_t:.0f}<small>uA</small></div>
-      <div class="s">Stop 2 + reader wake-up mode ({idle_p:.0f} uA pessimistic)</div></div>
+      <div class="s">Reader wake-up mode is {T['nfc_wu_ua']/idle_t*100:.0f} % of it</div></div>
+    <div class="tile"><div class="k">Switched off</div><div class="v">{off_t:.1f}<small>uA</small></div>
+      <div class="s">Standby, measured; {usable_t/(off_t/1000)/24/365:.0f} years on the device alone</div></div>
     <div class="tile"><div class="k">Per card tap</div><div class="v">{uah(ev_t['tap']):.1f}<small>uAh</small></div>
-      <div class="s">{ev_t['tap']/1000:.1f} mC; the motor is {T['motor']*FB_ACCEPT_VIB/ev_t['tap']*100:.0f} % of it</div></div>
-    <div class="tile"><div class="k">Flash log</div><div class="v">{LOG_CAP:,}<small>records</small></div>
-      <div class="s">{LECT100} lectures of 100 students before a PC sync</div></div>
+      <div class="s">{ev_t['tap']/1000:.1f} mC; {LOG_CAP:,} records fit in flash</div></div>
   </div>
 </section>
 
 <h2><span class="num">1</span>Summary</h2>
 <p>The logger spends nearly all of its life in one of two low-power states. Switched off, it sits in Standby and draws
-about <b>{off_t:.1f} uA</b>. Switched on and waiting for cards, the MCU sleeps in Stop 2 while the ST25R3916 watches the antenna itself,
-for about <b>{idle_t:.0f} uA</b>. The large currents (about {T['field']:.0f} mA for the RF field and {T['motor']:.0f} mA for the vibration motor) flow only for
-tens of milliseconds per tap, so a whole 100-student lecture costs about <b>{lect_t/1000:.2f} mAh</b> ({lect_t/1000*BATT_V:.2f} mWh).</p>
-<p>At four lectures a day, the device uses about <b>{dev_m:.0f} mAh a month</b>. The cell's own self-discharge (about {sd_m:.0f} mAh a month)
-is a large part of the total, giving roughly <b>{life4_t:.0f} months per charge</b>, or {life4_t_nosd:.0f} months from the device's draw alone.</p>
-<p>The fitted MCU is the 128 kB STM32L432KB, so the program and the log share one 128 kB flash. The program takes the first 72 kB
-(it is {IMG_OG/1024:.1f} kB) and the log the last 56 kB: <b>{LOG_CAP:,} records</b>, about {LECT100} lectures of 100 students.
-The log therefore fills long before the battery empties: at four 100-student lectures a day it is full in about
-{LECT100/4:.0f} teaching days, so the PC sync (which clears the log) sets the routine, not the charger.</p>
-<div class="callout"><b>Confidence.</b> MCU figures come from the STM32L432 datasheet and are reliable. The two largest terms, the RF field current
-and the reader's wake-up-mode average, are estimates until the antenna is fitted and tuned. Each table gives a pessimistic column
-(150 mA field, 30 uA wake-up mode, 4 false wake-ups a minute, 90 mA motor) to bound them. The flash size, the cell voltage and the
-program sizes were measured (section 3 and section 8).</div>
+<b>{off_t:.1f} uA</b> (measured). Switched on and waiting for cards, the MCU sleeps in Stop 2 and wakes only for a 10 ms heartbeat flash
+every 5 s, while the ST25R3916 checks the antenna itself every 100 ms. That idle state draws about <b>{idle_t:.0f} uA</b>, and
+{T['nfc_wu_ua']/idle_t*100:.0f} % of it is the reader's wake-up mode. The large currents ({T['field']:.0f} mA for the RF field, {T['motor']:.1f} mA for
+the motor) flow only for milliseconds per tap, so a whole 100-student lecture costs about <b>{lect_t/1000:.2f} mAh</b> ({lect_t/1000*BATT_V:.2f} mWh).</p>
+<p>At four lectures a day, the device uses about <b>{dev_m:.0f} mAh a month</b>. With the cell's self-discharge (about {sd_m:.0f} mAh a month)
+that gives roughly <b>{life4_t:.0f} months per charge</b>, or {life4_t_nosd:.0f} months from the device's draw alone.</p>
+<p>The program and the log share the STM32L432KB's 128 kB flash: 72 kB for the program ({IMG_OG/1024:.1f} kB at -Og) and 56 kB for the log,
+<b>{LOG_CAP:,} records</b> or about {LECT100} lectures of 100 students. The log fills long before the battery empties
+(in about {LECT100/4:.0f} teaching days at four lectures a day), so the PC sync, which clears the log, sets the routine, not the charger.</p>
+<p>A finished unit costs about <b>US${COST[2]['unit']:.0f} (LKR {COST[2]['unit']*cm.LKR_PER_USD:,.0f})</b> to make at 1 000 units and
+US${COST[3]['unit']:.0f} (LKR {COST[3]['unit']*cm.LKR_PER_USD:,.0f}) at 10 000, landed in Sri Lanka and tested (section 11).</p>
+<div class="callout"><b>Confidence.</b> Every current in this report except the 24/80 MHz run currents, the ADC and the flash was measured on the board
+({MEASURED_ON}) with a multimeter in series with the cell, using a power-test build that holds each load steady (section 3).
+Event charges are those currents multiplied by the firmware's timings, which come from its constants, not from a scope.
+The reader's wake-up mode average is the least certain figure: the meter read 117-204 uA while it averaged the reader's 100 ms measurements,
+so the pessimistic column uses 204 uA and 4 false wake-ups a minute. The RF field current is for the untuned antenna.</div>
 
-<h2 class="pb"><span class="num">2</span>Clock frequency selection</h2>
+<h2><span class="num">2</span>Clock frequency selection</h2>
 <p>Each clock was picked for the job it does. The scanning clock matters most, because it runs on every wake-up.</p>
 {clock_table}
 
@@ -657,71 +976,115 @@ program sizes were measured (section 3 and section 8).</div>
 <p>The MCU's awake time is set by the radio and the protocol rather than by computation: a read waits out a 5 ms field guard,
 exchanges ISO 14443 frames at 106 kbit/s, and busy-waits on the reader's IRQ line. For a fixed window <i>t</i>, the charge is
 <i>Q = I<sub>run</sub>(f) &times; t</i>, so the lowest clock that meets the deadlines wins.</p>
-<div class="calc"><div class="eq">MCU charge during one 15 ms read window:
+<div class="calc"><div class="eq">MCU charge during one 15 ms read window (4 MHz measured, 24/80 MHz datasheet):
 {eqs([
-  ("4 MHz", f"{T['run4']:.1f} mA x 15 ms", f"{T['run4']*15:.1f} uC"),
+  ("4 MHz", f"{T['run4']:.2f} mA x 15 ms", f"{T['run4']*15:.1f} uC"),
   ("24 MHz", f"{T['run24']:.1f} mA x 15 ms", f"{T['run24']*15:.1f} uC"),
   ("80 MHz", f"{T['run80']:.1f} mA x 15 ms", f"{T['run80']*15:.1f} uC  + PLL lock per wake-up"),
   ("RF field", f"{T['field']:.0f} mA x {T['poll_ms']:.0f} ms", f"{T['field']*T['poll_ms']:.0f} uC"),
 ])}</div></div>
 <div class="figure"><div class="title">Charge for one card read: MCU clock options against the RF field</div>
 {svg_hbar(clock_items, "#2a78d6", "uC", fmt=lambda v: f"{v:,.1f} uC", ref="RF field for the same poll")}
-<div class="cap">At 4 MHz the MCU is under 1 % of a read's charge. At 80 MHz it would be about 12 %, for no gain in speed.</div></div>
+<div class="cap">At 4 MHz the MCU is {T['run4']*15/(T['field']*T['poll_ms'])*100:.1f} % of a read's charge. At 80 MHz it would be about
+{T['run80']*15/(T['field']*T['poll_ms'])*100:.0f} %, for no gain in speed.</div></div>
 <p>For purely computational work (one pass of the main loop is roughly 2000 cycles), current per MHz is close to constant,
-so finishing faster and sleeping longer gains little: 0.5 ms at 0.5 mA (0.25 uC) at 4 MHz against 25 us at 9 mA (0.23 uC) at 80 MHz.
+so finishing faster and sleeping longer gains little: 0.5 ms at {T['run4']:.1f} mA ({T['run4']*0.5:.2f} uC) at 4 MHz against 25 us at 9 mA (0.23 uC) at 80 MHz.
 That small gain is lost to the PLL's start-up time and to the 4 flash wait states 80 MHz needs.</p>
 <h3>Why not slower</h3>
 <ul>
 <li><b>SPI with the field on.</b> The SPI clock is SYSCLK / 8. At 2 MHz the reader's register traffic would take twice as long
-while the 100 mA field is on, costing more than the MCU saves.</li>
+while the {T['field']:.0f} mA field is on, costing more than the MCU saves.</li>
 <li><b>ADC sampling.</b> The ADC clock is HCLK / 4. A slower clock stretches the 640.5-cycle sample and keeps the ADC powered longer.</li>
-<li><b>Low-power run (at most 2 MHz) would barely help.</b> The MCU is awake about {WAKES_PER_S*WAKE_MS/10:.2f} % of the time, so its run current
+<li><b>Low-power run (at most 2 MHz) would barely help.</b> The MCU is awake about {WAKES_PER_S*WAKE_MS/10:.2f} % of the time in idle, so its run current
 adds only ~{WAKES_PER_S*WAKE_MS/1000*T['run4']*1000:.1f} uA to the {idle_t:.0f} uA idle figure.</li>
 </ul>
 <h3>Voltage scaling</h3>
-<p>The firmware keeps Range 1 at all clocks. Range 2 would cut run current by about 10 %, but that saves only ~0.04 uA in idle, while USB
+<p>The firmware keeps Range 1 at all clocks. Range 2 would cut run current by about 10 %, but that saves well under 0.1 uA in idle, while USB
 needs Range 1 anyway. Staying in Range 1 avoids switching the regulator on every USB attach. Stop 2 and Standby use the low-power
 regulator either way.</p>
 
-<h2><span class="num">3</span>Assumptions</h2>
-<p>Battery-side currents. The 3.3 V rail comes from a linear LDO, so the battery supplies the same current the MCU, LEDs and pull-ups draw;
-the reader's VDD/VDD_TX and the motor sit straight on BAT+.</p>
+<h2 class="pb"><span class="num">3</span>Measurements and assumptions</h2>
+<p>Battery-side currents, measured on {MEASURED_ON} with a multimeter in series with the cell. The power-test build
+(<code>make power-test</code>, <code>Bsp/Src/bsp_power_test.c</code>) runs no application: each press of the button holds the next load
+steady, so the meter reads it instead of a millisecond pulse. The 3.3 V rail comes from a linear LDO, so the battery supplies the same current
+the MCU and LEDs draw; the reader's VDD/VDD_TX and the motor sit straight on BAT+.</p>
+<h3>Measured <span class="measured">Measured {MEASURED_ON}</span></h3>
+{meas_table}
+<h3>Changes made after the first measurements</h3>
+{done_table}
+<h3>Still estimated</h3>
 {assump_table}
-
 <h3>Measured on the board <span class="measured">Measured 07 October 2026</span></h3>
 {measured_table}
 
 <h2><span class="num">4</span>Operating modes</h2>
 {table(["Mode", "Typical", "Pessimistic", "What is running"], mode_rows, align=["l", "r", "r", "l"])}
-<div class="figure"><div class="title">Idle scanning current, {idle_t:.1f} uA in total</div>
+<div class="figure"><div class="title">Idle scanning current, {idle_t:.0f} uA in total</div>
 {svg_hbar(idle_items, "#2a78d6", "uA", fmt=lambda v: f"{v:.2f} uA")}
-<div class="cap">The heartbeat LED and the reader's own antenna measurements are about 90 % of idle current. The MCU's share is about 5 %.</div></div>
+<div class="cap">The reader's own antenna measurements are {T['nfc_wu_ua']/idle_t*100:.0f} % of idle current. The MCU, including its wake-ups,
+is under {(T['stop2_base_ua'] + WAKES_PER_S*WAKE_MS*T['run4'])/idle_t*100+1:.0f} %.</div></div>
 <div class="calc"><div class="eq">{eqs([
-  ("Heartbeat", f"{T['led_g']} mA x 30 ms / 4000 ms", f"{T['led_g']*1000*30/4000:.1f} uA"),
-  ("Wake-ups", f"1.5 /s x 0.5 ms x {T['run4']} mA", f"{WAKES_PER_S*WAKE_MS/1000*T['run4']*1000:.2f} uA"),
+  ("Wake-up mode", f"mode 2 - mode 1 = {T['stop2_base_ua']+T['nfc_wu_ua']:.0f} - {T['stop2_base_ua']} uA", f"{T['nfc_wu_ua']:.1f} uA"),
+  ("Heartbeat", f"{T['led_g']} mA x {HB_ON_MS} ms / {HB_PERIOD_MS} ms", f"{T['led_g']*1000*HB_ON_MS/HB_PERIOD_MS:.1f} uA"),
+  ("Wake-ups", f"0.4 /s x 0.5 ms x {T['run4']} mA", f"{WAKES_PER_S*WAKE_MS/1000*T['run4']*1000:.2f} uA"),
   ("Sampling", f"1.5 ms x ({T['run4']} + {T['adc_extra']}) mA / 10 s", f"{BATT_SAMPLE_MS/1000*(T['run4']+T['adc_extra'])*1000/10:.2f} uA"),
-  ("Off", f"{T['mcu_stby_ua']} + {T['nfc_pd_ua']} + {T['div_ua']} + {T['ldo_ua']} + {T['chg_ua']} uA", f"{off_t:.2f} uA"),
+  ("Off", "measured, mode 10", f"{off_t:.2f} uA"),
   ("Polling mode", f"{T['nfc_ready']} mA Ready + {T['field']:.0f} mA x 6 ms / 100 ms + MCU", f"{poll_mode_ma:.1f} mA"),
 ])}</div></div>
-<p>Switching the reader's wake-up mode off would take idle current from {idle_t:.0f} uA to about {poll_mode_ma:.0f} mA: battery life left
-switched on would drop from {idle_life_h/24/365:.1f} years to {poll_life_h/24:.1f} days. The wake-up mode is the most important saving in the design.</p>
+<p>The reader's wake-up mode is still far cheaper than polling: switching it off would take idle current from {idle_t:.0f} uA to about
+{poll_mode_ma:.0f} mA, and battery life left switched on from {idle_life_h/24:.0f} days to {poll_life_h/24:.1f} days. At {WU_PERIOD_MS} ms it costs about
+{T['nfc_wu_ua']*WU_PERIOD_MS/1000:.0f} uC per measurement, far more than the ~1 uC first assumed: each measurement starts the 27.12 MHz oscillator
+and drives the untuned antenna. A longer period (section 10) or a tuned antenna is the largest remaining saving.</p>
 
-<h2 class="pb"><span class="num">5</span>Charge per event</h2>
+<h2 class="pb"><span class="num">5</span>When the MCU and the reader are awake</h2>
+<p>The two chips sleep independently. The MCU sleeps in Stop 2 and wakes on its own timer (LPTIM1) or on an interrupt: the button,
+VBUS, or the reader's IRQ line. The ST25R3916 runs its own wake-up timer and wakes the MCU only when the antenna changes. Timings are the
+firmware's; the currents beside each lane are the measured ones.</p>
+<div class="figure"><div class="title">Idle scanning: ten seconds</div>
+{svg_idle_timeline(T)}
+<div class="legend"><span style="--c:{C_STOP2}">MCU Stop 2</span><span style="--c:{C_RUN}">MCU awake (~0.5 ms)</span>
+<span style="--c:{C_WU}">Reader wake-up mode</span><span style="--c:{C_MEAS}">Reader antenna measurement</span><span style="--c:{C_LED}">LED on (10 ms)</span></div>
+<div class="cap">The MCU wakes twice every 5 s: when the heartbeat LED goes on and 10 ms later when it goes off. The battery is sampled on the
+first of those wakes every 10 s, so it adds no wake of its own. Meanwhile the reader measures the antenna 10 times a second, without the MCU.
+Nothing else is due, so the loop sleeps the full 5 s (<code>APP_SLEEP_MAX_MS</code>).</div></div>
+<div class="figure"><div class="title">The reader's wake-up measurements, every {WU_PERIOD_MS} ms</div>
+{svg_wakeup_pulses(T)}
+<div class="cap">Log scale. Ten times a second the ST25R3916 starts its oscillator, drives the antenna for a moment and compares the
+amplitude with its reference; the MCU sleeps through all of it. When a card changes the amplitude past the window (the fourth
+measurement), the reader raises its IRQ and the MCU wakes to read the card. The charge per measurement, {wu_pulse(T)[0]:.1f} uC, follows from the
+measured {T['nfc_wu_ua']:.0f} uA average; how it divides between oscillator start-up and the field burst is an illustration
+(assumed {WU_OSC_MS:g} ms start-up) until the pulse is captured with a scope across a shunt resistor.</div></div>
+<div class="figure"><div class="title">One accepted card tap</div>
+{svg_tap_timeline(T)}
+<div class="legend"><span style="--c:{C_STOP2}">MCU Stop 2</span><span style="--c:{C_RUN}">MCU awake</span>
+<span style="--c:{C_WU}">Wake-up mode</span><span style="--c:{C_READY}">Ready, {T['nfc_ready']:.2f} mA</span>
+<span style="--c:{C_FIELD}">RF field on, {T['field']:.0f} mA</span><span style="--c:{C_MOTOR}">Motor</span><span style="--c:{C_LED}">LED</span></div>
+<div class="cap">The card is noticed at the reader's next measurement, at most {WU_PERIOD_MS} ms after it arrives. The IRQ wakes the MCU, which turns the
+field on and sleeps through the 6 ms guard in Stop 2, then runs REQA, anticollision and SELECT (~4 ms), logs the card and starts the pattern.
+The reader stays in Ready mode while the pattern plays, so the motor never runs with the field on. At the end of the pattern one empty poll
+(the card has gone) re-arms wake-up mode. Five seconds after the last tap the MCU wakes once more to write the RAM buffer to flash.</div></div>
+<div class="figure"><div class="title">A false wake-up</div>
+{svg_false_timeline(T)}
+<div class="cap">A measurement strays past the window with no card there (noise, a hand, drift). One empty poll, about {T['empty_poll_ms']:.0f} ms of field,
+and the reader is armed again with a fresh reference: {ev_t['false_wake']/1000:.1f} mC each, against 5.5 mC with the three empty polls used before.</div></div>
+
+<h2><span class="num">6</span>Charge per event</h2>
 <p>Charge = current x time for each load, summed over the event. 1 uAh = 3.6 mC.</p>
 {event_table}
 <div class="figure"><div class="title">One accepted card tap, {ev_t['tap']/1000:.1f} mC ({uah(ev_t['tap']):.2f} uAh)</div>
 {svg_hbar(tap_items, "#2a78d6", "mC", fmt=lambda v: qfmt(v*1000))}
-<div class="cap">Feedback (motor and LED) and keeping the reader awake after the read cost more than the read itself.</div></div>
+<div class="cap">The field (read plus one empty poll) and the motor are about {(T['field']*(T['poll_ms']+T['empty_poll_ms']) + T['motor']*FB_ACCEPT_VIB)/ev_t['tap']*100:.0f} % of a tap.
+Keeping the reader in Ready mode during the pattern is most of the rest.</div></div>
 <div class="calc"><div class="eq">{eqs([
-  ("Motor", f"{T['motor']:.0f} mA x 90 ms", f"{T['motor']*90/1000:.2f} mC"),
-  ("Ready mode", f"{T['nfc_ready']} mA x (250 ms pattern + 3 x 100 ms)", f"{T['nfc_ready']*550/1000:.2f} mC"),
-  ("Empty polls", f"3 x {T['field']:.0f} mA x {T['empty_poll_ms']:.0f} ms", f"{3*T['field']*T['empty_poll_ms']/1000:.2f} mC"),
+  ("Motor", f"{T['motor']:.1f} mA x {FB_ACCEPT_VIB} ms", f"{T['motor']*FB_ACCEPT_VIB/1000:.2f} mC"),
+  ("Ready mode", f"{T['nfc_ready']} mA x {READY_AFTER_TAP_MS} ms (pattern)", f"{T['nfc_ready']*READY_AFTER_TAP_MS/1000:.2f} mC"),
+  ("Empty poll", f"{EMPTY_POLLS} x {T['field']:.0f} mA x {T['empty_poll_ms']:.0f} ms", f"{EMPTY_POLLS*T['field']*T['empty_poll_ms']/1000:.2f} mC"),
   ("Read", f"{T['field']:.0f} mA x {T['poll_ms']:.0f} ms (guard, REQA, anticollision, SELECT)", f"{T['field']*T['poll_ms']/1000:.2f} mC"),
   ("LED", f"{T['led_g']} mA x 250 ms", f"{T['led_g']*250/1000:.2f} mC"),
   ("Total", "incl. re-arm, MCU, oscillator, flash", f"{ev_t['tap']/1000:.2f} mC = {uah(ev_t['tap']):.2f} uAh"),
 ])}</div></div>
 
-<h2><span class="num">6</span>A lecture, and battery life</h2>
+<h2><span class="num">7</span>A lecture, and battery life</h2>
 <p>The model lecture: the lecturer powers the unit on and starts a lecture with a button hold; 100 students tap over 15 minutes,
 5 of them twice; 3 minutes after the last tap the unit switches itself off. It is on for 18 minutes.</p>
 <div class="two">
@@ -738,21 +1101,23 @@ Life = {usable_t:.0f} mAh / {tot_m:.1f} mAh = {life4_t:.1f} months
 </div>
 <div class="figure"><div class="title">Months per charge against lectures per day</div>
 {svg_life_chart()}
-<div class="cap">Light use is limited by the cell's self-discharge, not the device. A full charge lasts over a year at up to about 4 lectures a day.</div></div>
+<div class="cap">Light use is limited by the cell's self-discharge, not the device. At 4 lectures a day a charge lasts about {life4_t:.0f} months,
+with idle scanning and false wake-ups a large share of each lecture.</div></div>
 {scen_table}
 <p class="note">Shelf time when never switched on: {usable_t:.0f} mAh / {off_t:.1f} uA = {usable_t/(off_t/1000)/24/365:.0f} years from the device's draw alone,
-but self-discharge empties the cell in roughly {usable_t/sd_m/12:.1f} years. Store the device charged and recharge it each term.</p>
+but self-discharge empties the cell in roughly {usable_t/sd_m/12:.1f} years. Store the device charged and recharge it each term.
+All values are at room temperature; Li-ion capacity falls 10-20 % near 0 °C and with ageing, partly covered by the usable-capacity factor.</p>
 
-<h2><span class="num">7</span>Card reads per charge</h2>
+<h2><span class="num">8</span>Card reads per charge</h2>
 <p>A tap alone costs {uah(ev_t['tap']):.2f} uAh, so a charge could fund <b>{taps_bound:,.0f}</b> taps if nothing else drew current.
 With each lecture's idle time, power-on and power-off, duplicates and false wake-ups shared out among its students,
 the effective cost per student is higher, especially in small classes:</p>
 {reads_table}
-<p>Even small classes get well over 150 000 reads per charge (self-discharge aside), which is {fill_lo:.0f} to {fill_hi:.0f} times the
+<p>Even small classes get over {min(usable_t*1000/(lecture(T, n)[1]/n) for n in (30, 60, 100, 200))/1000:.0f} 000 reads per charge (self-discharge aside), which is {fill_lo:.0f} to {fill_hi:.0f} times the
 {LOG_CAP:,} records the flash can hold. Before the battery is a limit, the log has to be read and cleared by the PC app many times over
 (by <code>#CLEARLOG</code> when it starts a lecture).</p>
 
-<h2 class="pb"><span class="num">8</span>Flash: program and attendance log</h2>
+<h2><span class="num">9</span>Flash: program and attendance log</h2>
 <p>The fitted MCU is the <b>STM32L432KB</b>: its flash-size word at <code>0x1FFF75E0</code> reads 128 (measured on the board).
 Its 128 kB is 64 pages of 2 kB, erased a page at a time, and the program and the log must share them. Earlier firmware assumed the
 256 kB STM32L432KC and kept its data at <code>0x08020000</code>, which the KB does not specify; the layout below fits the KB.</p>
@@ -805,22 +1170,56 @@ and the PC app decides who each card belongs to.</li>
 with the PC app before reflashing, and set its device ID again afterwards.</li>
 </ul>
 
-<div class="keep"><h2><span class="num">9</span>Where to save more power</h2>
-<p>Ranked by effect on the typical lecture. None of these is needed to reach a year per charge.</p>
+<div class="keep"><h2><span class="num">10</span>Where to save more power</h2>
+<p>Ranked by effect. The reader's wake-up mode dominates idle current, so its period and the antenna tuning matter most;
+the rest are small.</p>
 {improve_table}</div>
 
-<h2><span class="num">10</span>Verification plan</h2>
+<h2 class="pb"><span class="num">11</span>Manufacturing cost</h2>
+<p>What a finished unit costs to make and land in Sri Lanka: the assembled board, the 1000 mAh cell, the motor, the case and box,
+freight from China, import charges, and final assembly and test in Sri Lanka. Prices are in US dollars with rupees at
+1 USD = {R:.0f} LKR. The model is <code>Firmware/docs/cost_model.py</code>; it reads the LCSC BOM workbook in <code>PCB/bom</code>.</p>
+{cost_table}
+<div class="figure"><div class="title">Cost per unit against order size</div>
+{svg_hbar(cost_items, "#2a78d6", "USD", fmt=lambda v: f"${v:,.2f}  (LKR {v*R:,.0f})")}
+<div class="cap">A single unit carries a whole minimum order: 5 PCBs, 2 assembled boards, JLCPCB's setup and
+{cm.EXT_TYPES} Extended-part fees (${cm.EXT_TYPES*3.07:.0f}), and a courier. From 100 units the parts dominate, led by the STM32 and the ST25R3916.</div></div>
+
+<div class="two">
+<div><h3>Where the money goes</h3>
 <ul>
-<li>Fit and tune the antenna, then measure the RF field current at BAT+ during a read (largest single uncertainty).</li>
-<li>Measure average idle current with a current-integrating meter (Nordic PPK2 or similar) over 60 s with no card present, with no debugger attached,
-since an attached debugger keeps the MCU out of Stop 2. Expect about {idle_t:.0f} uA.</li>
-<li>Integrate one tap and compare it with {ev_t['tap']/1000:.0f} mC; read <code>dbg_nfc_false_wakes</code> after an hour to confirm the false wake-up rate.</li>
-<li>Measure Standby current with the unit switched off (expect about {off_t:.1f} uA), and the fitted motor's running current.</li>
-<li>Fill the log on the bench (a test that taps {LOG_CAP:,} IDs) and confirm the red error pattern on the next tap.</li>
-<li>Feed the measured values back into this model (<code>Firmware/docs/power_report.py</code>); the calculations scale linearly with each term.</li>
+<li><b>1 unit:</b> assembly fees (${COST[0]['asm']:.0f} for the order) and parts in minimum lots (${COST[0]['parts_per_board']:.0f} a board).
+Hand-soldering the prototype saves the assembly fees.</li>
+<li><b>100 units:</b> parts are ${COST[1]['parts_per_board']:.2f} a board; the two ICs are over half.</li>
+<li><b>1 000 units:</b> the case tooling adds $3.00 a unit; parts fall to ${COST[2]['parts_per_board']:.2f}.</li>
+<li><b>10 000 units:</b> parts ${COST[3]['parts_per_board']:.2f}; import charges are the second largest line.</li>
+<li><b>Selling price</b> = cost / (1 - margin); the table shows a {cm.MARGIN*100:.0f} % gross margin as an example.</li>
+</ul></div>
+<div><h3>Key part prices</h3>
+{breaks_table}
+<p class="note">* extrapolated (LCSC lists no break at that quantity).</p></div>
+</div>
+
+<h3>Assumptions</h3>
+{cost_assump_table}
+<div class="callout"><b>Risks and exclusions.</b> LCSC held only 27 ST25R3916 on {cm.PRICES_ON} and Digi-Key none, so 100 units or more
+need a quote from ST or a distributor. The duty rate depends on the HS code the goods are cleared under. Not included: the optional PN532
+module, a USB cable, radio type approval (TRCSL, for a 13.56 MHz transmitter), firmware and engineering time, warranty and distribution.
+R6 is still 1 kΩ (1 A charge current); the BOM's 2 kΩ alternate (500 mA) suits a USB-C sink and costs the same.</div>
+<p class="note">Sources: lcsc.com product pages C2928224, C2908147, C627668, C2887324, C5143397, C2689642, C141588 ({cm.PRICES_ON});
+jlcpcb.com/help/article/pcb-assembly-price; jlcpcb.com/news/discounts-for-large-pcb-orders; exchange-rates.org (USD/LKR);
+customs.gov.lk "Computation of import levies" (2026); KPMG, Sri Lanka budget 2026 tax proposals; teamrapidtooling.com (mould costs);
+besomi.com (603450 LiPo retail price).</p>
+
+<h2><span class="num">12</span>Verification plan</h2>
+<ul>
+<li>Fit and tune the antenna (C16-C19, R15), then repeat modes 2 and 4 of the power-test build: the field current and the
+wake-up mode average should both fall.</li>
+<li>Read <code>dbg_nfc_false_wakes</code> after an hour of idle with no card near (plug in USB to keep the MCU awake for the probe) and replace
+the assumed {T['false_per_min']:g} per minute.</li>
+<li>Integrate one tap and one idle minute with a current-integrating meter (Nordic PPK2 or similar), with no debugger attached, and compare
+with {ev_t['tap']/1000:.1f} mC and {idle_t:.0f} uA.</li>
 </ul>
-<p class="note">All values are at room temperature. Li-ion capacity falls 10-20 % near 0 °C and with ageing, already partly covered
-by the 90 % usable-capacity factor.</p>
 </body></html>
 """
 

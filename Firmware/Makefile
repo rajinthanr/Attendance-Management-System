@@ -79,6 +79,11 @@ OBJECTS := $(addprefix $(BUILD)/,$(C_SOURCES:.c=.o)) \
 
 all: $(BUILD)/$(TARGET).elf $(BUILD)/$(TARGET).hex $(BUILD)/$(TARGET).bin
 
+# Bench build for current measurements (Bsp/Src/bsp_power_test.c): the button
+# steps through steady loads instead of running the application.
+power-test:
+	$(MAKE) BUILD=build/power-test DEFS="$(DEFS) -DBSP_POWER_TEST=1"
+
 $(BUILD)/App/Src/%.o: App/Src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) -c $(CFLAGS) $(APP_CFLAGS) $< -o $@
@@ -110,6 +115,6 @@ clean:
 	rm -rf $(BUILD)
 	$(MAKE) -C Tests clean
 
-.PHONY: all clean test
+.PHONY: all clean test power-test
 
 -include $(shell find $(BUILD) -name '*.d' 2>/dev/null)

@@ -46,8 +46,12 @@
 #define APP_NFC_FIELD_GUARD_MS          (5u)
 
 /** Consecutive empty polls before a held card counts as taken away. Until
- *  then the same card is not reported again, however many polls see it. */
-#define APP_NFC_REMOVE_MISSES           (3u)
+ *  then the same card is not reported again, however many polls see it. It
+ *  is also the number of empty polls before wake-up mode is re-armed, after a
+ *  tap or a false wake-up, and each costs the RF field (203 mA measured) for
+ *  ~6 ms plus 100 ms of Ready mode (5.7 mA): one is enough, since a card still
+ *  held and missed once only means one extra wake-up when it leaves. */
+#define APP_NFC_REMOVE_MISSES           (1u)
 
 /** 1: between cards the reader sits in its own wake-up mode and interrupts
  *  on PB1 when something changes the antenna; it polls only from a wake-up
@@ -58,9 +62,10 @@
  *  reader notices it. The chip offers 10-80 ms and 100-800 ms. */
 #define APP_NFC_WAKE_PERIOD_MS          (100u)
 
-/** Longest the main loop sleeps with nothing due. Each wake is cheap; this
- *  only bounds how stale the dbg_* globals can get. */
-#define APP_SLEEP_MAX_MS                (1000u)
+/** Longest the main loop sleeps with nothing due: one heartbeat period, so an
+ *  idle unit wakes only for the heartbeat. It also bounds how stale the dbg_*
+ *  globals can get. Within BSP_STOP2_MAX_MS, so it is one Stop 2 sleep. */
+#define APP_SLEEP_MAX_MS                (5000u)
 
 /** Wake-up mode trigger window: counts either side of the reference that do
  *  not wake the reader. It starts at the minimum and widens by one after each
@@ -104,7 +109,7 @@
 /* Feedback and indicator policy (ms)                                       */
 /* ------------------------------------------------------------------------ */
 
-#define APP_FB_ACCEPT_VIB_MS            (90u)
+#define APP_FB_ACCEPT_VIB_MS            (60u)
 #define APP_FB_ACCEPT_LED_MS            (250u)
 #define APP_FB_DUPLICATE_PULSE_MS       (60u)
 #define APP_FB_DUPLICATE_GAP_MS         (90u)
@@ -122,8 +127,8 @@
 #define APP_FB_LECTURE_GAP_MS           (120u)
 
 /** Idle heartbeat: one short flash per period, green, or red on a low cell. */
-#define APP_IND_IDLE_PERIOD_MS          (4000u)
-#define APP_IND_IDLE_ON_MS              (30u)
+#define APP_IND_IDLE_PERIOD_MS          (5000u)
+#define APP_IND_IDLE_ON_MS              (10u)
 
 /** USB session: green flash once a second. */
 #define APP_IND_USB_PERIOD_MS           (1000u)
@@ -157,7 +162,8 @@
 /** Shut down on a flat cell. 0 only measures and reports. */
 #define APP_ENABLE_BATTERY_PROTECTION   (1u)
 
-/** Battery sampling interval while running. */
+/** Battery sampling interval while running. A multiple of
+ *  APP_IND_IDLE_PERIOD_MS: samples land on the heartbeat's wake. */
 #define APP_BATT_SAMPLE_MS              (10000u)
 
 /** Consecutive critical samples before a shutdown, so one sample taken during

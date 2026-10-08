@@ -143,7 +143,7 @@ in Stop 2.
 | Mode | Used when | Retained | Wakes on |
 |---|---|---|---|
 | Sleep | USB sessions and switching off (1 ms passes), and any wait under `BSP_STOP2_MIN_MS` (4 ms) | everything | SysTick (1 ms), any interrupt |
-| Stop 2 | idle (`ST_IDLE`) with the next deadline 4 ms or more away | SRAM, registers, RTC, LPTIM1 | LPTIM1 at the deadline (at most 1.9 s), the button (EXTI0), VBUS (EXTI9), the reader's wake-up (EXTI1) |
+| Stop 2 | idle (`ST_IDLE`) with the next deadline 4 ms or more away | SRAM, registers, RTC, LPTIM1 | LPTIM1 at the deadline (at most 15 s), the button (EXTI0), VBUS (EXTI9), the reader's wake-up (EXTI1) |
 | Standby | 3 min idle on battery, low battery, a 5 s hold | RTC + backup registers | WKUP1 (button) only, through reset |
 
 Each `app_task()` pass samples the button and VBUS, steps the feedback pattern,
@@ -153,8 +153,8 @@ in `app_fsm.c` takes the soonest of the deadlines the loop owns: the feedback
 pattern's next step, the heartbeat LED's next edge, the button's debounce and
 its 2 s and 5 s thresholds (`btn_next_ms()`), the VBUS debounce, the reader's
 field guard or next poll (`cr_next_ms()`), the reader retry, the 10 s battery
-sample, the 5 s flush and the 3-minute inactivity timeout, capped at
-`APP_SLEEP_MAX_MS` (1 s). `deep` is set only in `ST_IDLE`: a USB session needs
+sample (placed on a heartbeat flash), the 5 s flush and the 3-minute
+inactivity timeout, capped at `APP_SLEEP_MAX_MS` (5 s). `deep` is set only in `ST_IDLE`: a USB session needs
 the 24 MHz clock and SysTick, so it and the shutdown sequence keep 1 ms passes.
 Every timer is still a timestamp compared against `plat_uptime_ms()`
 (`HAL_GetTick()`), so nothing blocks, not even the reader's 5 ms field guard.
@@ -162,11 +162,13 @@ Every timer is still a timestamp compared against `plat_uptime_ms()`
 `plat_sleep_until()` (`bsp_power.c`) re-tests its predicate with interrupts
 masked, so an event posted between the queue check and the WFI is never slept
 through. For a deep sleep of at least 4 ms, `stop2_for()` sets an LPTIM1
-compare at the deadline and enters Stop 2. LPTIM1 counts the LSE (16 bits,
-32768 Hz, wrapping every 2 s) without pause and interrupts on both the compare
-and the wrap, through EXTI line 32, so a sleep always ends within one wrap and
-the ticks slept are never ambiguous; that is why one sleep is capped at
-`BSP_STOP2_MAX_MS` (1.9 s). On waking (on MSI at the scanning range), the ticks
+compare at the deadline (rounded up to the next tick) and enters Stop 2.
+LPTIM1 counts the LSE divided by 8 (16 bits, 4096 Hz, 0.24 ms a tick, wrapping
+every 16 s) without pause and interrupts on both the compare and the wrap,
+through EXTI line 32, so a sleep always ends within one wrap and the ticks
+slept are never ambiguous; that is why one sleep is capped at
+`BSP_STOP2_MAX_MS` (15 s). A wake from the wrap alone, with nothing else
+pending, goes straight back to Stop 2 (`woken_by_wrap_only()`). On waking (on MSI at the scanning range), the ticks
 slept are converted to milliseconds and added to HAL's `uwTick`, with the
 remainder carried to the next sleep, so `plat_uptime_ms()` never notices the
 gap. `BSP_ENABLE_STOP2` in `bsp_board.h` set to 0 brings back Sleep-mode-only
@@ -204,9 +206,10 @@ Consequences worth stating:
 - **Spare pins are analog**, the lowest-leakage state on an L4.
 - **The core runs at 4 MHz** while scanning. USB sessions raise it to 24 MHz
   and drop back on unplug.
-- **The idle loop wakes at least once a second** (`APP_SLEEP_MAX_MS`), and for
-  each edge of the 4 s heartbeat flash. The cap only bounds how stale the
-  `dbg_*` globals get.
+- **The idle loop wakes only for the heartbeat:** at the start and end of the
+  10 ms flash every 5 s (`APP_SLEEP_MAX_MS` is the same 5 s). The battery
+  sample is placed on the flash's wake (`sample_battery()` aligns
+  `next_battery` to the heartbeat), so it adds none of its own.
 - **The button's pull-up is retained in Standby** via `PWR_PUCRA`. Without
   that, PA0 floats and the unit wakes on noise. Standby is only entered once
   the button is released, so the press that switched the unit off cannot
@@ -643,8 +646,11 @@ reported rather than resolved: the reader expects one card at a time, and the
 next poll tries again.
 
 `card_reader.c` turns polls into arrivals. A card held on the reader is seen
-by every poll but reported once; it counts as gone after three empty polls in
-a row, so a single missed poll does not log it twice. The logged ID is the UID
+by every poll but reported once; it counts as gone after one empty poll
+(`APP_NFC_REMOVE_MISSES`; each empty poll costs the 203 mA field for ~6 ms and
+100 ms of Ready mode). The reader then re-arms its wake-up mode, so a card
+still held but missed once is not logged twice: it is in the reference, and
+taking it away only costs one false wake-up. The logged ID is the UID
 as a big-endian 32-bit number (`0A F4 1A 9E` is `0x0AF41A9E`, `0183769758` in
 the CSV); longer UIDs keep their last four bytes, since the first is the
 manufacturer code.
@@ -662,7 +668,7 @@ empty. `card_reader.c` alternates between two states:
 ```
 armed ──EXTI1 / APP_EVT_NFC_WAKE──> polling every 100 ms
   ^                                     │
-  └── measure the empty field, arm <────┘ after 3 empty polls in a row
+  └── measure the empty field, arm <────┘ after 1 empty poll           
 ```
 
 - **Arming** (`plat_nfc_wakeup_arm()`): Level 2 measures the antenna
@@ -808,8 +814,8 @@ test for that case.
 | Event | LEDs | Motor |
 |---|---|---|
 | Power on | green 300 ms | 120 ms |
-| Card accepted | green 250 ms | 90 ms |
-| Card read during a USB session (registering, not recorded) | green 250 ms | 90 ms |
+| Card accepted | green 250 ms | 60 ms |
+| Card read during a USB session (registering, not recorded) | green 250 ms | 60 ms |
 | Duplicate (within 10 s, or already in this lecture) | green ×2 | ×2 short |
 | Log full, or reader failed at power-on | red ×4 | ×4 |
 | Settings applied (eject, button or unplug) | green, two pulses | ×2 |
@@ -818,7 +824,7 @@ test for that case.
 | Released between 2 s and 5 s: new lecture | green | ×3 short |
 | Button tap | green ×2 (battery OK) or red ×5 (low); while plugged in it first ends the USB session | — |
 | Button held 5 s, or 3 min idle on battery | red 700 ms, then off | 250 ms |
-| Idle | 30 ms green flash every 4 s; red if the battery is low or the reader failed | — |
+| Idle | 10 ms green flash every 5 s; red if the battery is low or the reader failed | — |
 | USB session | green flash every second | — |
 
 ## Live debugging

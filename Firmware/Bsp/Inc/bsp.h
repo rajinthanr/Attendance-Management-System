@@ -46,7 +46,7 @@ void bsp_input_rearm(void);
 /** True when the button or VBUS level differs from what the loop last read. */
 bool bsp_input_changed(void);
 
-/** LPTIM1 counter (32768 Hz, wraps at 2 s), read safely. */
+/** LPTIM1 counter (4096 Hz, wraps at 16 s), read safely. */
 uint32_t bsp_lptim_count(void);
 
 /** LPTIM1 interrupt: a Stop 2 sleep has reached its end. */
@@ -58,6 +58,12 @@ bool bsp_lptim_wake_in(uint32_t ticks);
 
 /** LPTIM1 started and answers; false means no Stop 2 (see dbg_lptim_fault). */
 bool bsp_lptim_ok(void);
+
+#if BSP_POWER_TEST
+/** Bench build only: step through steady loads on the button, for a meter.
+ *  Never returns (bsp_power_test.c). */
+void bsp_power_test(void) __attribute__((noreturn));
+#endif
 
 /** Handles owned by the Bsp, shared between its .c files and the ISRs. */
 extern RTC_HandleTypeDef   hbsp_rtc;
