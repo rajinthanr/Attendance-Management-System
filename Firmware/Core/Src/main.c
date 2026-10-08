@@ -193,6 +193,11 @@ int main(void)
    * main loop; only SysTick and USB interrupt. */
   bsp_init();
 
+#if BSP_POWER_TEST
+  /* Bench build: steady loads for a multimeter, no application. */
+  bsp_power_test();
+#endif
+
   /* Level 2: the flow chart's "Start" through to the first card poll. */
   app_init();
 

@@ -115,6 +115,11 @@
 
 #define BSP_LSE_HZ              32768u
 
+/** LPTIM1 counts the LSE divided by this (CFGR.PRESC = /8): 4096 Hz, so its
+ *  16-bit count wraps every 16 s, and one tick is 0.24 ms. */
+#define BSP_LPTIM_PRESC         8u
+#define BSP_LPTIM_HZ            (BSP_LSE_HZ / BSP_LPTIM_PRESC)
+
 /* ------------------------------------------------------------------------ */
 /* NFC reader (ST25R3916 on SPI1)                                           */
 /* ------------------------------------------------------------------------ */
@@ -182,6 +187,12 @@
 /* Stop 2                                                                   */
 /* ------------------------------------------------------------------------ */
 
+/** 1: a bench build that holds one load at a time steady for a meter instead
+ *  of running the application (bsp_power_test.c, `make power-test`). */
+#ifndef BSP_POWER_TEST
+#define BSP_POWER_TEST          0u
+#endif
+
 /** 1: sleep in Stop 2 between events when Level 2 allows it (no USB). 0: Sleep
  *  mode only, woken by SysTick every millisecond, as in the polling build. */
 #define BSP_ENABLE_STOP2        1u
@@ -190,9 +201,9 @@
  *  and the LPTIM compare write takes ~3 LSE cycles. */
 #define BSP_STOP2_MIN_MS        4u
 
-/** Longest single Stop 2 sleep: inside one 2 s wrap of the 16-bit LPTIM1
- *  counter at 32768 Hz, so the time slept is never ambiguous. */
-#define BSP_STOP2_MAX_MS        1900u
+/** Longest single Stop 2 sleep: inside one 16 s wrap of the 16-bit LPTIM1
+ *  counter at 4096 Hz, so the time slept is never ambiguous. */
+#define BSP_STOP2_MAX_MS        15000u
 
 /** Polls of an LPTIM1 register-write flag before giving up (~30 ms at 4 MHz;
  *  the write takes ~3 LSE cycles, 92 us). A timeout means the LSE is not

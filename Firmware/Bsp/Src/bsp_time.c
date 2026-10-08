@@ -41,7 +41,8 @@ static void rtc_init(void)
 }
 
 /**
- * LPTIM1: a free-running 16-bit count of the LSE (32768 Hz, wraps every 2 s).
+ * LPTIM1: a free-running 16-bit count of the LSE / 8 (4096 Hz, wraps every
+ * 16 s).
  * Both the compare match and the wrap interrupt, so a Stop 2 sleep always
  * ends within one wrap of its start even if a compare write came too late,
  * and the ticks slept are never ambiguous. CubeMX clocks it from PCLK; this
@@ -86,8 +87,9 @@ static void lptim_init(void)
     __HAL_RCC_LPTIM1_RELEASE_RESET();
 
     /* IER and CFGR take writes only while the timer is disabled. Internal
-     * clock (the LSE through the kernel clock mux), no prescaler. */
-    LPTIM1->CFGR = 0u;
+     * clock (the LSE through the kernel clock mux), divided by 8. */
+    _Static_assert(BSP_LPTIM_PRESC == 8u, "CFGR.PRESC below is /8");
+    LPTIM1->CFGR = LPTIM_CFGR_PRESC_0 | LPTIM_CFGR_PRESC_1;
     LPTIM1->IER = LPTIM_IER_CMPMIE | LPTIM_IER_ARRMIE;
     LPTIM1->CR = LPTIM_CR_ENABLE;
     LPTIM1->ARR = 0xFFFFu;

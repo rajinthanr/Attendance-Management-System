@@ -226,7 +226,8 @@ static void sample_battery(void) {
 
   batt_reading_t reading;
 
-  g.next_battery = g.now + APP_BATT_SAMPLE_MS;
+  /* On the heartbeat's flash, so idle sampling adds no wake-ups of its own. */
+  g.next_battery = g.now - (g.now % APP_IND_IDLE_PERIOD_MS) + APP_BATT_SAMPLE_MS;
   dbg_battery_samples++;
 
   if (!plat_adc_sample(&sample)) {
