@@ -11,3 +11,9 @@ Companion/.venv/
 # The Companion app no longer has a browser version or a test folder
 Companion/web/
 Companion/tests/
+
+# KiCad per-user project state, cache and automatic backups
+*.kicad_prl
+fp-info-cache
+*-backups/
+_restore_backup_*/
